@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.5.1
+# Version: 2.6.0
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1417,18 +1417,32 @@ show_domain_diff() {
 # SECTION 9: MONITORING (WATCH) FUNCTIONS
 # ============================================================================
 
-# Detect availability of `defaults watch`
-supports_defaults_watch() {
-  "${RUN_AS_USER[@]}" /usr/bin/defaults watch "$DOMAIN" >/dev/null 2>&1 </dev/null &
-  local pid=$!
-  sleep 0.2
-  if /bin/kill -0 "$pid" 2>/dev/null; then
-    /bin/kill -TERM "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-    return 0
-  else
-    return 1
+# Get the plist file path for a given domain
+# Returns the full path to the .plist file, or empty string if not found
+get_plist_path_for_domain() {
+  local domain="$1"
+  local plist_path=""
+
+  # Try sandboxed Container first (common for modern apps)
+  plist_path="$HOME/Library/Containers/${domain}/Data/Library/Preferences/${domain}.plist"
+  [ -f "$plist_path" ] && echo "$plist_path" && return 0
+
+  # Try standard Preferences directory
+  plist_path="$HOME/Library/Preferences/${domain}.plist"
+  [ -f "$plist_path" ] && echo "$plist_path" && return 0
+
+  # Try ByHost preferences
+  plist_path="$HOME/Library/Preferences/ByHost/${domain}."*".plist"
+  plist_path=$(/bin/ls $plist_path 2>/dev/null | head -1)
+  [ -n "$plist_path" ] && [ -f "$plist_path" ] && echo "$plist_path" && return 0
+
+  # Try Group Containers (for app groups)
+  if [ -d "$HOME/Library/Group Containers" ]; then
+    plist_path=$(/usr/bin/find "$HOME/Library/Group Containers" -name "${domain}.plist" -type f 2>/dev/null | head -1)
+    [ -n "$plist_path" ] && echo "$plist_path" && return 0
   fi
+
+  return 1
 }
 
 # Check if Console.app is running
@@ -1453,33 +1467,51 @@ launch_console() {
 
 # Start monitoring a specific domain
 start_watch() {
-  local DEFAULTS_PID="" POLL_PID=""
+  local POLL_PID="" plist_path last_mtime current_mtime
 
-  if supports_defaults_watch; then
-    if command -v script >/dev/null 2>&1; then
-      log_line "Mode: defaults watch (pty)"
-      script -q /dev/null "${RUN_AS_USER[@]}" /usr/bin/defaults watch "$DOMAIN" 2>&1 |
-      while read -r line; do log_line "$line"; done &
-      DEFAULTS_PID=$!
-    else
-      log_line "Mode: defaults watch (pipe)"
-      "${RUN_AS_USER[@]}" /usr/bin/defaults watch "$DOMAIN" 2>&1 |
-      while read -r line; do log_line "$line"; done &
-      DEFAULTS_PID=$!
-    fi
+  # Try to find the plist file for optimized mtime monitoring
+  plist_path=$(get_plist_path_for_domain "$DOMAIN")
+
+  if [ -n "$plist_path" ]; then
+    # Optimized mode: monitor file mtime, only diff when changed
+    log_line "Mode: optimized polling (mtime check on $plist_path)"
+
+    (
+      last_mtime=""
+      while true; do
+        if [ -f "$plist_path" ]; then
+          current_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
+
+          # Only run diff if file has changed
+          if [ -n "$current_mtime" ] && [ "$current_mtime" != "$last_mtime" ]; then
+            if [ -n "$last_mtime" ]; then
+              # File changed, run diff
+              show_domain_diff "$DOMAIN"
+            fi
+            last_mtime="$current_mtime"
+          fi
+        else
+          # File doesn't exist yet, wait for it
+          last_mtime=""
+        fi
+        sleep 0.5  # More responsive than 1s, less CPU than constant polling
+      done
+    ) &
+    POLL_PID=$!
   else
-    log_line "defaults watch unavailable — using polling mode"
+    # Fallback mode: traditional polling for domains without plist file
+    log_line "Mode: standard polling (plist not found, checking domain every 1s)"
+
+    (
+      while true; do
+        show_domain_diff "$DOMAIN"
+        sleep 1
+      done
+    ) &
+    POLL_PID=$!
   fi
 
-  (
-    while true; do
-      show_domain_diff "$DOMAIN"
-      sleep 1
-    done
-  ) &
-  POLL_PID=$!
-
-  trap 'kill -TERM ${DEFAULTS_PID:-} ${POLL_PID:-} 2>/dev/null || true; wait ${DEFAULTS_PID:-} ${POLL_PID:-} 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
