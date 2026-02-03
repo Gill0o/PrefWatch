@@ -1,19 +1,32 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.4.0
+# Version: 2.4.1
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
-# Jamf Parameters:
-#   $4 = Domain (e.g., com.apple.finder, ALL or *)
-#   $5 = Log path (single file). Default:
-#        - ALL/*: /var/log/preferences.watch.log
-#        - Domain: /var/log/<domain>.prefs.log
-#   $6 = INCLUDE_SYSTEM (true/false) — in ALL mode, include system preferences (default: true)
-#   $7 = ONLY_CMDS (true/false) — filter to show only useful commands (defaults, PlistBuddy, plutil) without debug messages (default: true)
-#   $8 = EXCLUDE_DOMAINS — exclude monitoring of certain domains (glob patterns)
-#        Example: ContextStoreAgent*,com.jamf*,com.jamfsoftware*,com.launchdarkly*,com.adobe.*
-#        Note: these domains will neither be monitored nor logged
+# Usage:
+#
+# CLI Mode (direct execution):
+#   ./watch-preferences.sh <domain> [log_file] [include_system] [only_cmds] [exclude_domains]
+#
+#   Examples:
+#     ./watch-preferences.sh com.apple.dock
+#     ./watch-preferences.sh ALL "" true false
+#     ./watch-preferences.sh com.apple.finder /tmp/finder.log
+#
+# Jamf Pro Mode (automatic detection):
+#   When run via Jamf Pro, parameters are automatically shifted.
+#   $1-$3 are Jamf reserved (mount_point, computer_name, username)
+#
+#   Jamf Parameters:
+#     $4 = Domain (e.g., com.apple.finder, ALL or *)
+#     $5 = Log path (optional). Default:
+#          - ALL: /var/log/preferences.watch.log
+#          - Domain: /var/log/<domain>.prefs.log
+#     $6 = INCLUDE_SYSTEM (true/false) — include system preferences (default: true)
+#     $7 = ONLY_CMDS (true/false) — show only commands without debug (default: true)
+#     $8 = EXCLUDE_DOMAINS — comma-separated glob patterns to exclude
+#          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
 # ============================================================================
 
 # ============================================================================
@@ -25,10 +38,31 @@ set -e
 set -u
 set -o pipefail
 
-# Jamf parameters / defaults
-DOMAIN="${4:-ALL}"
-ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
-INCLUDE_SYSTEM_RAW="${6:-true}"
+# Detect if running via Jamf (parameters start at $4) or CLI (parameters start at $1)
+# Jamf passes: $1=mount_point, $2=computer_name, $3=username, then user params at $4+
+# CLI passes: user params directly at $1+
+JAMF_MODE="false"
+if [[ -n "${1:-}" && "${1}" == /* ]] && [[ -n "${2:-}" ]] && [[ -n "${3:-}" ]]; then
+  # Looks like Jamf parameters (mount point, computer name, username)
+  JAMF_MODE="true"
+fi
+
+# Read parameters based on mode
+if [ "$JAMF_MODE" = "true" ]; then
+  # Jamf mode: parameters start at $4
+  DOMAIN="${4:-ALL}"
+  LOG_FILE_PARAM="${5:-}"
+  INCLUDE_SYSTEM_RAW="${6:-true}"
+  ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
+  EXCLUDE_DOMAINS="${8:-}"
+else
+  # CLI mode: parameters start at $1
+  DOMAIN="${1:-ALL}"
+  LOG_FILE_PARAM="${2:-}"
+  INCLUDE_SYSTEM_RAW="${3:-true}"
+  ONLY_CMDS_RAW="${ONLY_CMDS:-${4:-true}}"
+  EXCLUDE_DOMAINS="${5:-}"
+fi
 
 # Boolean normalization
 to_bool() {
@@ -47,7 +81,7 @@ if [ "${ONLY_CMDS:-false}" = "true" ]; then
 fi
 
 # Default exclusions (glob patterns), comma-separated
-EXCLUDE_DOMAINS_RAW="${EXCLUDE_DOMAINS:-${8:-ContextStoreAgent*,com.bjango.istatmenus.status,com.apple.systempreferences,com.apple.systemsettings.extensions,com.apple.CrashReporter,com.apple.CloudKit,com.apple.DuetExpertCenter.AppPredictionExpert,com.jamf*,com.jamfsoftware*,com.launchdarkly*,com.apple.loginwindow,com.apple.Console,com.apple.knowledge-agent,com.apple.spaces,com.apple.networkextension,com.apple.xpc.activity2,com.apple.cfprefsd.daemon,com.apple.notificationcenterui,com.apple.Spotlight,com.apple.CoreGraphics,com.apple.Safari.SafeBrowsing,com.apple.LaunchServices,com.apple.bird,com.apple.cloudd,com.apple.security*,com.apple.appstored,com.apple.dock.extra}}"
+EXCLUDE_DOMAINS_RAW="${EXCLUDE_DOMAINS:-ContextStoreAgent*,com.bjango.istatmenus.status,com.apple.systempreferences,com.apple.systemsettings.extensions,com.apple.CrashReporter,com.apple.CloudKit,com.apple.DuetExpertCenter.AppPredictionExpert,com.jamf*,com.jamfsoftware*,com.launchdarkly*,com.apple.loginwindow,com.apple.Console,com.apple.knowledge-agent,com.apple.spaces,com.apple.networkextension,com.apple.xpc.activity2,com.apple.cfprefsd.daemon,com.apple.notificationcenterui,com.apple.Spotlight,com.apple.CoreGraphics,com.apple.Safari.SafeBrowsing,com.apple.LaunchServices,com.apple.bird,com.apple.cloudd,com.apple.security*,com.apple.appstored,com.apple.dock.extra}"
 
 typeset -a EXCLUDE_PATTERNS _raw_excl
 IFS=',' read -rA _raw_excl <<< "$EXCLUDE_DOMAINS_RAW"
@@ -64,8 +98,8 @@ case "${DOMAIN}" in
 esac
 
 # Log file configuration
-if [ -n "${5:-}" ]; then
-  LOGFILE="${5}"
+if [ -n "$LOG_FILE_PARAM" ]; then
+  LOGFILE="$LOG_FILE_PARAM"
 else
   if [ "$ALL_MODE" = "true" ]; then
     LOGFILE="/var/log/preferences.watch.log"
