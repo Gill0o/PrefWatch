@@ -36,7 +36,7 @@ A powerful macOS shell script for monitoring and capturing system preference cha
 
 ## 🚀 Quick Start
 
-### Basic Usage
+### Basic Usage (CLI Mode)
 
 Monitor a specific preference domain:
 ```bash
@@ -48,32 +48,61 @@ Monitor ALL preference domains (recommended):
 ./watch-preferences.sh ALL
 ```
 
-### With Jamf Pro Parameters
+With custom log file and verbose output:
+```bash
+./watch-preferences.sh com.apple.finder /tmp/finder.log true false
+```
+
+Monitor ALL with system preferences excluded and custom exclusions:
+```bash
+./watch-preferences.sh ALL "" false true "com.apple.Safari*,com.adobe.*"
+```
+
+### With Jamf Pro (Automatic Detection)
+
+When run via Jamf Pro, the script automatically detects Jamf mode and uses parameters starting at $4:
 
 ```bash
+# Jamf Pro automatically passes $1=mount_point, $2=computer_name, $3=username
+# Your parameters start at $4:
 # $4: Domain (ALL or specific domain like com.apple.dock)
-# $5: Timeout in seconds (0 = infinite)
+# $5: Log file path (optional, auto-generated if not specified)
 # $6: Include system preferences (true/false, default: true)
-# $7: Only show commands (true/false, default: false)
+# $7: Only show commands (true/false, default: true)
 # $8: Excluded domains (glob patterns, comma-separated)
 
-./watch-preferences.sh ALL 300 true false "com.apple.Safari*,com.apple.security*"
+# Example Jamf policy script:
+#!/bin/zsh
+/path/to/watch-preferences.sh ALL "" true false "com.apple.Safari*,com.apple.security*"
 ```
 
 ## 📖 Detailed Usage
 
-### Parameters
+### CLI Mode Parameters
 
 | Parameter | Description | Default | Example |
 |-----------|-------------|---------|---------|
-| `$1` (DOMAIN) | Preference domain to watch or "ALL" | Required | `com.apple.dock` or `ALL` |
-| `$2` (TIMEOUT) | Monitoring duration in seconds (0 = infinite) | 0 | `300` |
-| `$3` (LOG_FILE) | Custom log file path | Auto-generated | `/tmp/my-log.log` |
-| `$4` (Reserved) | Reserved for future use | - | - |
-| `$5` (Reserved) | Reserved for future use | - | - |
+| `$1` (DOMAIN) | Preference domain to watch or "ALL" | `ALL` | `com.apple.dock` or `ALL` |
+| `$2` (LOG_FILE) | Custom log file path | Auto-generated¹ | `/tmp/my-log.log` |
+| `$3` (INCLUDE_SYSTEM) | Include system preferences in ALL mode | `true` | `false` |
+| `$4` (ONLY_CMDS) | Show only executable commands (no timestamps) | `true` | `false` |
+| `$5` (EXCLUDE_DOMAINS) | Comma-separated glob patterns to exclude | Built-in² | `"com.apple.Safari*"` |
+
+¹ Auto-generated paths:
+- ALL mode: `/var/log/preferences.watch.log`
+- Domain mode: `/var/log/<domain>.prefs.log`
+
+² Built-in exclusions include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
+
+### Jamf Pro Mode Parameters
+
+| Parameter | Description | Default | Example |
+|-----------|-------------|---------|---------|
+| `$4` (DOMAIN) | Preference domain to watch or "ALL" | `ALL` | `com.apple.dock` or `ALL` |
+| `$5` (LOG_FILE) | Custom log file path | Auto-generated¹ | `/var/log/custom.log` |
 | `$6` (INCLUDE_SYSTEM) | Include system preferences in ALL mode | `true` | `false` |
-| `$7` (ONLY_CMDS) | Show only executable commands (no timestamps) | `false` | `true` |
-| `$8` (EXCLUDE_DOMAINS) | Comma-separated glob patterns to exclude | Built-in defaults | `"com.apple.Safari*"` |
+| `$7` (ONLY_CMDS) | Show only executable commands | `true` | `false` |
+| `$8` (EXCLUDE_DOMAINS) | Comma-separated glob patterns to exclude | Built-in² | `"com.apple.Safari*"` |
 
 ### Output Examples
 
