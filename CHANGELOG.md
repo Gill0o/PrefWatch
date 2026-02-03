@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.7.2 — 2026-02-03
+- **BUGFIX**: Fix command generation for float preferences
+  - `is_noisy_command()` was filtering ALL `-float` commands (too broad)
+  - Now only filters specific noisy float keys (window positions, scroll positions)
+  - Fixes missing commands for mouse speed, trackpad sensitivity, double-click speed, etc.
+  - Critical fix: preferences like `mouse.doubleClickThreshold`, `mouse.scaling` now generate commands
+  - Example: `defaults write NSGlobalDomain com.apple.mouse.doubleClickThreshold -float 0.5` now appears
+
 ## 2.7.1 — 2026-02-03
 - **BUGFIX**: Fix NSGlobalDomain monitoring (mouse, trackpad, keyboard preferences)
   - Added special case handling for NSGlobalDomain → `.GlobalPreferences.plist`

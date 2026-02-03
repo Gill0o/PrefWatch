@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.7.1
+# Version: 2.7.2
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -531,10 +531,13 @@ is_noisy_command() {
     return 0
   fi
 
-  # Filter commands with -float (timestamps, positions, etc.)
-  if printf '%s' "$cmd" | /usr/bin/grep -q '\-float'; then
-    return 0
-  fi
+  # Filter specific float commands that are noisy (not ALL floats!)
+  # Only filter window positions, scroll positions, and known noisy float keys
+  case "$cmd" in
+    *"-float"*NSWindow*|*"-float"*Scroll*|*"-float"*Position*)
+      return 0
+      ;;
+  esac
 
   # Filter known keys that change frequently
   case "$cmd" in
