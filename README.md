@@ -1,6 +1,6 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.7.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.7.2-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
@@ -304,11 +304,11 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.7.0** (2026-02-03)
+Current version: **2.7.2** (2026-02-03)
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.7.0)
+### Recent Changes (v2.7.2)
 
 - **NEW**: Intelligent key-level filtering with `is_noisy_key()` function
 - **NEW**: Domain-specific filters for Dock, Finder, Safari, SystemSettings
