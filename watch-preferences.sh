@@ -1085,7 +1085,7 @@ show_domain_diff() {
   key=$(hash_path "domain:${CONSOLE_USER}:${dom}")
   prev="$CACHE_DIR/${key}.prev"
   curr="$CACHE_DIR/${key}.curr"
-  tmpplist="$CACHE_DIR/${key}.plist}"
+  tmpplist="$CACHE_DIR/${key}.plist"
 
   "${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - > "$tmpplist" 2>/dev/null || :
   if [ -s "$tmpplist" ]; then
