@@ -38,14 +38,17 @@ A powerful macOS shell script for monitoring and capturing system preference cha
 
 ### Basic Usage (CLI Mode)
 
+Monitor ALL preference domains (default behavior):
+```bash
+./watch-preferences.sh              # Monitor all domains (quiet mode)
+./watch-preferences.sh -v           # Monitor all with verbose output
+./watch-preferences.sh --log /tmp/all.log  # Monitor all with custom log
+```
+
 Monitor a specific preference domain:
 ```bash
 ./watch-preferences.sh com.apple.dock
-```
-
-Monitor ALL preference domains (recommended):
-```bash
-./watch-preferences.sh ALL
+./watch-preferences.sh com.apple.finder -v
 ```
 
 With custom log file and verbose output:
@@ -55,11 +58,11 @@ With custom log file and verbose output:
 ./watch-preferences.sh com.apple.finder -l /tmp/finder.log -v
 ```
 
-Monitor ALL with system preferences excluded and custom exclusions:
+Monitor with system preferences excluded and custom exclusions:
 ```bash
-./watch-preferences.sh ALL --no-system --exclude "com.apple.Safari*,com.adobe.*"
+./watch-preferences.sh --no-system --exclude "com.apple.Safari*,com.adobe.*"
 # Or using short flags:
-./watch-preferences.sh ALL --no-system -e "com.apple.Safari*,com.adobe.*"
+./watch-preferences.sh --no-system -e "com.apple.Safari*,com.adobe.*"
 ```
 
 Show help and available options:
@@ -89,11 +92,11 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 
 ### CLI Mode Options
 
-**Syntax:** `./watch-preferences.sh <domain> [OPTIONS]`
+**Syntax:** `./watch-preferences.sh [domain] [OPTIONS]`
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `<domain>` | — | Preference domain to watch or "ALL" (required) | — |
+| `[domain]` | — | Preference domain to watch (optional) | `ALL` |
 | `--log <path>` | `-l` | Custom log file path | Auto-generated¹ |
 | `--include-system` | `-s` | Include system preferences in ALL mode | Enabled |
 | `--no-system` | — | Exclude system preferences in ALL mode | — |
@@ -104,17 +107,21 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 
 **Examples:**
 ```bash
-# Monitor dock with verbose output
+# Monitor all domains (default)
+./watch-preferences.sh
+./watch-preferences.sh -v
+
+# Monitor specific domain with verbose output
 ./watch-preferences.sh com.apple.dock -v
 
 # Monitor all domains, custom log, exclude Safari
-./watch-preferences.sh ALL -l /tmp/prefs.log -e "com.apple.Safari*"
+./watch-preferences.sh -l /tmp/prefs.log -e "com.apple.Safari*"
 
 # Monitor all user preferences only (no system)
-./watch-preferences.sh ALL --no-system
+./watch-preferences.sh --no-system
 
 # Show only commands (quiet mode, good for piping)
-./watch-preferences.sh ALL --only-cmds
+./watch-preferences.sh --only-cmds
 ```
 
 ¹ **Auto-generated paths:**

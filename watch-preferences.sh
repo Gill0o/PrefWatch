@@ -1,16 +1,17 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.5.0
+# Version: 2.5.1
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
 #
 # CLI Mode (direct execution):
-#   ./watch-preferences.sh <domain> [OPTIONS]
+#   ./watch-preferences.sh [domain] [OPTIONS]
 #
 #   Arguments:
-#     <domain>              Preference domain (e.g., com.apple.dock) or "ALL"
+#     [domain]              Preference domain (default: "ALL")
+#                           Examples: com.apple.dock, com.apple.finder, ALL
 #
 #   Options:
 #     -l, --log <path>      Custom log file path (default: auto-generated)
@@ -22,10 +23,11 @@
 #     -h, --help            Show this help message
 #
 #   Examples:
-#     ./watch-preferences.sh com.apple.dock
-#     ./watch-preferences.sh ALL --log /tmp/all-prefs.log
-#     ./watch-preferences.sh ALL -v --exclude "com.apple.Safari*"
-#     ./watch-preferences.sh com.apple.finder --no-system
+#     ./watch-preferences.sh                    # Monitor ALL (default)
+#     ./watch-preferences.sh -v                 # Monitor ALL verbose
+#     ./watch-preferences.sh --log /tmp/all.log # Monitor ALL with custom log
+#     ./watch-preferences.sh com.apple.dock     # Monitor specific domain
+#     ./watch-preferences.sh com.apple.finder -v # Specific domain verbose
 #
 # Jamf Pro Mode (automatic detection):
 #   When run via Jamf Pro, parameters are automatically shifted.
@@ -54,12 +56,13 @@ set -o pipefail
 # Help message
 show_help() {
   cat << 'EOF'
-Usage: watch-preferences.sh <domain> [OPTIONS]
+Usage: watch-preferences.sh [domain] [OPTIONS]
 
 Monitor and log changes to macOS preference domains in real-time.
 
 Arguments:
-  <domain>              Preference domain to monitor (e.g., com.apple.dock) or "ALL"
+  [domain]              Preference domain to monitor (default: "ALL")
+                        Examples: com.apple.dock, com.apple.finder, ALL
 
 Options:
   -l, --log <path>      Custom log file path (default: auto-generated)
@@ -71,17 +74,20 @@ Options:
   -h, --help            Show this help message
 
 Examples:
-  # Monitor a specific domain with defaults
+  # Monitor all domains (default behavior)
+  ./watch-preferences.sh
+  ./watch-preferences.sh -v
+  ./watch-preferences.sh --log /tmp/all-prefs.log
+
+  # Monitor a specific domain
   ./watch-preferences.sh com.apple.dock
+  ./watch-preferences.sh com.apple.finder -v
 
-  # Monitor all domains with custom log
-  ./watch-preferences.sh ALL --log /tmp/all-prefs.log
-
-  # Monitor with verbose output and exclusions
-  ./watch-preferences.sh ALL -v --exclude "com.apple.Safari*,ContextStoreAgent*"
+  # Monitor with exclusions
+  ./watch-preferences.sh -v --exclude "com.apple.Safari*,ContextStoreAgent*"
 
   # Monitor without system preferences
-  ./watch-preferences.sh ALL --no-system
+  ./watch-preferences.sh --no-system
 
 Jamf Pro Mode:
   When run via Jamf Pro, use positional parameters:
@@ -102,21 +108,18 @@ parse_cli_args() {
     show_help
   fi
 
-  # First arg must be domain
-  if [[ -z "${1:-}" ]]; then
-    echo "Error: Domain argument is required" >&2
-    echo "Use --help for usage information" >&2
-    exit 1
-  fi
-
-  DOMAIN="${1}"
-  shift
-
   # Default values
+  DOMAIN="ALL"  # Default to ALL if no domain specified
   LOG_FILE_PARAM=""
   INCLUDE_SYSTEM_RAW="true"
   ONLY_CMDS_RAW="true"
   EXCLUDE_DOMAINS=""
+
+  # If first arg doesn't start with -, it's the domain
+  if [[ -n "${1:-}" && "${1}" != -* ]]; then
+    DOMAIN="${1}"
+    shift
+  fi
 
   # Parse flags
   while [[ $# -gt 0 ]]; do

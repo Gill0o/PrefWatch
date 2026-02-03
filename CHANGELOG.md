@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.1 — 2026-02-03
+- **IMPROVEMENT**: Domain argument is now optional in CLI mode
+  - Default behavior: monitors ALL preferences when no domain specified
+  - Simpler usage: `./watch-preferences.sh -v` instead of `./watch-preferences.sh ALL -v`
+  - Example: `./watch-preferences.sh` now works (monitors ALL)
+  - Example: `./watch-preferences.sh --log /tmp/test.log` monitors ALL with custom log
+  - Specific domains still work: `./watch-preferences.sh com.apple.dock -v`
+
 ## 2.5.0 — 2026-02-03
 - **NEW FEATURE**: Modern CLI with GNU-style flags for better usability
   - Added explicit flags: `--log`, `--verbose`, `--include-system`, `--no-system`, `--only-cmds`, `--exclude`, `--help`
