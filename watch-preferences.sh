@@ -1,18 +1,31 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.4.1
+# Version: 2.5.0
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
 #
 # CLI Mode (direct execution):
-#   ./watch-preferences.sh <domain> [log_file] [include_system] [only_cmds] [exclude_domains]
+#   ./watch-preferences.sh <domain> [OPTIONS]
+#
+#   Arguments:
+#     <domain>              Preference domain (e.g., com.apple.dock) or "ALL"
+#
+#   Options:
+#     -l, --log <path>      Custom log file path (default: auto-generated)
+#     -s, --include-system  Include system preferences in ALL mode (default)
+#     --no-system           Exclude system preferences in ALL mode
+#     -v, --verbose         Show detailed debug output with timestamps
+#     -q, --only-cmds       Show only executable commands (default)
+#     -e, --exclude <glob>  Comma-separated glob patterns to exclude
+#     -h, --help            Show this help message
 #
 #   Examples:
 #     ./watch-preferences.sh com.apple.dock
-#     ./watch-preferences.sh ALL "" true false
-#     ./watch-preferences.sh com.apple.finder /tmp/finder.log
+#     ./watch-preferences.sh ALL --log /tmp/all-prefs.log
+#     ./watch-preferences.sh ALL -v --exclude "com.apple.Safari*"
+#     ./watch-preferences.sh com.apple.finder --no-system
 #
 # Jamf Pro Mode (automatic detection):
 #   When run via Jamf Pro, parameters are automatically shifted.
@@ -38,6 +51,120 @@ set -e
 set -u
 set -o pipefail
 
+# Help message
+show_help() {
+  cat << 'EOF'
+Usage: watch-preferences.sh <domain> [OPTIONS]
+
+Monitor and log changes to macOS preference domains in real-time.
+
+Arguments:
+  <domain>              Preference domain to monitor (e.g., com.apple.dock) or "ALL"
+
+Options:
+  -l, --log <path>      Custom log file path (default: auto-generated)
+  -s, --include-system  Include system preferences in ALL mode (default: enabled)
+  --no-system           Exclude system preferences in ALL mode
+  -v, --verbose         Show detailed debug output with timestamps
+  -q, --only-cmds       Show only executable commands (default)
+  -e, --exclude <glob>  Comma-separated glob patterns to exclude
+  -h, --help            Show this help message
+
+Examples:
+  # Monitor a specific domain with defaults
+  ./watch-preferences.sh com.apple.dock
+
+  # Monitor all domains with custom log
+  ./watch-preferences.sh ALL --log /tmp/all-prefs.log
+
+  # Monitor with verbose output and exclusions
+  ./watch-preferences.sh ALL -v --exclude "com.apple.Safari*,ContextStoreAgent*"
+
+  # Monitor without system preferences
+  ./watch-preferences.sh ALL --no-system
+
+Jamf Pro Mode:
+  When run via Jamf Pro, use positional parameters:
+    $4 = Domain
+    $5 = Log path
+    $6 = INCLUDE_SYSTEM (true/false)
+    $7 = ONLY_CMDS (true/false)
+    $8 = EXCLUDE_DOMAINS
+
+EOF
+  exit 0
+}
+
+# Parse CLI arguments
+parse_cli_args() {
+  # Check for help first
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    show_help
+  fi
+
+  # First arg must be domain
+  if [[ -z "${1:-}" ]]; then
+    echo "Error: Domain argument is required" >&2
+    echo "Use --help for usage information" >&2
+    exit 1
+  fi
+
+  DOMAIN="${1}"
+  shift
+
+  # Default values
+  LOG_FILE_PARAM=""
+  INCLUDE_SYSTEM_RAW="true"
+  ONLY_CMDS_RAW="true"
+  EXCLUDE_DOMAINS=""
+
+  # Parse flags
+  while [[ $# -gt 0 ]]; do
+    case "${1}" in
+      -l|--log)
+        if [[ -z "${2:-}" ]]; then
+          echo "Error: --log requires a path argument" >&2
+          exit 1
+        fi
+        LOG_FILE_PARAM="${2}"
+        shift 2
+        ;;
+      -s|--include-system)
+        INCLUDE_SYSTEM_RAW="true"
+        shift
+        ;;
+      --no-system)
+        INCLUDE_SYSTEM_RAW="false"
+        shift
+        ;;
+      -v|--verbose)
+        ONLY_CMDS_RAW="false"
+        shift
+        ;;
+      -q|--only-cmds)
+        ONLY_CMDS_RAW="true"
+        shift
+        ;;
+      -e|--exclude)
+        if [[ -z "${2:-}" ]]; then
+          echo "Error: --exclude requires a pattern argument" >&2
+          exit 1
+        fi
+        EXCLUDE_DOMAINS="${2}"
+        shift 2
+        ;;
+      -h|--help)
+        show_help
+        ;;
+      *)
+        echo "Error: Unknown option: ${1}" >&2
+        echo "Use --help for usage information" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
 # Detect if running via Jamf (parameters start at $4) or CLI (parameters start at $1)
 # Jamf passes: $1=mount_point, $2=computer_name, $3=username, then user params at $4+
 # CLI passes: user params directly at $1+
@@ -49,19 +176,15 @@ fi
 
 # Read parameters based on mode
 if [ "$JAMF_MODE" = "true" ]; then
-  # Jamf mode: parameters start at $4
+  # Jamf mode: parameters start at $4 (positional)
   DOMAIN="${4:-ALL}"
   LOG_FILE_PARAM="${5:-}"
   INCLUDE_SYSTEM_RAW="${6:-true}"
   ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
   EXCLUDE_DOMAINS="${8:-}"
 else
-  # CLI mode: parameters start at $1
-  DOMAIN="${1:-ALL}"
-  LOG_FILE_PARAM="${2:-}"
-  INCLUDE_SYSTEM_RAW="${3:-true}"
-  ONLY_CMDS_RAW="${ONLY_CMDS:-${4:-true}}"
-  EXCLUDE_DOMAINS="${5:-}"
+  # CLI mode: use flag-based parsing
+  parse_cli_args "$@"
 fi
 
 # Boolean normalization

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0 — 2026-02-03
+- **NEW FEATURE**: Modern CLI with GNU-style flags for better usability
+  - Added explicit flags: `--log`, `--verbose`, `--include-system`, `--no-system`, `--only-cmds`, `--exclude`, `--help`
+  - Added short flags: `-l`, `-v`, `-s`, `-q`, `-e`, `-h`
+  - Replaced confusing positional `true/false` arguments with self-documenting flags
+  - Example: `./watch-preferences.sh ALL -v --exclude "com.apple.Safari*"` instead of `./watch-preferences.sh ALL "" true false "com.apple.Safari*"`
+- **IMPROVED**: Enhanced help system with `--help` flag showing usage examples
+- **BACKWARD COMPATIBILITY**: Jamf Pro mode unchanged (still uses positional parameters $4-$8)
+- **DOCUMENTATION**: Updated README with new CLI syntax examples
+
 ## 2.4.0 — 2025-02-03
 - **MAJOR REFACTORING**: Complete code reorganization into 10 clearly defined sections
   - SECTION 1: Configuration & Security (lines 19-108)

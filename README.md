@@ -50,12 +50,21 @@ Monitor ALL preference domains (recommended):
 
 With custom log file and verbose output:
 ```bash
-./watch-preferences.sh com.apple.finder /tmp/finder.log true false
+./watch-preferences.sh com.apple.finder --log /tmp/finder.log --verbose
+# Or using short flags:
+./watch-preferences.sh com.apple.finder -l /tmp/finder.log -v
 ```
 
 Monitor ALL with system preferences excluded and custom exclusions:
 ```bash
-./watch-preferences.sh ALL "" false true "com.apple.Safari*,com.adobe.*"
+./watch-preferences.sh ALL --no-system --exclude "com.apple.Safari*,com.adobe.*"
+# Or using short flags:
+./watch-preferences.sh ALL --no-system -e "com.apple.Safari*,com.adobe.*"
+```
+
+Show help and available options:
+```bash
+./watch-preferences.sh --help
 ```
 
 ### With Jamf Pro (Automatic Detection)
@@ -78,21 +87,41 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 
 ## 📖 Detailed Usage
 
-### CLI Mode Parameters
+### CLI Mode Options
 
-| Parameter | Description | Default | Example |
-|-----------|-------------|---------|---------|
-| `$1` (DOMAIN) | Preference domain to watch or "ALL" | `ALL` | `com.apple.dock` or `ALL` |
-| `$2` (LOG_FILE) | Custom log file path | Auto-generated¹ | `/tmp/my-log.log` |
-| `$3` (INCLUDE_SYSTEM) | Include system preferences in ALL mode | `true` | `false` |
-| `$4` (ONLY_CMDS) | Show only executable commands (no timestamps) | `true` | `false` |
-| `$5` (EXCLUDE_DOMAINS) | Comma-separated glob patterns to exclude | Built-in² | `"com.apple.Safari*"` |
+**Syntax:** `./watch-preferences.sh <domain> [OPTIONS]`
 
-¹ Auto-generated paths:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `<domain>` | — | Preference domain to watch or "ALL" (required) | — |
+| `--log <path>` | `-l` | Custom log file path | Auto-generated¹ |
+| `--include-system` | `-s` | Include system preferences in ALL mode | Enabled |
+| `--no-system` | — | Exclude system preferences in ALL mode | — |
+| `--verbose` | `-v` | Show detailed debug output with timestamps | — |
+| `--only-cmds` | `-q` | Show only executable commands (no debug) | Enabled |
+| `--exclude <glob>` | `-e` | Comma-separated glob patterns to exclude | Built-in² |
+| `--help` | `-h` | Show help message and exit | — |
+
+**Examples:**
+```bash
+# Monitor dock with verbose output
+./watch-preferences.sh com.apple.dock -v
+
+# Monitor all domains, custom log, exclude Safari
+./watch-preferences.sh ALL -l /tmp/prefs.log -e "com.apple.Safari*"
+
+# Monitor all user preferences only (no system)
+./watch-preferences.sh ALL --no-system
+
+# Show only commands (quiet mode, good for piping)
+./watch-preferences.sh ALL --only-cmds
+```
+
+¹ **Auto-generated paths:**
 - ALL mode: `/var/log/preferences.watch.log`
 - Domain mode: `/var/log/<domain>.prefs.log`
 
-² Built-in exclusions include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
+² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
 ### Jamf Pro Mode Parameters
 
@@ -113,7 +142,7 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 [2025-02-03 14:30:15] Cmd: defaults write com.apple.dock persistent-apps -array-add '<dict><key>tile-data</key><dict><key>file-label</key><string>Safari</string></dict></dict>'
 ```
 
-**Commands-only output** (with `ONLY_CMDS=true`):
+**Commands-only output** (with `--only-cmds` or `-q`):
 ```bash
 defaults write com.apple.dock persistent-apps -array-add '<dict><key>tile-data</key><dict><key>file-label</key><string>Safari</string></dict></dict>'
 defaults write com.apple.HIToolbox AppleEnabledInputSources -array-add '<dict><key>InputSourceKind</key><string>Keyboard Layout</string><key>KeyboardLayout ID</key><integer>252</integer></dict>'
@@ -133,7 +162,9 @@ The script automatically excludes noisy system domains that change frequently bu
 
 Add custom exclusions:
 ```bash
-./watch-preferences.sh ALL 0 "" "" "" true false "my.custom.domain*,another.domain"
+./watch-preferences.sh ALL --exclude "my.custom.domain*,another.domain"
+# Or with short flag:
+./watch-preferences.sh ALL -e "my.custom.domain*,another.domain"
 ```
 
 ### PlistBuddy Commands
