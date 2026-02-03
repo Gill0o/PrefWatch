@@ -145,7 +145,7 @@ git push origin --tags
 
 ```bash
 # Add upstream remote (only once)
-git remote add upstream https://github.com/ORIGINAL_OWNER/Watch-preferences.git
+git remote add upstream https://github.com/Gill0o/Watch-preferences.git
 
 # Sync your fork regularly
 git checkout main
@@ -367,8 +367,8 @@ git push origin --tags
 ## Need Help?
 
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines
-- Open a [Question Issue](https://github.com/ORIGINAL_OWNER/Watch-preferences/issues/new?template=question.md)
-- Review [existing issues](https://github.com/ORIGINAL_OWNER/Watch-preferences/issues)
+- Open a [Question Issue](https://github.com/Gill0o/Watch-preferences/issues/new?template=question.md)
+- Review [existing issues](https://github.com/Gill0o/Watch-preferences/issues)
 
 ---
 

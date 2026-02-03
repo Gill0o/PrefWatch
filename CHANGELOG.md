@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.7.0 — 2026-02-03
+- **FEATURE**: Intelligent key-level filtering with enhanced `is_noisy_key()`
+  - Filter noisy keys within domains instead of excluding entire domains
+  - Global patterns: window frames, timestamps, recent items, cache, view state
+  - Domain-specific filters for dock, finder, safari, textedit, systemsettings
+  - Example: Keep `dock.orientation` but filter `dock.workspace-*` noise
+  - Allows monitoring useful preferences in previously excluded domains
+- **ORGANIZATION**: New SECTION 1.5 for domain exclusions (categorized, commented)
+  - Replaced single-line comma list with readable array format
+  - Categories: System, Daemons, Cloud, Security, Network, Graphics, etc.
+  - Updated for macOS Sequoia (15.x): added modern patterns, removed 3rd-party apps
+- **ORGANIZATION**: New SECTION 1.6 for preflight checks & environment setup
+  - Centralized binary detection (date, python3)
+  - Console user detection
+  - Cache initialization
+  - Clearer separation of concerns
+
 ## 2.6.0 — 2026-02-03
 - **PERFORMANCE**: Major optimization for domain-specific monitoring (~90% CPU reduction)
   - Replaced `defaults watch` detection (never worked) with mtime-based polling

@@ -239,8 +239,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🐛 Issues and Support
 
-- Report bugs via [GitHub Issues](https://github.com/YOUR_USERNAME/Watch-preferences/issues)
-- For questions, use [GitHub Discussions](https://github.com/YOUR_USERNAME/Watch-preferences/discussions)
+- Report bugs via [GitHub Issues](https://github.com/Gill0o/Watch-preferences/issues)
+- For questions, use [GitHub Discussions](https://github.com/Gill0o/Watch-preferences/discussions)
 
 ## 🙏 Acknowledgments
 

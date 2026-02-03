@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.6.0
+# Version: 2.7.0
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -206,9 +206,78 @@ if [ "${ONLY_CMDS:-false}" = "true" ]; then
   unsetopt xtrace 2>/dev/null || true
 fi
 
-# Default exclusions (glob patterns), comma-separated
-EXCLUDE_DOMAINS_RAW="${EXCLUDE_DOMAINS:-ContextStoreAgent*,com.bjango.istatmenus.status,com.apple.systempreferences,com.apple.systemsettings.extensions,com.apple.CrashReporter,com.apple.CloudKit,com.apple.DuetExpertCenter.AppPredictionExpert,com.jamf*,com.jamfsoftware*,com.launchdarkly*,com.apple.loginwindow,com.apple.Console,com.apple.knowledge-agent,com.apple.spaces,com.apple.networkextension,com.apple.xpc.activity2,com.apple.cfprefsd.daemon,com.apple.notificationcenterui,com.apple.Spotlight,com.apple.CoreGraphics,com.apple.Safari.SafeBrowsing,com.apple.LaunchServices,com.apple.bird,com.apple.cloudd,com.apple.security*,com.apple.appstored,com.apple.dock.extra}"
+# ============================================================================
+# SECTION 1.5: DOMAIN EXCLUSIONS & FILTERING
+# ============================================================================
 
+# Default exclusion patterns for noisy/irrelevant domains
+# These domains change frequently but are rarely useful for preference monitoring
+# User can override with --exclude flag or $8 parameter in Jamf mode
+typeset -a DEFAULT_EXCLUSIONS=(
+  # Background daemons & agents (very noisy, no user-configurable preferences)
+  "com.apple.cfprefsd*"
+  "com.apple.notificationcenterui*"
+  "com.apple.ncplugin*"
+  "com.apple.knowledge-agent"
+  "com.apple.DuetExpertCenter*"
+  "com.apple.xpc.activity2"
+  "ContextStoreAgent*"
+
+  # Cloud sync internals (constant updates, not user preferences)
+  "com.apple.CloudKit*"
+  "com.apple.bird"
+  "com.apple.cloudd"
+
+  # Security & crash reporting (noisy, not user settings)
+  "com.apple.CrashReporter"
+  "com.apple.security*"
+
+  # Network internals (frequent changes, not user preferences)
+  "com.apple.networkextension*"
+  "com.apple.LaunchServices*"
+
+  # Graphics internals (updates on every window change)
+  "com.apple.CoreGraphics"
+
+  # App store internals (not user preferences)
+  "com.apple.appstored"
+  "com.apple.AppleMediaServices*"
+
+  # Power management internals (constant battery updates)
+  "com.apple.PowerManagement*"
+  "com.apple.BackgroundTaskManagement*"
+
+  # System internals (no user-configurable settings)
+  "com.apple.loginwindow"
+  "com.apple.Console"
+  "com.apple.Spotlight"
+  "com.apple.spaces"
+
+  # Legacy (obsolete, replaced by systemsettings)
+  "com.apple.systempreferences"
+
+  # MDM & Jamf internals (if using Jamf Pro)
+  "com.jamf*"
+  "com.jamfsoftware*"
+
+  # Note: The following are now intelligently filtered instead of excluded:
+  # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
+  # - com.apple.finder (filter FXRecentFolders, keep ShowPathbar, etc.)
+  # - com.apple.Safari (filter History*, keep HomePage, etc.)
+  # - com.apple.systemsettings (filter timestamps, keep actual settings)
+  # - com.apple.Mail, Messages, Calendar, etc. (see is_noisy_key)
+)
+
+# Merge user-provided exclusions with defaults
+if [ -n "${EXCLUDE_DOMAINS:-}" ]; then
+  # User provided custom exclusions, use only those
+  EXCLUDE_DOMAINS_RAW="$EXCLUDE_DOMAINS"
+else
+  # Use defaults
+  EXCLUDE_DOMAINS_RAW="${(j:,:)DEFAULT_EXCLUSIONS}"
+fi
+
+# Parse exclusion patterns into array
 typeset -a EXCLUDE_PATTERNS _raw_excl
 IFS=',' read -rA _raw_excl <<< "$EXCLUDE_DOMAINS_RAW"
 EXCLUDE_PATTERNS=()
@@ -223,18 +292,11 @@ case "${DOMAIN}" in
   ALL|all|'*') ALL_MODE="true" ;;
 esac
 
-# Log file configuration
-if [ -n "$LOG_FILE_PARAM" ]; then
-  LOGFILE="$LOG_FILE_PARAM"
-else
-  if [ "$ALL_MODE" = "true" ]; then
-    LOGFILE="/var/log/preferences.watch.log"
-  else
-    LOGFILE="/var/log/${DOMAIN}.prefs.log"
-  fi
-fi
+# ============================================================================
+# SECTION 1.6: PREFLIGHT CHECKS & ENVIRONMENT SETUP
+# ============================================================================
 
-# Console user (to target active user preferences)
+# Console user detection (to target active user preferences)
 get_console_user() {
   /usr/bin/stat -f %Su /dev/console 2>/dev/null || /usr/bin/id -un
 }
@@ -246,11 +308,12 @@ if [ "$(id -u)" -eq 0 ] && [ "$CONSOLE_USER" != "root" ]; then
   RUN_AS_USER=(/usr/bin/sudo -u "$CONSOLE_USER" -H)
 fi
 
-# Optimization: Detect date binary at startup
+# Binary availability checks (optimization to avoid repeated lookups)
+# Detect /bin/date availability at startup
 HAVE_BIN_DATE="false"
 [ -x /bin/date ] && HAVE_BIN_DATE="true"
 
-# Python3 detection
+# Python3 detection (used for JSON processing if available)
 PYTHON3_BIN=""
 if command -v /usr/bin/python3 >/dev/null 2>&1; then
   PYTHON3_BIN="/usr/bin/python3"
@@ -258,14 +321,24 @@ elif command -v python3 >/dev/null 2>&1; then
   PYTHON3_BIN="$(command -v python3)"
 fi
 
-# Cache for optimizing repeated exclusion checks
-typeset -A _EXCLUSION_CACHE
+# Cache initialization
+typeset -A _EXCLUSION_CACHE  # Cache for domain exclusion checks
+CACHE_DIR=""                  # Cache directory for plist diffs (WATCH_ALL mode)
 
-# Cache for plist diffs (WATCH_ALL)
-CACHE_DIR=""
-
+# Domain tag for logging
 DOMAIN_TAG="$DOMAIN"
 [ "$ALL_MODE" = "true" ] && DOMAIN_TAG="all"
+
+# Log file configuration
+if [ -n "$LOG_FILE_PARAM" ]; then
+  LOGFILE="$LOG_FILE_PARAM"
+else
+  if [ "$ALL_MODE" = "true" ]; then
+    LOGFILE="/var/log/preferences.watch.log"
+  else
+    LOGFILE="/var/log/${DOMAIN}.prefs.log"
+  fi
+fi
 
 # ============================================================================
 # SECTION 2: BASIC UTILITY FUNCTIONS
@@ -357,15 +430,95 @@ is_excluded_domain() {
 }
 
 # Filter noisy keys (internal metadata)
+# Intelligent key filtering - filters noisy keys while keeping useful preferences
+# This allows monitoring domains like com.apple.dock without the noise
 is_noisy_key() {
   local domain="$1" keyname="$2"
-  if [ "$domain" = "com.apple.dock" ]; then
-    case "$keyname" in
-      parent-mod-date|file-mod-date|mod-count|file-label|file-type)
-        return 0
-        ;;
-    esac
-  fi
+
+  # ========================================================================
+  # GLOBAL NOISY PATTERNS (apply to all domains)
+  # ========================================================================
+
+  case "$keyname" in
+    # Window positions & UI state (changes on every resize/move)
+    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*)
+      return 0 ;;
+
+    # Timestamps & dates (metadata, not preferences)
+    *-last-seen|*-timestamp|*-last-update|*LastUpdate*|*LastSeen*|*-last-modified)
+      return 0 ;;
+
+    # File metadata (changes on every file operation)
+    parent-mod-date|file-mod-date|mod-count|file-label|file-type)
+      return 0 ;;
+
+    # Recent items & history (noisy, changes constantly)
+    *RecentFolders|*RecentDocuments|*RecentSearches|*History*|*RecentlyUsed*)
+      return 0 ;;
+
+    # Cache & temporary data
+    *-cache|*Cache*|*-temp|*Temp*|*-tmp)
+      return 0 ;;
+
+    # View state (scroll positions, selected items, etc.)
+    *ScrollPosition|*SelectedItem*|*ViewOptions*|*IconViewSettings*)
+      return 0 ;;
+  esac
+
+  # ========================================================================
+  # DOMAIN-SPECIFIC NOISY KEYS
+  # ========================================================================
+
+  case "$domain" in
+    # Dock preferences: Keep useful settings, filter workspace state
+    com.apple.dock)
+      case "$keyname" in
+        # Noisy: workspace IDs, counts, expose gestures
+        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp)
+          return 0 ;;
+        # Keep: orientation, autohide, tilesize, magnification, etc.
+      esac
+      ;;
+
+    # Finder preferences: Keep view settings, filter recent folders
+    com.apple.finder)
+      case "$keyname" in
+        # Noisy: recent folders, trash state, search history
+        FXRecentFolders|GoToField*|LastTrashState|FXDesktopVolumePositions)
+          return 0 ;;
+        # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
+      esac
+      ;;
+
+    # System Settings: Filter timestamps, keep actual settings
+    com.apple.systemsettings*|com.apple.systempreferences)
+      case "$keyname" in
+        # Noisy: last seen timestamps, navigation state
+        *-last-seen|*LastUpdate*|*NavigationState*)
+          return 0 ;;
+        # Keep: actual preference values
+      esac
+      ;;
+
+    # Safari: Keep useful prefs, filter safe browsing updates
+    com.apple.Safari)
+      case "$keyname" in
+        # Noisy: safe browsing cache, history
+        SafeBrowsing*|History*|LastSession*)
+          return 0 ;;
+        # Keep: HomePage, SearchEngine, AutoFillPasswords, etc.
+      esac
+      ;;
+
+    # TextEdit: Keep format preferences, filter window state
+    com.apple.TextEdit)
+      case "$keyname" in
+        # Noisy: window frames already filtered by global patterns
+        # Keep: RichText, Font, PlainTextEncodingForWrite, etc.
+      esac
+      ;;
+  esac
+
   return 1
 }
 
