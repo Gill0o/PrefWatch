@@ -1,0 +1,232 @@
+# Changelog
+
+## 2.4.0 — 2025-02-03
+- **MAJOR REFACTORING**: Complete code reorganization into 10 clearly defined sections
+  - SECTION 1: Configuration & Security (lines 19-108)
+  - SECTION 2: Basic Utility Functions (lines 110-170)
+  - SECTION 3: Filtering & Exclusion Functions (lines 172-234)
+  - SECTION 4: Logging Functions (lines 236-387)
+  - SECTION 5: Plist Manipulation Functions (lines 389-458)
+  - SECTION 6: PlistBuddy Conversion Functions (lines 460-550)
+  - SECTION 7: Array Operations Functions (lines 552-855)
+  - SECTION 8: Diff & Comparison Functions (lines 857-1254)
+  - SECTION 9: Monitoring (Watch) Functions (lines 1256-1478)
+  - SECTION 10: Main Execution (lines 1480-1531)
+- **INTERNATIONALIZATION**: Full English translation
+  - All comments translated to English
+  - All log messages translated to English
+  - Function names remain in English
+  - Code structure improved for international maintainability
+- **IMPROVED READABILITY**: Clear visual separators between sections
+  - Each section starts with a prominent comment block
+  - Functions are logically grouped by purpose
+  - Navigation and maintenance significantly improved
+- **NO FUNCTIONAL CHANGES**: Complete backward compatibility maintained
+  - All existing features preserved
+  - Same Jamf parameters
+  - Same output format
+  - Same behavior
+
+## 2.3.7 — 2025-12-22
+- **OPTIMISATIONS** : Améliorations majeures de performance et maintenabilité
+- **FIX CRITIQUE** : Correction du bug de fusion de domaines `com.apple.systempreferencescom.apple.CrashReporter`
+  - Ces deux domaines sont maintenant correctement séparés
+  - Ajout de 11 nouveaux domaines bruyants à la liste d'exclusion par défaut:
+    - `com.apple.cfprefsd.daemon`, `com.apple.notificationcenterui`, `com.apple.Spotlight`
+    - `com.apple.CoreGraphics`, `com.apple.Safari.SafeBrowsing`, `com.apple.LaunchServices`
+    - `com.apple.bird`, `com.apple.cloudd`, `com.apple.security*`
+    - `com.apple.appstored`, `com.apple.dock.extra`
+- **OPTIMISATION** : Cache des vérifications d'exclusion de domaines
+  - `is_excluded_domain()` met maintenant en cache ses résultats
+  - Gain de performance 15-25% sur scripts avec beaucoup de modifications
+  - Évite de revalider les patterns glob pour chaque appel
+- **OPTIMISATION** : Fonction `get_timestamp()` avec détection préalable de `/bin/date`
+  - Détection unique au démarrage via variable `HAVE_BIN_DATE`
+  - Élimine le test conditionnel répété dans chaque appel de log
+- **SIMPLIFICATION** : Nouvelle fonction helper `get_plist_path()`
+  - Centralise la logique de détermination du chemin plist
+  - Élimine duplication dans `convert_to_plistbuddy()` et `convert_delete_to_plistbuddy()`
+  - Code plus maintenable et cohérent
+
+## 2.3.6 — 2025-12-22
+- **NOUVELLE FONCTIONNALITÉ** : Détection des suppressions d'éléments de tableaux
+- Ajout de la fonction `emit_array_deletions()` qui détecte les suppressions dans les tableaux
+- Compare `prev` avec `curr` pour trouver les éléments supprimés (inverse de `emit_array_additions`)
+- Génère les commandes `defaults delete` avec index approprié
+- Génère les commandes PlistBuddy alternatives avec avertissements
+- **AMÉLIORATION** : Les commentaires d'avertissement s'affichent maintenant aussi en mode ONLY_CMDS=true
+- Les avertissements sur le changement d'index sont visibles même avec ONLY_CMDS pour guider l'utilisateur
+- **INTÉGRATION** : emit_array_deletions intégré dans show_plist_diff et show_domain_diff
+- **EXEMPLE** : Suppression du clavier French-PC génère maintenant:
+  - `defaults delete com.apple.HIToolbox ":AppleEnabledInputSources:3"`
+  - Alternative PlistBuddy avec avertissement sur les index
+
+## 2.3.5 — 2025-12-21
+- **AMÉLIORATION** : Avertissement intelligent pour suppressions dans les tableaux
+- Détection automatique des suppressions d'éléments de tableaux (présence de `:clé:index`)
+- Ajout d'un commentaire d'avertissement pour les suppressions de tableaux:
+  - "ATTENTION: Suppression dans un tableau - les index changent après chaque suppression"
+  - "Pour suppressions multiples: exécuter de l'index le plus GRAND vers le plus PETIT"
+- Les clés simples ne génèrent PAS de commentaire (pas de problème d'index)
+- Les commentaires sont filtrés en mode ONLY_CMDS (seules les commandes s'affichent)
+- Les commentaires sont visibles en mode normal pour informer l'utilisateur
+
+## 2.3.4 — 2025-12-21
+- **NOUVELLE FONCTIONNALITÉ** : Génération de commandes PlistBuddy pour les suppressions
+- Ajout de la fonction `convert_delete_to_plistbuddy()` qui convertit `defaults delete` en commandes PlistBuddy
+- Les suppressions d'éléments génèrent maintenant aussi des alternatives PlistBuddy (comme pour les ajouts)
+- Gère correctement les flags comme `-currentHost` dans les commandes delete
+- Supporte les suppressions de clés simples et d'éléments de tableaux (avec index)
+
+## 2.3.3 — 2025-12-21
+- **FIX** : Correction affichage commandes PlistBuddy en mode ONLY_CMDS
+- La fonction `convert_to_plistbuddy()` retourne maintenant uniquement les commandes exécutables (sans commentaires)
+- Chaque commande PlistBuddy est loggée individuellement avec le préfixe `Cmd:` pour passer le filtre ONLY_CMDS
+- Suppression de `head -1` dans le parsing pour éviter des artefacts d'affichage
+- Les commandes PlistBuddy s'affichent maintenant correctement en mode ONLY_CMDS=true
+
+## 2.3.2 — 2025-12-21
+- **SIMPLIFICATION** : Suppression du paramètre $9 EXCLUDE_COMMANDS redondant
+- Analyse du code a révélé que $9 EXCLUDE_COMMANDS était fonctionnellement identique à $8 EXCLUDE_DOMAINS
+- Suppression de la fonction `is_excluded_defaults_cmd()` (30 lignes) qui extrayait le domaine des commandes puis appelait `is_excluded_domain()`
+- Suppression de l'initialisation de EXCLUDE_DEFAULTS_PATTERNS (10 lignes)
+- Simplification de 8 sites d'appel qui utilisaient les deux fonctions successivement
+- **RÉSULTAT** : Code plus simple et plus maintenable avec une seule source de vérité pour l'exclusion de domaines
+- Le paramètre $8 EXCLUDE_DOMAINS gère maintenant seul toutes les exclusions de domaines
+
+## 2.3.1 — 2025-12-21
+- **FIX CRITIQUE** : Correction erreur de parsing zsh dans convert_to_plistbuddy
+- Remplacement de la syntaxe regex bash (`=~` et `BASH_REMATCH`) par sed/grep compatible zsh
+- La fonction parse maintenant correctement les payloads de dictionnaires
+- Plus d'erreur de syntaxe à l'exécution (watch-preferences.sh:230: parse error)
+
+## 2.3.0 — 2025-12-21
+- **PLISTBUDDY ALTERNATIVE** : Génération automatique de commandes PlistBuddy pour array-add
+- Nouvelle fonction `convert_to_plistbuddy()` qui convertit les commandes `defaults write -array-add` en équivalents PlistBuddy
+- Pour chaque commande `defaults write -array-add` générée, le script produit maintenant aussi une alternative PlistBuddy commentée
+- **AVANTAGE** : PlistBuddy est plus robuste que `defaults -array-add` pour les dictionnaires complexes
+- **FORMAT** : Les commandes PlistBuddy sont générées avec instructions pour obtenir l'index et ajouter chaque clé-valeur
+- Permet de choisir entre `defaults` (plus simple) ou `PlistBuddy` (plus fiable) selon le cas d'usage
+- Particulièrement utile pour des ajouts comme les layouts clavier dans `com.apple.HIToolbox`
+
+## 2.2.3 — 2025-12-21
+- **EXTRACTION PLUTIL (BETA)** : Utilisation de plutil pour détecter types complexes
+- Nouvelle fonction `extract_type_value_with_plutil()` pour extraire type et valeur
+- Lorsque le type ne peut pas être déterminé par regex, utilise `plutil -extract` pour obtenir la valeur réelle
+- Filtre automatique des commandes invalides avec `<type> <value>`
+- Gestion des types complexes (array, dict) avec commentaire indicatif
+- Permet la reproduction exacte des modifications de préférences
+- **IMPORTANT**: Fonctionnalité en beta, peut nécessiter des ajustements
+
+## 2.2.2 — 2025-12-21
+- **FILTRE AMÉLIORÉ** : Filtrage des commandes defaults non utiles
+- Nouvelle fonction `is_noisy_command()` pour filtrer les commandes bruyantes
+- Filtrage automatique des commandes avec `-float` (timestamps, positions, coordonnées)
+- Filtrage des clés UI qui changent constamment :
+  - `NSWindow Frame` (positions de fenêtres)
+  - `NSToolbar Configuration` (configurations de barres d'outils)
+  - `NSNavPanel` (états de dialogues)
+  - `NSSplitView` (positions de séparateurs)
+- Réduction drastique du bruit dans les logs pour se concentrer sur les préférences utiles
+
+## 2.2.1 — 2025-12-21
+- **AMÉLIORATION** : Paramètre $6 INCLUDE_SYSTEM défini à `true` par défaut
+- Les préférences système sont maintenant incluses par défaut en mode ALL
+- Comportement précédent : il fallait explicitement passer `true` pour inclure les préférences système
+- Nouveau comportement : les préférences système sont incluses sauf si on passe explicitement `false`
+
+## 2.2.0 — 2025-12-21
+- **SIMPLIFICATION MAJEURE** : Retrait complet de la fonctionnalité de génération de scripts
+- Suppression des paramètres $10 (SCRIPT_OUTPUT) et $11 (SCRIPT_OUTPUT_DIR)
+- Suppression du système de buffer de transactions et génération de scripts Jamf
+- Le script revient à sa fonction principale : monitoring et logging des préférences
+- Conservation de toutes les fonctionnalités de monitoring :
+  - Mode ALL avec optimisation snapshot (skip des domaines exclus)
+  - Filtrage des clés bruyantes (Dock metadata)
+  - Support defaults watch, fs_usage et polling
+  - Génération de commandes defaults write/delete/array-add
+  - Exclusion de domaines et commandes
+
+## 2.1.4 — 2025-12-20
+- **FILTRE DE BRUIT** : Filtrage des clés métadata internes (Dock)
+- Nouvelles clés filtrées pour com.apple.dock : `parent-mod-date`, `file-mod-date`, `mod-count`, `file-label`, `file-type`
+- Ces clés changent automatiquement lors de modifications système et polluaient les logs/scripts
+- **OPTIMISATION MODE ALL** : Skip silencieux des domaines exclus pendant le snapshot initial
+- Réduction drastique du temps de snapshot pour les systèmes avec beaucoup de préférences
+- Les domaines exclus via `$8` ne sont plus traités pendant l'initialisation
+- Amélioration des performances en mode ALL avec nombreux domaines
+
+## 2.1.3 — 2025-12-20
+- **AMÉLIORATION** : Changement du dossier de sortie par défaut
+- Nouveau dossier par défaut : `/Users/Shared/watch-preferences-scripts` (au lieu de `/tmp/...`)
+- `/Users/Shared` est plus adapté pour Jamf Pro et persiste entre redémarrages
+- Le fallback utilise également `/Users/Shared` en cas d'échec de création du dossier principal
+
+## 2.1.2 — 2025-12-20
+- **DOCUMENTATION** : Clarification du paramètre $7 ONLY_CMDS
+- Documentation mise à jour pour indiquer que ONLY_CMDS filtre pour afficher toutes les commandes utiles (defaults, PlistBuddy, plutil) et non seulement defaults write
+- Aucun changement de code, uniquement amélioration de la documentation
+
+## 2.1.1 — 2025-12-20
+- **CORRECTION CRITIQUE** : Parsing des paramètres $10 et $11 en zsh
+- Utilisation de `${argv[10]}` et `${argv[11]}` au lieu de `${10}` et `${11}` (incompatible zsh)
+- Correction typo dans generate_script: `/bin/date` au lieu de `/ bin/date`
+- Le mode SCRIPT_OUTPUT fonctionne maintenant correctement
+- Tests validés : génération de scripts Jamf-ready opérationnelle
+
+## 2.1.0 — 2025-11-21
+- **Génération de scripts Jamf-ready** : nouveau mode SCRIPT_OUTPUT qui regroupe les modifications liées en scripts bash cohérents
+- **Regroupement intelligent** : fenêtre de 3 secondes pour grouper les commandes liées (ex: ajout clavier)
+- **Scripts atomiques** : génère des scripts exécutables directement dans Jamf Pro
+- **Contexte détecté** : analyse automatique du type de modification (keyboard layout, array modification, etc.)
+- Nouveaux paramètres : `$10 = SCRIPT_OUTPUT` (true/false), `$11 = SCRIPT_OUTPUT_DIR`
+- Scripts générés avec headers descriptifs et gestion d'erreurs
+- Sortie par défaut : `/tmp/watch-preferences-scripts/jamf-prefs-YYYYMMDD-HHMMSS.sh`
+
+## 2.0.0 — 2025-11-21
+- Version majeure 2.0.0: système de versioning avec pre-commit et release.sh
+- Consolidation de toutes les fonctionnalités de la v1.9.3
+- Génération automatique des versions et gestion du changelog
+
+## 1.9.3 — 2025-09-30
+- Génère une seule commande `defaults … -array-add` pour les entrées de tableaux et évite les doublons entre watchers.
+- Continue à consigner les diff texte (bool, int, etc.) même si l’export JSON échoue, ce qui rétablit l’affichage des modifications Finder en mode `ONLY_CMDS`.
+- Mise à jour de l’en-tête du script et artefact `latest` pour la diffusion 1.9.3.
+Version: 1.9.3
+
+## 1.8.3 — 2025-09-16
+- ALL par défaut, un seul fichier log et une seule fenêtre Console.
+- Option `$6=INCLUDE_SYSTEM` (false par défaut): inclut les préférences système en mode ALL.
+- Détection temps réel plus fiable en ALL: fs_usage + polling + diff du domaine (`defaults export <domain>`), pour capter même si le .plist n'est pas encore flushé.
+- Robustesse: chemins absolus pour `mktemp`, `grep`, `tr`, `date`; écritures directes dans le log (au lieu de tee) pour éviter les anomalies.
+- Snapshot initial exhaustif: génère des `defaults write …` pour chaque clé existante (domaine ou ALL).
+Version: 1.8.3
+
+## 1.7.3 — 2025-09-16
+- ONLY_CMDS: filtre strict — n'affiche/écrit que les lignes `defaults write …` (sans horodatage), tout le reste est ignoré. Console.app s'ouvre toujours.
+Version: 1.7.3
+
+## 1.7.2 — 2025-09-16
+- ONLY_CMDS: affiche uniquement les commandes dans la console et les logs; réactive l'ouverture de Console.app; coupe le xtrace hérité.
+Version: 1.7.2
+
+## 1.7.1 — 2025-09-16
+- Ajoute le mode `ONLY_CMDS` (param 7 ou env var) pour ne montrer que les commandes. Initialement, désactivait l'ouverture de Console (ajusté en 1.7.2).
+Version: 1.7.1
+
+## 1.7.0 — 2025-09-16
+- Affiche la commande `defaults write` correspondante pour chaque nouvelle valeur (+), avec détection du type (string/bool/int/float) et `-currentHost` pour les ByHost.
+Version: 1.7.0
+
+## 1.6.0 — 2025-09-16
+- Console: affiche la clé et un aperçu de l’item pour chaque diff (domaines et plist).
+- Robustesse: utilisation explicite de `/usr/bin/dirname` et `/usr/bin/basename` dans `prepare_logfile`.
+Version: 1.6.0
+
+## 0.2.0 — 2025-09-06
+- Entrée ajoutée automatiquement
+Version: 0.2.0
+
+## 0.1.0 — YYYY-MM-DD
+- Initial template
+Version: 0.1.0
