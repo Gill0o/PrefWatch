@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.7.0
+# Version: 2.7.1
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -200,11 +200,11 @@ to_bool() {
 ONLY_CMDS=$(to_bool "$ONLY_CMDS_RAW")
 INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
 
-# If ONLY_CMDS is active, disable any inherited xtrace (noisy "kv=…")
-if [ "${ONLY_CMDS:-false}" = "true" ]; then
-  set +x 2>/dev/null || true
-  unsetopt xtrace 2>/dev/null || true
-fi
+# Always disable xtrace to prevent noisy variable assignments (kv=, keyname=, etc.)
+# This prevents debug output from appearing even with -v/--verbose flag
+# Users can still see all output via log files with timestamps
+set +x 2>/dev/null || true
+unsetopt xtrace 2>/dev/null || true
 
 # ============================================================================
 # SECTION 1.5: DOMAIN EXCLUSIONS & FILTERING
@@ -1575,6 +1575,12 @@ show_domain_diff() {
 get_plist_path_for_domain() {
   local domain="$1"
   local plist_path=""
+
+  # Special case: NSGlobalDomain uses .GlobalPreferences.plist
+  if [ "$domain" = "NSGlobalDomain" ] || [ "$domain" = ".GlobalPreferences" ]; then
+    plist_path="$HOME/Library/Preferences/.GlobalPreferences.plist"
+    [ -f "$plist_path" ] && echo "$plist_path" && return 0
+  fi
 
   # Try sandboxed Container first (common for modern apps)
   plist_path="$HOME/Library/Containers/${domain}/Data/Library/Preferences/${domain}.plist"

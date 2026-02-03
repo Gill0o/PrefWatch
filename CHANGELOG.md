@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.7.1 — 2026-02-03
+- **BUGFIX**: Fix NSGlobalDomain monitoring (mouse, trackpad, keyboard preferences)
+  - Added special case handling for NSGlobalDomain → `.GlobalPreferences.plist`
+  - Function `get_plist_path_for_domain()` now correctly locates global preferences
+  - Resolves issue where mouse double-click, keyboard repeat, and other NSGlobalDomain preferences weren't being monitored
+  - Discovered during extensive testing of 40+ preference domains
+- **BUGFIX**: Always disable xtrace to prevent debug variable output
+  - Removed conditional xtrace disabling (was only disabled in ONLY_CMDS mode)
+  - Now always disables xtrace even in verbose mode to prevent noisy output like `kv=`, `keyname=`, `val=`
+  - Users can still see all monitoring output via log files with timestamps
+  - Fixes issue reported where debug variables appeared in terminal output
+
 ## 2.7.0 — 2026-02-03
 - **FEATURE**: Intelligent key-level filtering with enhanced `is_noisy_key()`
   - Filter noisy keys within domains instead of excluding entire domains
