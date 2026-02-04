@@ -1,13 +1,22 @@
 # Changelog
 
-## 2.8.4 — 2026-02-04
-- **MAJOR BUGFIX**: Fixed root cause of array index calculation failure  - **THE PROBLEM**: `get_plist_path()` returned `~/Library/...` instead of `$HOME/Library/...`
+⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active development, use with caution
+
+## 2.8.4-beta — 2026-02-04
+- **STATUS**: Marked as BETA - active development and debugging ongoing
+- **MAJOR BUGFIX**: Fixed root cause of array index calculation failure
+  - **THE PROBLEM**: `get_plist_path()` returned `~/Library/...` instead of `$HOME/Library/...`
   - **WHY IT FAILED**: Shell doesn't expand `~` inside `[ -f "~/..." ]` test, so file check always failed
   - **THE FIX**: Changed line 370 from `"~/Library/..."` to `"$HOME/Library/..."`
   - **RESULT**: Now `[ -f "$plist_path" ]` succeeds → index calculation runs → correct indices generated!
 - **DIAGNOSTIC**: v2.8.3 debug showed NO `# DEBUG:` output = code never executed = file test failed
 - **CLEANED UP**: Removed debug output, re-enabled grep filter
 - **EXPECTED RESULT**: PlistBuddy commands will now show `:3:` or `:4:` instead of always `:0:`
+- **KNOWN ISSUE**: `$HOME` in Jamf/root context
+  - CLI mode (user): `$HOME` = `/Users/username/` ✅ Correct
+  - Jamf mode (root): `$HOME` = `/var/root/` ⚠️ May be incorrect for user prefs
+  - Script has `RUN_AS_USER` logic but `get_plist_path()` doesn't use it yet
+  - TODO: Detect logged-in user when running as root
 
 ## 2.8.3 — 2026-02-04 (DEBUG VERSION)
 - **DEBUG**: Added temporary debug output to diagnose index calculation issue

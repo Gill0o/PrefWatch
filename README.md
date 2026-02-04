@@ -1,8 +1,11 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.8.2-blue.svg)
+![Version](https://img.shields.io/badge/version-2.8.4--beta-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
+![Status](https://img.shields.io/badge/status-BETA-orange.svg)
+
+⚠️ **BETA VERSION** - Active development with known issues. Versions 2.7.x-2.8.x are being actively debugged and improved. Use with caution in production environments.
 
 A powerful macOS shell script for monitoring and capturing system preference changes in real-time. Perfect for system administrators, IT professionals, and anyone managing macOS configurations with Jamf Pro or other MDM solutions.
 
@@ -125,8 +128,8 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 ```
 
 ¹ **Auto-generated paths:**
-- ALL mode: `/var/log/watch.preferences-v2.8.2.log`
-- Domain mode: `/var/log/watch.preferences-v2.8.2-<domain>.log`
+- ALL mode: `/var/log/watch.preferences-v2.8.4.log`
+- Domain mode: `/var/log/watch.preferences-v2.8.4-<domain>.log`
 
 ² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
@@ -304,16 +307,18 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.8.2** (2026-02-04)
+Current version: **2.8.4-beta** (2026-02-04)
+
+⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active debugging and improvements in progress
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.8.2)
+### Recent Changes (v2.8.4-beta)
 
-- **BUGFIX**: Improved array index calculation with `defaults read | awk`
-- **IMPROVED**: More robust counting across different plist formats
+- **MAJOR FIX**: Fixed `~/` vs `$HOME` expansion bug in `get_plist_path()`
+- **RESULT**: Array index calculation now works correctly
 - **FIXED** (v2.8.1): Type detection for negative integers (`-19336`)
-- **RESULT**: Working towards correct indices in PlistBuddy commands
+- **STATUS**: Core functionality working, refinements ongoing
 
 ---
 
