@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active development, use with caution
 
+## 2.8.7-beta — 2026-02-04
+- **CRITICAL FIX**: Restored simple polling from v2.3.2 (detection was broken)
+  - Removed broken "optimized mtime check" that prevented change detection
+  - Reverted to reliable 1-second polling loop that always works
+  - Root cause: mtime optimization in subprocess never executed show_domain_diff
+  - Result: Change detection now works for ALL domains (Finder, symbolichotkeys, etc.)
+- **TESTED**: v2.3.2 worked perfectly, identified regression in 2.4.0+
+- **PRESERVES**: All PlistBuddy improvements, array indices, type detection, filtering
+
 ## 2.8.6-beta — 2026-02-04
 - **FEATURE**: Suppression complète des commandes `defaults write -array-add`
   - Affichage EXCLUSIF des commandes PlistBuddy pour array additions
