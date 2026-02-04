@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.8-beta
+# Version: 2.9.0-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1736,18 +1736,49 @@ launch_console() {
 
 # Start monitoring a specific domain
 start_watch() {
-  local POLL_PID=""
+  local POLL_PID="" plist_path last_mtime current_mtime
 
-  # Simple polling - run show_domain_diff every second (v2.3.2 approach - WORKS)
-  log_line "Mode: standard polling (checking domain every 1s)"
+  # Try to find the plist file for optimized mtime monitoring
+  plist_path=$(get_plist_path_for_domain "$DOMAIN")
 
-  (
-    while true; do
-      show_domain_diff "$DOMAIN"
-      sleep 1
-    done
-  ) &
-  POLL_PID=$!
+  if [ -n "$plist_path" ]; then
+    # Optimized mode: monitor file mtime, only diff when changed
+    log_line "Mode: optimized mtime polling (0.5s check on $plist_path)"
+
+    (
+      last_mtime=""
+      while true; do
+        if [ -f "$plist_path" ]; then
+          current_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
+
+          # Only run diff if file has changed
+          if [ -n "$current_mtime" ] && [ "$current_mtime" != "$last_mtime" ]; then
+            if [ -n "$last_mtime" ]; then
+              # File changed, run diff
+              show_domain_diff "$DOMAIN"
+            fi
+            last_mtime="$current_mtime"
+          fi
+        else
+          # File doesn't exist yet, wait for it
+          last_mtime=""
+        fi
+        sleep 0.5  # Check twice per second for responsiveness
+      done
+    ) &
+    POLL_PID=$!
+  else
+    # Fallback mode: traditional polling for domains without plist file
+    log_line "Mode: standard polling (plist not found, checking domain every 1s)"
+
+    (
+      while true; do
+        show_domain_diff "$DOMAIN"
+        sleep 1
+      done
+    ) &
+    POLL_PID=$!
+  fi
 
   trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; exit 0' TERM INT
   wait

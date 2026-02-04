@@ -1,6 +1,15 @@
 # Changelog
 
-⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active development, use with caution
+⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
+
+## 2.9.0-beta — 2026-02-04
+- **PERFORMANCE**: Restored optimized mtime polling (now that real bug is fixed)
+  - Only runs show_domain_diff when plist file actually changes
+  - Checks mtime every 0.5s instead of running full diff every 1s
+  - Saves CPU: ~1-2% CPU vs ~5-10% with standard polling
+  - Real bug was missing _has_array_additions variable (fixed in v2.8.8)
+  - User feedback: "les perfomances du script sont importantes"
+  - Falls back to standard polling if plist file not found
 
 ## 2.8.8-beta — 2026-02-04
 - **CRITICAL FIX**: Added missing `_has_array_additions` variable in `show_domain_diff()`
