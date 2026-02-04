@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.4
+# Version: 2.8.5-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1241,10 +1241,12 @@ show_plist_diff() {
   typeset -A _skip_keys
   _skip_keys=()
   local _array_meta_raw=""
+  local _has_array_additions=false
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     _array_meta_raw=$(emit_array_additions "$kind" "$_dom" "$prev_json" "$curr_json") || _array_meta_raw=""
     if [ -n "$_array_meta_raw" ]; then
+      _has_array_additions=true
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         _skip_keys["$_array_base"]=1
@@ -1295,6 +1297,15 @@ show_plist_diff() {
 
         if [ -n "${_skip_keys[$keyname]:-}" ]; then
           continue
+        fi
+
+        # Additional filtering: if we had array additions, skip any top-level key
+        # that looks like it's part of a dictionary (contains space or common dict key patterns)
+        if [ "$_has_array_additions" = "true" ] && [[ "$keyname" != *":"* ]]; then
+          # Skip keys that are likely dictionary sub-keys (contain spaces or match common patterns)
+          if [[ "$keyname" == *" "* ]] || [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-label|bundle-identifier).*$ ]]; then
+            continue
+          fi
         fi
 
         if is_noisy_key "$dom" "$keyname"; then
@@ -1532,6 +1543,15 @@ show_domain_diff() {
 
         if [ -n "${_skip_keys[$keyname]:-}" ]; then
           continue
+        fi
+
+        # Additional filtering: if we had array additions, skip any top-level key
+        # that looks like it's part of a dictionary (contains space or common dict key patterns)
+        if [ "$_has_array_additions" = "true" ] && [[ "$keyname" != *":"* ]]; then
+          # Skip keys that are likely dictionary sub-keys (contain spaces or match common patterns)
+          if [[ "$keyname" == *" "* ]] || [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-label|bundle-identifier).*$ ]]; then
+            continue
+          fi
         fi
 
         if is_noisy_key "$dom" "$keyname"; then

@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active development, use with caution
 
+## 2.8.5-beta — 2026-02-04
+- **FEATURE**: Suppression des commandes `defaults write` redondantes pour clés de dictionnaires
+  - Quand un array addition est détecté, les commandes individuelles top-level sont filtrées
+  - Filtre automatique des clés contenant des espaces (ex: `KeyboardLayout ID`)
+  - Filtre des patterns connus (InputSourceKind, KeyboardLayout, tile-data, file-label, etc.)
+  - **RESULT**: Sortie plus propre - garde seulement `defaults write -array-add` + PlistBuddy
+- **VERSION**: Ajout de `-beta` explicite dans `# Version: 2.8.5-beta` du script
+- **USER REQUEST**: "suppression des commandes défaults d'abord pour clean les résultats"
+
 ## 2.8.4-beta — 2026-02-04
 - **STATUS**: Marked as BETA - active development and debugging ongoing
 - **MAJOR BUGFIX**: Fixed root cause of array index calculation failure
