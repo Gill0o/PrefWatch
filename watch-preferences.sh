@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.1
+# Version: 2.8.2
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -812,12 +812,14 @@ convert_to_plistbuddy() {
     # Calculate actual array index by reading current array length
     local actual_index=0
     if [ -f "$plist_path" ]; then
-      # Use defaults read to get the array and count elements with PlistBuddy
+      # Use defaults read to get the array and count dictionary elements with awk
       local array_count
-      array_count=$(/usr/libexec/PlistBuddy -c "Print :${key}" "$plist_path" 2>/dev/null | /usr/bin/grep -c "^    Dict {" 2>/dev/null) || array_count="0"
-      # If grep returns nothing or command fails, default to 0
+      # defaults read outputs array elements as dictionaries starting with "{"
+      # Count opening braces at the beginning of lines (after whitespace)
+      array_count=$("${RUN_AS_USER[@]}" /usr/bin/defaults read "$domain" "$key" 2>/dev/null | /usr/bin/awk '/^[[:space:]]*\{/ {count++} END {print count+0}' 2>/dev/null) || array_count="0"
+      # Ensure we have a number
       [ -z "$array_count" ] && array_count="0"
-      actual_index="$array_count"
+      [ "$array_count" = "0" ] || actual_index="$array_count"
     fi
 
     # Parse the dictionary payload

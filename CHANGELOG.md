@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.2 — 2026-02-04
+- **BUGFIX**: Improved array index calculation with more robust defaults read approach
+  - Replaced `PlistBuddy Print | grep` with `defaults read | awk` counting
+  - Uses: `defaults read domain key | awk '/^[[:space:]]*\{/ {count++}'`
+  - More reliable detection across different plist formats and states
+  - Handles edge cases where PlistBuddy output format varies
+- **IMPROVED**: Better number validation with `print count+0` to ensure numeric output
+- **NOTE**: If index still shows :0:, may indicate timing issue (plist not yet saved to disk)
+
 ## 2.8.1 — 2026-02-04
 - **BUGFIX**: Fixed array index calculation to return correct indices
   - Replaced unreliable `plutil -extract | grep -c '<dict>'` with `PlistBuddy Print | grep -c "^    Dict {"`

@@ -1,6 +1,6 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.8.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.8.2-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
@@ -125,8 +125,8 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 ```
 
 ¹ **Auto-generated paths:**
-- ALL mode: `/var/log/watch.preferences-v2.8.1.log`
-- Domain mode: `/var/log/watch.preferences-v2.8.1-<domain>.log`
+- ALL mode: `/var/log/watch.preferences-v2.8.2.log`
+- Domain mode: `/var/log/watch.preferences-v2.8.2-<domain>.log`
 
 ² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
@@ -304,16 +304,16 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.8.1** (2026-02-04)
+Current version: **2.8.2** (2026-02-04)
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.8.1)
+### Recent Changes (v2.8.2)
 
-- **BUGFIX**: Fixed array index calculation using PlistBuddy Print
-- **BUGFIX**: Fixed type detection for negative integers (`-19336`)
-- **IMPROVED**: Better filtering of redundant dictionary key commands
-- **RESULT**: PlistBuddy commands with correct indices and types
+- **BUGFIX**: Improved array index calculation with `defaults read | awk`
+- **IMPROVED**: More robust counting across different plist formats
+- **FIXED** (v2.8.1): Type detection for negative integers (`-19336`)
+- **RESULT**: Working towards correct indices in PlistBuddy commands
 
 ---
 
