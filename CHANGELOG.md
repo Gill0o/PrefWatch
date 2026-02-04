@@ -2,6 +2,19 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.3-beta — 2026-02-04
+- **ARCHITECTURE**: Refactored filtering to use universal global patterns
+  - **IMPROVEMENT**: Moved domain-specific filters to global patterns for universal coverage
+  - **NEW GLOBAL PATTERNS**:
+    - `*timestamp*`, `*Timestamp*`, `*LastRetry*`, `*LastSync*` (timestamps)
+    - `*Date`, `Date` (date fields)
+    - `*PlaybackStatus*`, `*ConnectionState*`, `*lastNowPlayedTime*` (transient states)
+    - `state`, `status`, `State`, `Status` (app running states)
+  - **RESULT**: Works with ANY app without code updates (user suggestion)
+  - **EXAMPLE**: Catches `icloudmailagent "lastRetryTimestamp"` automatically
+  - **REMOVED**: Redundant FaceTime, Bluetooth, VoiceTrigger, third-party app filters
+  - **BENEFIT**: More maintainable, universal filtering for all present/future apps
+
 ## 2.9.2-beta — 2026-02-04
 - **FILTER**: Added filtering for multiple noisy domains
   - **FaceTime**: Filter `Date` timestamps and bag sync metadata

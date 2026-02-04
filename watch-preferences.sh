@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.2-beta
+# Version: 2.9.3-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -453,8 +453,13 @@ is_noisy_key() {
     NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*)
       return 0 ;;
 
-    # Timestamps & dates (metadata, not preferences)
-    *-last-seen|*-timestamp|*-last-update|*LastUpdate*|*LastSeen*|*-last-modified)
+    # Timestamps & dates (metadata, not preferences) - UNIVERSAL
+    # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, etc.
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*)
+      return 0 ;;
+
+    # Date fields (float/string dates are usually metadata)
+    *Date|Date)
       return 0 ;;
 
     # File metadata (changes on every file operation)
@@ -471,6 +476,14 @@ is_noisy_key() {
 
     # View state (scroll positions, selected items, etc.)
     *ScrollPosition|*SelectedItem*|*ViewOptions*|*IconViewSettings*)
+      return 0 ;;
+
+    # Playback & connection state (transient states across all apps)
+    *PlaybackStatus*|*Playback*Status*|*ConnectionState*|*lastNowPlayedTime*|*LastConnected*)
+      return 0 ;;
+
+    # App state & status (running state, temporary status)
+    state|status|State|Status)
       return 0 ;;
   esac
 
@@ -527,45 +540,9 @@ is_noisy_key() {
       esac
       ;;
 
-    # FaceTime: Filter sync timestamps
-    com.apple.facetime*)
-      case "$keyname" in
-        # Noisy: sync timestamps, bag updates
-        Date|*Timestamp*|*LastUpdate*)
-          return 0 ;;
-        # Keep: actual FaceTime settings
-      esac
-      ;;
-
-    # Bluetooth: Filter playback timestamps and transient states
-    com.apple.bluetooth*)
-      case "$keyname" in
-        # Noisy: media playback timestamps, connection states
-        lastNowPlayedTime|*LastConnected*|*Timestamp*)
-          return 0 ;;
-        # Keep: device pairings, audio settings
-      esac
-      ;;
-
-    # Voice Trigger (Siri): Filter playback status
-    com.apple.voicetrigger*)
-      case "$keyname" in
-        # Noisy: temporary playback/activation states
-        *Playback*Status*|*Activation*State*)
-          return 0 ;;
-        # Keep: Siri settings, voice recognition settings
-      esac
-      ;;
-
-    # Third-party apps: Generic state/status filtering
-    *.bjango.*|*.status)
-      case "$keyname" in
-        # Noisy: app running state, temporary status
-        state|status|State|Status)
-          return 0 ;;
-        # Keep: actual app preferences
-      esac
-      ;;
+    # NOTE: FaceTime, Bluetooth, VoiceTrigger, and third-party app state filters
+    # have been moved to GLOBAL PATTERNS above for universal coverage.
+    # This keeps the script maintainable and works with any app.
   esac
 
   return 1
