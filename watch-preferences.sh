@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.7.3
+# Version: 2.7.4
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -203,8 +203,12 @@ INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
 # Always disable xtrace to prevent noisy variable assignments (kv=, keyname=, etc.)
 # This prevents debug output from appearing even with -v/--verbose flag
 # Users can still see all output via log files with timestamps
+# Use multiple methods to ensure xtrace is disabled regardless of shell state
 set +x 2>/dev/null || true
+set +v 2>/dev/null || true
 unsetopt xtrace 2>/dev/null || true
+unsetopt verbose 2>/dev/null || true
+{ set +o xtrace; } 2>/dev/null || true
 
 # ============================================================================
 # SECTION 1.5: DOMAIN EXCLUSIONS & FILTERING

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.7.4 — 2026-02-04
+- **BUGFIX**: Strengthen xtrace/verbose disabling to prevent debug variable output
+  - Added multiple disable methods: `set +x`, `set +v`, `unsetopt xtrace`, `unsetopt verbose`, `set +o xtrace`
+  - Fixes debug output like `dict_key=`, `dict_value=` appearing in logs
+  - Ensures clean output regardless of parent shell xtrace state
+- **KNOWN ISSUE**: Dictionary keys within arrays may generate extra individual commands
+  - Example: `defaults write com.apple.HIToolbox "InputSourceKind" -string "..."` (redundant)
+  - These are harmless but redundant - use the `array-add` or PlistBuddy commands instead
+  - Full fix for improved array/dict key filtering planned for future release
+
 ## 2.7.3 — 2026-02-03
 - **BUGFIX**: Fix type detection for float values that look like integers or booleans
   - Added `defaults read-type` check to determine actual plist type before applying heuristics
