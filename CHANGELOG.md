@@ -2,6 +2,13 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active development, use with caution
 
+## 2.8.8-beta — 2026-02-04
+- **CRITICAL FIX**: Added missing `_has_array_additions` variable in `show_domain_diff()`
+  - Variable was used but never defined (copied from show_plist_diff logic)
+  - Was causing undefined variable reference in filtering conditions
+  - Now properly initialized to `false` and set to `true` when array additions detected
+  - Should restore change detection functionality
+
 ## 2.8.7-beta — 2026-02-04
 - **CRITICAL FIX**: Restored simple polling from v2.3.2 (detection was broken)
   - Removed broken "optimized mtime check" that prevented change detection

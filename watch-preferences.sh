@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.7-beta
+# Version: 2.8.8-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1490,12 +1490,14 @@ show_domain_diff() {
   typeset -A _skip_keys
   _skip_keys=()
   local _array_meta_raw=""
+  local _has_array_additions=false
 
   if [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     _array_meta_raw=$(emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json") || _array_meta_raw=""
     emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json"
 
     if [ -n "$_array_meta_raw" ]; then
+      _has_array_additions=true
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         _skip_keys["$_array_base"]=1
