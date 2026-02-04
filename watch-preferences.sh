@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.7.4
+# Version: 2.7.5
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1219,7 +1219,15 @@ show_plist_diff() {
           IFS=',' read -rA _array_key_list <<< "$_array_keys"
           for _k in "${_array_key_list[@]}"; do
             [ -n "$_k" ] || continue
+            # Skip the base key name (e.g., "InputSourceKind")
             _skip_keys["$_k"]=1
+            # Also skip with array prefix variations to catch all forms
+            _skip_keys["${_array_base}:${_k}"]=1
+            _skip_keys[":${_array_base}:${_k}"]=1
+            if [ -n "$_array_idx" ]; then
+              _skip_keys["${_array_base}:${_array_idx}:${_k}"]=1
+              _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
+            fi
           done
         fi
       done <<< "$_array_meta_raw"
@@ -1452,7 +1460,15 @@ show_domain_diff() {
           IFS=',' read -rA _array_key_list <<< "$_array_keys"
           for _k in "${_array_key_list[@]}"; do
             [ -n "$_k" ] || continue
+            # Skip the base key name (e.g., "InputSourceKind")
             _skip_keys["$_k"]=1
+            # Also skip with array prefix variations to catch all forms
+            _skip_keys["${_array_base}:${_k}"]=1
+            _skip_keys[":${_array_base}:${_k}"]=1
+            if [ -n "$_array_idx" ]; then
+              _skip_keys["${_array_base}:${_array_idx}:${_k}"]=1
+              _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
+            fi
           done
         fi
       done <<< "$_array_meta_raw"
