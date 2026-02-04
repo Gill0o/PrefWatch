@@ -179,15 +179,30 @@ Add custom exclusions:
 
 ### PlistBuddy Commands
 
-For complex dictionaries and arrays, the script generates both `defaults` and `PlistBuddy` alternatives:
+For complex dictionaries and arrays, the script generates **PlistBuddy commands exclusively** (v2.8.6+):
 
 ```bash
-# defaults command (simpler but sometimes fails with complex types)
-defaults write com.apple.HIToolbox AppleEnabledInputSources -array-add '<dict>...</dict>'
-
-# PlistBuddy alternative (more reliable for complex structures)
+# PlistBuddy commands for array additions (more reliable for complex structures)
 /usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:3:InputSourceKind string 'Keyboard Layout'" ~/Library/Preferences/com.apple.HIToolbox.plist
+/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:3:KeyboardLayout ID integer 252" ~/Library/Preferences/com.apple.HIToolbox.plist
 ```
+
+**⚠️ Important for Admins: Sequential Execution Required**
+
+When multiple array additions are detected in quick succession, all commands may reference the **same initial index** (e.g., `:5:`). This is because indices are calculated at detection time, not after execution.
+
+**Correct execution:** Run commands **sequentially in order**
+```bash
+# Command 1 adds at index :5: (creates the entry)
+/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:5:InputSourceKind string 'Keyboard Layout'" ~/Library/Preferences/com.apple.HIToolbox.plist
+
+# Command 2 for the same addition continues adding to :5:
+/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:5:KeyboardLayout ID integer 252" ~/Library/Preferences/com.apple.HIToolbox.plist
+
+# Next addition will naturally go to :6: after :5: is complete
+```
+
+**❌ Do NOT:** Execute all commands simultaneously or out of order - this will cause index conflicts.
 
 ### Array Deletion Warnings
 

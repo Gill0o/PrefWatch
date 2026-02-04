@@ -8,6 +8,10 @@
   - Lignes 1077-1109: Retrait de l'affichage de `log_line "Cmd: $cmd"`
   - Conservation de la conversion via `convert_to_plistbuddy()` pour générer PlistBuddy
   - **RESULT**: Sortie ultra-propre - seulement commandes PlistBuddy exécutables
+- **DOCUMENTATION**: Ajout note explicite pour admins sur l'exécution séquentielle
+  - Les index sont calculés au moment de la détection
+  - Les commandes PlistBuddy doivent être exécutées DANS L'ORDRE
+  - Ne pas exécuter en parallèle pour éviter conflits d'index
 - **USER REQUEST**: "Option 1 for sure" - remove defaults write -array-add completely
 - **WHY**: Plus lisible, directement exploitable, pas de redondance
 
