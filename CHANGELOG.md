@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.1-beta — 2026-02-04
+- **FILTER**: Added filtering for noisy System Settings indexing timestamps
+  - Now filters `*update-state-indexing*` keys (e.g., "update-state-indexing completed time")
+  - These are internal metadata timestamps with no admin value
+  - Part of existing systemsettings filtering in `is_noisy_key()`
+
 ## 2.9.0-beta — 2026-02-04
 - **PERFORMANCE**: Restored optimized mtime polling (now that real bug is fixed)
   - Only runs show_domain_diff when plist file actually changes

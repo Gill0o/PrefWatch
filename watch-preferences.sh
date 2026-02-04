@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.0-beta
+# Version: 2.9.1-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -502,8 +502,8 @@ is_noisy_key() {
     # System Settings: Filter timestamps, keep actual settings
     com.apple.systemsettings*|com.apple.systempreferences)
       case "$keyname" in
-        # Noisy: last seen timestamps, navigation state
-        *-last-seen|*LastUpdate*|*NavigationState*)
+        # Noisy: last seen timestamps, navigation state, indexing timestamps
+        *-last-seen|*LastUpdate*|*NavigationState*|*update-state-indexing*)
           return 0 ;;
         # Keep: actual preference values
       esac
