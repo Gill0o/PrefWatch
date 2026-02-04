@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.3 — 2026-02-04 (DEBUG VERSION)
+- **DEBUG**: Added temporary debug output to diagnose index calculation issue
+  - Shows: `# DEBUG: domain=... key=... array_count=... actual_index=...`
+  - Disabled grep filter temporarily to see all output including errors
+  - This will help identify why index remains at :0: despite correct manual counting
+- **PURPOSE**: This is a diagnostic version to understand the root cause
+- **NEXT**: Will create clean version once issue is identified
+
 ## 2.8.2 — 2026-02-04
 - **BUGFIX**: Improved array index calculation with more robust defaults read approach
   - Replaced `PlistBuddy Print | grep` with `defaults read | awk` counting
