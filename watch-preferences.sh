@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.3
+# Version: 2.8.4
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -367,7 +367,8 @@ get_plist_path() {
   if [[ "$domain" =~ ^/ ]]; then
     printf '%s' "$domain"
   else
-    printf '%s' "~/Library/Preferences/${domain}.plist"
+    # Use $HOME instead of ~ to ensure proper expansion in [ -f ... ] tests
+    printf '%s' "$HOME/Library/Preferences/${domain}.plist"
   fi
 }
 
@@ -820,8 +821,6 @@ convert_to_plistbuddy() {
       # Ensure we have a number
       [ -z "$array_count" ] && array_count="0"
       [ "$array_count" = "0" ] || actual_index="$array_count"
-      # DEBUG: Show what we calculated
-      printf '# DEBUG: domain=%s key=%s array_count=%s actual_index=%s\n' "$domain" "$key" "$array_count" "$actual_index" >&2
     fi
 
     # Parse the dictionary payload
@@ -873,7 +872,7 @@ convert_to_plistbuddy() {
       printf '%s\n' "${pb_cmds[@]}"
     fi
     return 0
-  } # TEMPORARILY DISABLED FILTER FOR DEBUG: 2>&1 | /usr/bin/grep -v '^[a-z_]*=' || true
+  } 2>&1 | /usr/bin/grep -v '^[a-z_]*=' || true
 }
 
 # Convert a defaults delete command to PlistBuddy
