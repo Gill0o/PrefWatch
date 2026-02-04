@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.7.2
+# Version: 2.7.3
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1278,7 +1278,20 @@ show_plist_diff() {
               dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
             fi
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            if printf '%s' "$trimmed" | /usr/bin/grep -Eq '^".*"$'; then
+
+            # Check actual plist type first to avoid misdetection (e.g., float "1" detected as bool/int)
+            local actual_type=""
+            actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" ${hostflag:+$hostflag} 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+
+            # Use actual plist type when available for numeric/bool values to avoid misdetection
+            if [ "$actual_type" = "float" ]; then
+              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+            elif [ "$actual_type" = "integer" ]; then
+              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+            elif [ "$actual_type" = "boolean" ]; then
+              type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
+              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+            elif printf '%s' "$trimmed" | /usr/bin/grep -Eq '^".*"$'; then
               noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
               str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
               cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
@@ -1481,7 +1494,20 @@ show_domain_diff() {
 
             local trimmed type_val str noquotes cmd
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            if printf '%s' "$trimmed" | /usr/bin/grep -Eq '^".*"$'; then
+
+            # Check actual plist type first to avoid misdetection (e.g., float "1" detected as bool/int)
+            local actual_type=""
+            actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+
+            # Use actual plist type when available for numeric/bool values to avoid misdetection
+            if [ "$actual_type" = "float" ]; then
+              cmd="defaults write ${dom} \"${keyname}\" -float ${trimmed}"
+            elif [ "$actual_type" = "integer" ]; then
+              cmd="defaults write ${dom} \"${keyname}\" -int ${trimmed}"
+            elif [ "$actual_type" = "boolean" ]; then
+              type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
+              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
+            elif printf '%s' "$trimmed" | /usr/bin/grep -Eq '^".*"$'; then
               noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
               str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
               cmd="defaults write ${dom} \"${keyname}\" -string \"${str}\""

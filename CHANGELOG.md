@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.7.3 — 2026-02-03
+- **BUGFIX**: Fix type detection for float values that look like integers or booleans
+  - Added `defaults read-type` check to determine actual plist type before applying heuristics
+  - Fixes issue where `scrollwheel.scaling` value `1` was detected as bool instead of float
+  - Fixes issue where float preferences at maximum (value=1) generated `-bool TRUE` instead of `-float 1`
+  - Now checks actual plist type first: if type is `float`, uses `-float` regardless of value format
+  - Example: `defaults write .GlobalPreferences com.apple.scrollwheel.scaling -float 1` (was: `-bool TRUE`)
+  - Applies to all similar cases where float values happen to be whole numbers (0, 1, 2, etc.)
+
 ## 2.7.2 — 2026-02-03
 - **BUGFIX**: Fix command generation for float preferences
   - `is_noisy_command()` was filtering ALL `-float` commands (too broad)
