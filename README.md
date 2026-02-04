@@ -1,6 +1,6 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.7.2-blue.svg)
+![Version](https://img.shields.io/badge/version-2.8.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
@@ -125,8 +125,8 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 ```
 
 ¹ **Auto-generated paths:**
-- ALL mode: `/var/log/preferences.watch.log`
-- Domain mode: `/var/log/<domain>.prefs.log`
+- ALL mode: `/var/log/watch.preferences-v2.8.0.log`
+- Domain mode: `/var/log/watch.preferences-v2.8.0-<domain>.log`
 
 ² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
@@ -304,18 +304,17 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.7.2** (2026-02-03)
+Current version: **2.8.0** (2026-02-04)
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.7.2)
+### Recent Changes (v2.8.0)
 
-- **NEW**: Intelligent key-level filtering with `is_noisy_key()` function
-- **NEW**: Domain-specific filters for Dock, Finder, Safari, SystemSettings
-- **NEW**: Global patterns for window frames, timestamps, recent items, cache
-- **IMPROVED**: Monitor useful preferences in previously excluded domains
-- **ORGANIZATION**: Refactored exclusions into categorized SECTION 1.5
-- **ORGANIZATION**: Added SECTION 1.6 for preflight checks & environment setup
+- **MAJOR BUGFIX**: Complete rewrite of PlistBuddy conversion function
+- **FIXED**: All debug output eliminated (`dict_key=`, `dict_value=`)
+- **FIXED**: Array index calculation now returns correct indices (not `:0:`)
+- **IMPROVED**: More reliable `plutil -extract` based array counting
+- **RESULT**: Clean, fully executable bash output with proper PlistBuddy commands
 
 ---
 

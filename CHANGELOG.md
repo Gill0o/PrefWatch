@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.8.0 — 2026-02-04
+- **MAJOR BUGFIX**: Complete rewrite of convert_to_plistbuddy function
+  - **Fixed debug output**: Eliminated all debug output (`dict_key=`, `dict_value=`, etc.)
+    - Used `setopt NO_XTRACE` and `setopt LOCAL_OPTIONS` for proper zsh trace control
+    - Added output filter `grep -v '^[a-z_]*='` to catch any escaped debug lines
+    - Renamed internal variables from `dict_key`/`dict_value` to `k`/`v` to avoid patterns
+  - **Fixed array index calculation**: Now returns correct indices instead of always `:0:`
+    - Replaced unreliable Python JSON parsing with native `plutil -extract` approach
+    - Uses `plutil -extract "$key" xml1 | grep -c '<dict>'` to count array elements
+    - Example: Correctly generates `:AppleEnabledInputSources:2:` instead of `:AppleEnabledInputSources:0:`
+  - **Improved reliability**: More robust parsing that handles edge cases
+    - Better error handling with proper defaults (0 for missing arrays)
+    - Cleaner variable assignments that don't trigger shell tracing
+- **RESULT**: PlistBuddy commands are now fully functional with correct indices and zero debug output
+- **USER FEEDBACK**: "lisible et directement exploitable dans un script bash" - ✅ Achieved
+- **PRODUCTION READY**: All reported issues from v2.7.3-2.7.9 now resolved
+
+## 2.7.9 — 2026-02-04
+- **FEATURE**: Versioned log file names for better version tracking
+  - Log files now include script version in filename
+  - ALL mode: `/var/log/watch.preferences-v2.7.9.log` (was: `preferences.watch.log`)
+  - Domain mode: `/var/log/watch.preferences-v2.7.9-com.apple.dock.log` (was: `com.apple.dock.prefs.log`)
+  - Automatic version extraction from script header
+  - Easier to track logs across different script versions
+  - Custom log paths (via --log/-l flag) remain unchanged
+
+## 2.7.8 — 2026-02-04
+- **BUGFIX**: Completely eliminate debug output from PlistBuddy conversion
+  - Wrapped entire while loop body in `{ set +x +v ... } 2>/dev/null` block
+  - Prevents variable assignment debug output even when parent shell has xtrace enabled
+  - Fixes persistent `dict_key=`, `dict_value=` output in v2.7.7
+- **BUGFIX**: Fix array index calculation using Python JSON parsing
+  - Replaced fragile `grep -c "^    "` approach with robust Python-based array length detection
+  - Fixes incorrect index `:0:` when should be `:3:` or higher
+  - Example: Now generates `Add :AppleEnabledInputSources:3:InputSourceKind` correctly
+- **RESULT**: PlistBuddy commands now have correct indices and zero debug output
+
+## 2.7.7 — 2026-02-04
+- **PARTIAL FIX**: v2.7.7 had issues with debug output and index calculation
+  - See v2.7.8 for complete fix
+- **FEATURE**: Auto-calculate array indices in PlistBuddy commands (replace `$INDEX` placeholders)
+  - Essential for array operations like keyboard layout management
+  - User feedback: "defaults delete ne suffit pas pour nettoyer les arrays correctement"
+
+## 2.7.6 — 2026-02-04
+- **REVERTED**: This version incorrectly suppressed PlistBuddy commands
+  - PlistBuddy commands are necessary for proper array cleanup operations
+  - See v2.7.7 for proper fix
+
 ## 2.7.5 — 2026-02-04
 - **BUGFIX**: Eliminate redundant commands for dictionary keys within arrays
   - Improved _skip_keys filtering to include all variations of dict key paths

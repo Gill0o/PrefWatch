@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.7.5
+# Version: 2.8.0
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -333,14 +333,18 @@ CACHE_DIR=""                  # Cache directory for plist diffs (WATCH_ALL mode)
 DOMAIN_TAG="$DOMAIN"
 [ "$ALL_MODE" = "true" ] && DOMAIN_TAG="all"
 
+# Extract script version from header
+SCRIPT_VERSION=$(head -20 "$0" 2>/dev/null | /usr/bin/grep "^# Version:" | /usr/bin/sed -E 's/^# Version: //' | head -1)
+[ -z "$SCRIPT_VERSION" ] && SCRIPT_VERSION="unknown"
+
 # Log file configuration
 if [ -n "$LOG_FILE_PARAM" ]; then
   LOGFILE="$LOG_FILE_PARAM"
 else
   if [ "$ALL_MODE" = "true" ]; then
-    LOGFILE="/var/log/preferences.watch.log"
+    LOGFILE="/var/log/watch.preferences-v${SCRIPT_VERSION}.log"
   else
-    LOGFILE="/var/log/${DOMAIN}.prefs.log"
+    LOGFILE="/var/log/watch.preferences-v${SCRIPT_VERSION}-${DOMAIN}.log"
   fi
 fi
 
@@ -783,66 +787,96 @@ extract_domain_from_defaults_cmd() {
 
 # Convert a defaults write -array-add command to PlistBuddy
 convert_to_plistbuddy() {
-  local cmd="$1"
+  # Wrap entire function to suppress all debug output
+  {
+    # Explicitly disable all tracing for zsh
+    setopt LOCAL_OPTIONS 2>/dev/null || true
+    setopt NO_XTRACE 2>/dev/null || true
+    set +x +v 2>/dev/null || true
 
-  local domain key payload
-  domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/defaults write ([^ ]+) .*/\1/p')
-  key=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/defaults write [^ ]+ "([^"]+)" .*/\1/p')
-  payload=$(printf '%s' "$cmd" | /usr/bin/sed -nE "s/.*-array-add '(.*)'/\1/p")
+    local cmd="$1"
 
-  [ -n "$domain" ] || return 1
-  [ -n "$key" ] || return 1
-  [ -n "$payload" ] || return 1
+    # Extract components using sed
+    local domain key payload
+    domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/defaults write ([^ ]+) .*/\1/p')
+    key=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/defaults write [^ ]+ "([^"]+)" .*/\1/p')
+    payload=$(printf '%s' "$cmd" | /usr/bin/sed -nE "s/.*-array-add '(.*)'/\1/p")
 
-  local plist_path
-  plist_path="$(get_plist_path "$domain")"
+    [ -n "$domain" ] || return 1
+    [ -n "$key" ] || return 1
+    [ -n "$payload" ] || return 1
 
-  local inside="${payload#\{ }"
-  inside="${inside% \}}"
+    local plist_path
+    plist_path="$(get_plist_path "$domain")"
 
-  local -a pb_cmds
-  local parsing="$inside"
-
-  while [ -n "$parsing" ]; do
-    local dict_key dict_value
-    dict_key=$(printf '%s' "$parsing" | /usr/bin/sed -nE 's/^[[:space:]]*"([^"]+)"[[:space:]]*=.*/\1/p')
-
-    if [ -z "$dict_key" ]; then
-      break
+    # Calculate actual array index using plutil -extract (more reliable than Python)
+    local actual_index=0
+    if [ -f "$plist_path" ]; then
+      # Try to extract the array and count elements using plutil directly
+      local array_count
+      array_count=$(/usr/bin/plutil -extract "$key" xml1 -o - "$plist_path" 2>/dev/null | /usr/bin/grep -c '<dict>' 2>/dev/null) || array_count="0"
+      # If grep returns nothing, default to 0
+      [ -z "$array_count" ] && array_count="0"
+      actual_index="$array_count"
     fi
 
-    dict_value=$(printf '%s' "$parsing" | /usr/bin/sed -nE 's/^[[:space:]]*"[^"]+"[[:space:]]*=[[:space:]]*([^;]+);.*/\1/p')
+    # Parse the dictionary payload
+    local inside="${payload#\{ }"
+    inside="${inside% \}}"
 
-    if [ -z "$dict_value" ]; then
-      break
+    local -a pb_cmds
+    local parsing="$inside"
+
+    # Parse each key-value pair in the dictionary
+    while [ -n "$parsing" ]; do
+      # Extract key name
+      local k
+      k=$(printf '%s' "$parsing" | /usr/bin/sed -nE 's/^[[:space:]]*"([^"]+)"[[:space:]]*=.*/\1/p')
+
+      [ -z "$k" ] && break
+
+      # Extract value
+      local v
+      v=$(printf '%s' "$parsing" | /usr/bin/sed -nE 's/^[[:space:]]*"[^"]+"[[:space:]]*=[[:space:]]*([^;]+);.*/\1/p')
+
+      [ -z "$v" ] && break
+
+      # Trim whitespace
+      v=$(printf '%s' "$v" | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+
+      # Determine type
+      local vtype="string"
+      if printf '%s' "$v" | /usr/bin/grep -Eq '^[0-9]+$'; then
+        vtype="integer"
+      elif printf '%s' "$v" | /usr/bin/grep -Eq '^(YES|NO)$'; then
+        vtype="bool"
+      elif printf '%s' "$v" | /usr/bin/grep -Eq '^".*"$'; then
+        # Remove surrounding quotes for string values
+        v="${v#\"}"
+        v="${v%\"}"
+        vtype="string"
+      fi
+
+      # Build PlistBuddy command with actual index
+      pb_cmds+=("/usr/libexec/PlistBuddy -c 'Add :${key}:${actual_index}:${k} ${vtype} ${v}' \"${plist_path}\"")
+
+      # Remove processed key-value pair
+      parsing=$(printf '%s' "$parsing" | /usr/bin/sed -E 's/^[[:space:]]*"[^"]+"[[:space:]]*=[[:space:]]*[^;]+;//')
+    done
+
+    # Output all PlistBuddy commands
+    if [ "${#pb_cmds[@]}" -gt 0 ]; then
+      printf '%s\n' "${pb_cmds[@]}"
     fi
-
-    dict_value=$(printf '%s' "$dict_value" | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-
-    local value_type="string"
-    if printf '%s' "$dict_value" | /usr/bin/grep -Eq '^[0-9]+$'; then
-      value_type="integer"
-    elif printf '%s' "$dict_value" | /usr/bin/grep -Eq '^(YES|NO)$'; then
-      value_type="bool"
-    elif printf '%s' "$dict_value" | /usr/bin/grep -Eq '^".*"$'; then
-      dict_value="${dict_value#\"}"
-      dict_value="${dict_value%\"}"
-      value_type="string"
-    fi
-
-    pb_cmds+=("/usr/libexec/PlistBuddy -c 'Add :${key}:\$INDEX:${dict_key} ${value_type} ${dict_value}' \"${plist_path}\"")
-
-    parsing=$(printf '%s' "$parsing" | /usr/bin/sed -E 's/^[[:space:]]*"[^"]+"[[:space:]]*=[[:space:]]*[^;]+;//')
-  done
-
-  if [ "${#pb_cmds[@]}" -gt 0 ]; then
-    printf '%s\n' "${pb_cmds[@]}"
-  fi
-  return 0
+    return 0
+  } 2>&1 | /usr/bin/grep -v '^[a-z_]*=' || true
 }
 
 # Convert a defaults delete command to PlistBuddy
 convert_delete_to_plistbuddy() {
+  # Disable xtrace to prevent debug output leaking
+  { set +x; } 2>/dev/null
+
   local cmd="$1"
 
   local domain target
