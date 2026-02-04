@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.8.1 — 2026-02-04
+- **BUGFIX**: Fixed array index calculation to return correct indices
+  - Replaced unreliable `plutil -extract | grep -c '<dict>'` with `PlistBuddy Print | grep -c "^    Dict {"`
+  - Now correctly shows `:AppleEnabledInputSources:2:` or `:3:` instead of always `:0:`
+  - More robust detection of existing array elements
+- **BUGFIX**: Fixed type detection for negative integers
+  - Changed regex from `^[0-9]+$` to `^-?[0-9]+$` to handle negative values
+  - Example: `-19336` now correctly detected as `integer` instead of `string`
+  - Fixes PlistBuddy commands that previously used wrong types
+- **IMPROVEMENT**: Better filtering of redundant dictionary key commands
+  - Added whitespace trimming when populating `_skip_keys` array
+  - Handles keys with spaces like "KeyboardLayout ID" correctly
+  - Reduces redundant `defaults write` commands for individual dict keys
+- **RESULT**: PlistBuddy commands now have correct indices AND correct types
+
 ## 2.8.0 — 2026-02-04
 - **MAJOR BUGFIX**: Complete rewrite of convert_to_plistbuddy function
   - **Fixed debug output**: Eliminated all debug output (`dict_key=`, `dict_value=`, etc.)

@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.0
+# Version: 2.8.1
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -809,13 +809,13 @@ convert_to_plistbuddy() {
     local plist_path
     plist_path="$(get_plist_path "$domain")"
 
-    # Calculate actual array index using plutil -extract (more reliable than Python)
+    # Calculate actual array index by reading current array length
     local actual_index=0
     if [ -f "$plist_path" ]; then
-      # Try to extract the array and count elements using plutil directly
+      # Use defaults read to get the array and count elements with PlistBuddy
       local array_count
-      array_count=$(/usr/bin/plutil -extract "$key" xml1 -o - "$plist_path" 2>/dev/null | /usr/bin/grep -c '<dict>' 2>/dev/null) || array_count="0"
-      # If grep returns nothing, default to 0
+      array_count=$(/usr/libexec/PlistBuddy -c "Print :${key}" "$plist_path" 2>/dev/null | /usr/bin/grep -c "^    Dict {" 2>/dev/null) || array_count="0"
+      # If grep returns nothing or command fails, default to 0
       [ -z "$array_count" ] && array_count="0"
       actual_index="$array_count"
     fi
@@ -844,9 +844,9 @@ convert_to_plistbuddy() {
       # Trim whitespace
       v=$(printf '%s' "$v" | /usr/bin/sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
 
-      # Determine type
+      # Determine type (check negative integers too)
       local vtype="string"
-      if printf '%s' "$v" | /usr/bin/grep -Eq '^[0-9]+$'; then
+      if printf '%s' "$v" | /usr/bin/grep -Eq '^-?[0-9]+$'; then
         vtype="integer"
       elif printf '%s' "$v" | /usr/bin/grep -Eq '^(YES|NO)$'; then
         vtype="bool"
@@ -1253,7 +1253,10 @@ show_plist_diff() {
           IFS=',' read -rA _array_key_list <<< "$_array_keys"
           for _k in "${_array_key_list[@]}"; do
             [ -n "$_k" ] || continue
-            # Skip the base key name (e.g., "InputSourceKind")
+            # Trim whitespace from key
+            _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+            [ -n "$_k" ] || continue
+            # Skip the base key name (e.g., "InputSourceKind", "KeyboardLayout ID")
             _skip_keys["$_k"]=1
             # Also skip with array prefix variations to catch all forms
             _skip_keys["${_array_base}:${_k}"]=1
@@ -1494,7 +1497,10 @@ show_domain_diff() {
           IFS=',' read -rA _array_key_list <<< "$_array_keys"
           for _k in "${_array_key_list[@]}"; do
             [ -n "$_k" ] || continue
-            # Skip the base key name (e.g., "InputSourceKind")
+            # Trim whitespace from key
+            _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+            [ -n "$_k" ] || continue
+            # Skip the base key name (e.g., "InputSourceKind", "KeyboardLayout ID")
             _skip_keys["$_k"]=1
             # Also skip with array prefix variations to catch all forms
             _skip_keys["${_array_base}:${_k}"]=1

@@ -1,6 +1,6 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.8.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.8.1-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
@@ -125,8 +125,8 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 ```
 
 ¹ **Auto-generated paths:**
-- ALL mode: `/var/log/watch.preferences-v2.8.0.log`
-- Domain mode: `/var/log/watch.preferences-v2.8.0-<domain>.log`
+- ALL mode: `/var/log/watch.preferences-v2.8.1.log`
+- Domain mode: `/var/log/watch.preferences-v2.8.1-<domain>.log`
 
 ² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
@@ -304,17 +304,16 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.8.0** (2026-02-04)
+Current version: **2.8.1** (2026-02-04)
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.8.0)
+### Recent Changes (v2.8.1)
 
-- **MAJOR BUGFIX**: Complete rewrite of PlistBuddy conversion function
-- **FIXED**: All debug output eliminated (`dict_key=`, `dict_value=`)
-- **FIXED**: Array index calculation now returns correct indices (not `:0:`)
-- **IMPROVED**: More reliable `plutil -extract` based array counting
-- **RESULT**: Clean, fully executable bash output with proper PlistBuddy commands
+- **BUGFIX**: Fixed array index calculation using PlistBuddy Print
+- **BUGFIX**: Fixed type detection for negative integers (`-19336`)
+- **IMPROVED**: Better filtering of redundant dictionary key commands
+- **RESULT**: PlistBuddy commands with correct indices and types
 
 ---
 
