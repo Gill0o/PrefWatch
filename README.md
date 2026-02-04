@@ -1,11 +1,11 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.8.6--beta-orange.svg)
+![Version](https://img.shields.io/badge/version-2.9.0--beta-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 ![Status](https://img.shields.io/badge/status-BETA-orange.svg)
 
-⚠️ **BETA VERSION** - Active development with known issues. Versions 2.7.x-2.8.x are being actively debugged and improved. Use with caution in production environments.
+⚠️ **BETA VERSION** - Active development with known issues. Versions 2.7.x-2.9.x are being actively debugged and improved. Use with caution in production environments.
 
 A powerful macOS shell script for monitoring and capturing system preference changes in real-time. Perfect for system administrators, IT professionals, and anyone managing macOS configurations with Jamf Pro or other MDM solutions.
 
@@ -128,8 +128,8 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 ```
 
 ¹ **Auto-generated paths:**
-- ALL mode: `/var/log/watch.preferences-v2.8.6.log`
-- Domain mode: `/var/log/watch.preferences-v2.8.6-<domain>.log`
+- ALL mode: `/var/log/watch.preferences-v2.9.0.log`
+- Domain mode: `/var/log/watch.preferences-v2.9.0-<domain>.log`
 
 ² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
@@ -322,19 +322,19 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.8.6-beta** (2026-02-04)
+Current version: **2.9.0-beta** (2026-02-04)
 
-⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active debugging and improvements in progress
+⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active debugging and improvements in progress
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.8.6-beta)
+### Recent Changes (v2.9.0-beta)
 
-- **CLEANUP**: Removed `defaults write -array-add` commands from output
+- **PERFORMANCE**: Restored optimized mtime polling (~1-2% CPU vs ~5-10%)
+- **FIXED** (v2.8.8): Critical detection bug - missing `_has_array_additions` variable
+- **CLEANUP** (v2.8.6): Removed `defaults write -array-add` commands from output
 - **RESULT**: Only PlistBuddy commands shown for array operations
-- **FIXED** (v2.8.4): Array index calculation with `$HOME` path expansion
-- **FIXED** (v2.8.1): Type detection for negative integers (`-19336`)
-- **STATUS**: Core functionality working, output refinements ongoing
+- **STATUS**: All core functionality working, optimized and stable
 
 ---
 
