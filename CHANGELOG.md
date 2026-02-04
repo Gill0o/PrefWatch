@@ -2,6 +2,14 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.2-beta — 2026-02-04
+- **FILTER**: Added filtering for multiple noisy domains
+  - **FaceTime**: Filter `Date` timestamps and bag sync metadata
+  - **Bluetooth**: Filter `lastNowPlayedTime` and connection timestamps
+  - **VoiceTrigger** (Siri): Filter temporary playback/activation status
+  - **Third-party apps**: Generic filtering for `state`/`status` keys (e.g., iStat Menus)
+  - All filters in `is_noisy_key()` function
+
 ## 2.9.1-beta — 2026-02-04
 - **FILTER**: Added filtering for noisy System Settings indexing timestamps
   - Now filters `*update-state-indexing*` keys (e.g., "update-state-indexing completed time")

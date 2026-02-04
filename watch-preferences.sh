@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.1-beta
+# Version: 2.9.2-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -524,6 +524,46 @@ is_noisy_key() {
       case "$keyname" in
         # Noisy: window frames already filtered by global patterns
         # Keep: RichText, Font, PlainTextEncodingForWrite, etc.
+      esac
+      ;;
+
+    # FaceTime: Filter sync timestamps
+    com.apple.facetime*)
+      case "$keyname" in
+        # Noisy: sync timestamps, bag updates
+        Date|*Timestamp*|*LastUpdate*)
+          return 0 ;;
+        # Keep: actual FaceTime settings
+      esac
+      ;;
+
+    # Bluetooth: Filter playback timestamps and transient states
+    com.apple.bluetooth*)
+      case "$keyname" in
+        # Noisy: media playback timestamps, connection states
+        lastNowPlayedTime|*LastConnected*|*Timestamp*)
+          return 0 ;;
+        # Keep: device pairings, audio settings
+      esac
+      ;;
+
+    # Voice Trigger (Siri): Filter playback status
+    com.apple.voicetrigger*)
+      case "$keyname" in
+        # Noisy: temporary playback/activation states
+        *Playback*Status*|*Activation*State*)
+          return 0 ;;
+        # Keep: Siri settings, voice recognition settings
+      esac
+      ;;
+
+    # Third-party apps: Generic state/status filtering
+    *.bjango.*|*.status)
+      case "$keyname" in
+        # Noisy: app running state, temporary status
+        state|status|State|Status)
+          return 0 ;;
+        # Keep: actual app preferences
       esac
       ;;
   esac
