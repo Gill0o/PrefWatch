@@ -1,6 +1,6 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.8.4--beta-orange.svg)
+![Version](https://img.shields.io/badge/version-2.8.6--beta-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 ![Status](https://img.shields.io/badge/status-BETA-orange.svg)
@@ -128,8 +128,8 @@ When run via Jamf Pro, the script automatically detects Jamf mode and uses param
 ```
 
 ¹ **Auto-generated paths:**
-- ALL mode: `/var/log/watch.preferences-v2.8.4.log`
-- Domain mode: `/var/log/watch.preferences-v2.8.4-<domain>.log`
+- ALL mode: `/var/log/watch.preferences-v2.8.6.log`
+- Domain mode: `/var/log/watch.preferences-v2.8.6-<domain>.log`
 
 ² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
 
@@ -307,18 +307,19 @@ When a preference has never been modified, macOS uses hardcoded defaults that do
 
 ## 📊 Version History
 
-Current version: **2.8.4-beta** (2026-02-04)
+Current version: **2.8.6-beta** (2026-02-04)
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active debugging and improvements in progress
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.8.4-beta)
+### Recent Changes (v2.8.6-beta)
 
-- **MAJOR FIX**: Fixed `~/` vs `$HOME` expansion bug in `get_plist_path()`
-- **RESULT**: Array index calculation now works correctly
+- **CLEANUP**: Removed `defaults write -array-add` commands from output
+- **RESULT**: Only PlistBuddy commands shown for array operations
+- **FIXED** (v2.8.4): Array index calculation with `$HOME` path expansion
 - **FIXED** (v2.8.1): Type detection for negative integers (`-19336`)
-- **STATUS**: Core functionality working, refinements ongoing
+- **STATUS**: Core functionality working, output refinements ongoing
 
 ---
 

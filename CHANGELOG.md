@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.8.x)**: Active development, use with caution
 
+## 2.8.6-beta — 2026-02-04
+- **FEATURE**: Suppression complète des commandes `defaults write -array-add`
+  - Affichage EXCLUSIF des commandes PlistBuddy pour array additions
+  - Lignes 1077-1109: Retrait de l'affichage de `log_line "Cmd: $cmd"`
+  - Conservation de la conversion via `convert_to_plistbuddy()` pour générer PlistBuddy
+  - **RESULT**: Sortie ultra-propre - seulement commandes PlistBuddy exécutables
+- **USER REQUEST**: "Option 1 for sure" - remove defaults write -array-add completely
+- **WHY**: Plus lisible, directement exploitable, pas de redondance
+
 ## 2.8.5-beta — 2026-02-04
 - **FEATURE**: Suppression des commandes `defaults write` redondantes pour clés de dictionnaires
   - Quand un array addition est détecté, les commandes individuelles top-level sont filtrées

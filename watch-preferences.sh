@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.8.5-beta
+# Version: 2.8.6-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1079,19 +1079,15 @@ PY
   local outputs=()
   while IFS=$'\t' read -r base idx keylist cmd; do
     [ -n "$base" ] || continue
+    # Suppress defaults write -array-add command display (Option 1: only show PlistBuddy)
+    # Only generate PlistBuddy commands from the defaults command
     if [ -n "$cmd" ]; then
       if is_noisy_command "$cmd"; then
         :
       elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
         :
       else
-        case "$kind" in
-          USER) log_user "Cmd: $cmd" ;;
-          SYSTEM) log_system "Cmd: $cmd" ;;
-          DOMAIN) log_line "Cmd: $cmd" ;;
-          *) log_line "Cmd: $cmd" ;;
-        esac
-
+        # Generate and display ONLY PlistBuddy commands (no defaults write -array-add)
         local pb_cmds_output
         if pb_cmds_output=$(convert_to_plistbuddy "$cmd" 2>/dev/null); then
           while IFS= read -r pb_line; do
