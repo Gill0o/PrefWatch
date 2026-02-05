@@ -2,6 +2,17 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.11-beta — 2026-02-05
+- **FIX**: PlistBuddy generation for nested dicts (Dock app additions)
+  - **ROOT CAUSE**: Shell `convert_to_plistbuddy()` parser was flat, couldn't handle nested dicts
+  - **SOLUTION**: Python now generates PlistBuddy commands directly with `emit_plistbuddy()`
+  - **RESULT**: Correct nested paths like `:persistent-apps:5:tile-data:bundle-identifier`
+  - **BEFORE**: `convert_to_plistbuddy` silently failed on `tile-data = { ... }` → no output
+  - **AFTER**: Python recursively walks nested dict → proper PlistBuddy Add commands
+- **FILTER**: Added global patterns for UUID suffixes and metadata counters
+  - `*UUID`, `*uuid` (e.g., `updatedSinceBootUUID`, `sessionUUID`)
+  - `*ChangeCount*`, `*MetaDataChange*`, `*ChangeToken*` (e.g., `ABMetaDataChangeCount`)
+
 ## 2.9.10-beta — 2026-02-05
 - **FIX**: Filter ALL Dock persistent-apps tile sub-keys
   - Flat `defaults write com.apple.dock "bundle-identifier"` NEVER works for adding apps
