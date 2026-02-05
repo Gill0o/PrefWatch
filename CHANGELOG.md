@@ -2,6 +2,13 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.15-beta — 2026-02-05
+- **FIX**: DOMAIN mode now uses `dump_plist_json()` with Python plistlib fallback
+  - **ROOT CAUSE**: Domain-specific monitoring used raw `plutil -convert json` (line 1602)
+  - `plutil` fails on plists with NSData (Dock) → empty JSON → no array detection
+  - Only ALL mode used `dump_plist_json()` with the plistlib fallback
+  - **RESULT**: Dock icon additions now detected in both ALL and DOMAIN modes
+
 ## 2.9.14-beta — 2026-02-05
 - **FIX**: PlistBuddy commands now correctly displayed (critical bug fix)
   - **ROOT CAUSE**: `emit_array_additions()` called inside `$()` — `log_*` stdout captured instead of displayed
