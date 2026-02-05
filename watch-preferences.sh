@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.8-beta
+# Version: 2.9.9-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -1124,6 +1124,18 @@ def build_command(array_name, index, item):
     escaped_array = escape_string(str(array_name))
     return f"defaults write {domain} \"{escaped_array}\" -array-add '{payload}'"
 
+def all_keys_recursive(obj):
+    """Collect ALL keys recursively from nested dicts (for _skip_keys)"""
+    keys = set()
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            keys.add(str(k))
+            keys |= all_keys_recursive(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            keys |= all_keys_recursive(item)
+    return keys
+
 diff(prev, curr, [])
 
 for prefix, index, item in results:
@@ -1131,7 +1143,8 @@ for prefix, index, item in results:
         continue
     if not isinstance(item, dict):
         continue
-    keys = ','.join(sorted(str(k) for k in item.keys()))
+    # Collect ALL keys including nested (e.g., tile-data → bundle-identifier, _CFURLString)
+    keys = ','.join(sorted(all_keys_recursive(item)))
     command = build_command(prefix[0], index, item)
     if not command:
         continue

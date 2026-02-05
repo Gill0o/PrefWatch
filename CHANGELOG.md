@@ -2,6 +2,14 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.9-beta — 2026-02-05
+- **FIX**: Dock app additions now generate PlistBuddy commands instead of flat defaults write
+  - **ISSUE**: `defaults write com.apple.dock "bundle-identifier"` does NOT add an app to the Dock
+  - **ROOT CAUSE**: Python `emit_array_additions` only collected top-level dict keys for `_skip_keys`
+  - **FIX**: Added `all_keys_recursive()` to collect ALL nested keys from array additions
+  - **RESULT**: PlistBuddy commands with correct `:persistent-apps:N:tile-data:bundle-identifier` paths
+  - **APPLIES TO**: Dock, and any other domain with nested dict arrays (universal fix)
+
 ## 2.9.8-beta — 2026-02-05
 - **FILTER**: Dock internal tile metadata filtered
   - Filtered: `GUID`, `dock-extra`, `tile-type`, `is-beta`, `_CFURLStringType`
