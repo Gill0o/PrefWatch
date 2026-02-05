@@ -2,6 +2,20 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.6-beta — 2026-02-04
+- **FILTER**: Added filtering for error states, rollout configs, and feature flags
+  - **NEW GLOBAL PATTERNS**:
+    - `*Error*`, `*Errors*`, `*ErrorCode*`, `*ErrorDomain*` (sync/crash errors)
+    - `rollouts`, `rolloutId`, `deploymentId` (A/B testing configs)
+    - `lastCheckTime`, `*CheckTime` (check timestamps)
+    - ALL_CAPS_KEYS (e.g., `SIRI_MEMORY_SYNC_CONFIG`, `HEALTH_FEATURE_AVAILABILITY`)
+  - **EXAMPLES FILTERED**:
+    - Messages: `IMCloudKitSyncErrors`, `IMSerializedErrorCodeKey`, `IMSerializedErrorDomainKey`
+    - Crash Reporter: `rollouts`, `deploymentId`, `rolloutId`, `lastCheckTime`
+    - Feature flags: `SIRI_MEMORY_SYNC_CONFIG`, `HEALTH_FEATURE_AVAILABILITY`
+  - **DOMAINS**: com.apple.madrid, com.apple.ReportCrash
+  - **RESULT**: Cleaner output, only user-relevant preferences shown
+
 ## 2.9.5-beta — 2026-02-04
 - **FIX**: Suppressed plutil error messages for binary plist objects
   - **ISSUE**: Terminal showed "invalid object in plist for destination format" errors

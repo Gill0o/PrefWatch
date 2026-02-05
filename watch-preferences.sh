@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.5-beta
+# Version: 2.9.6-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -454,12 +454,20 @@ is_noisy_key() {
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
-    # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*)
+    # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime)
       return 0 ;;
 
     # Date fields (float/string dates are usually metadata)
     *Date|Date)
+      return 0 ;;
+
+    # Error states & sync errors (transient, not user preferences)
+    *Error|*Errors|*error|*errors|*ErrorCode*|*ErrorDomain*|*ErrorUserInfo*|IMCloudKitSyncErrors|IMSerializedError*)
+      return 0 ;;
+
+    # Rollout configs & A/B testing (system telemetry, not user settings)
+    rollouts|rolloutId|deploymentId|*RolloutId|*DeploymentId)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
@@ -498,6 +506,12 @@ is_noisy_key() {
   # Hash keys (session IDs, cache keys) - long hex strings
   # Examples: bc4a9925ba8a1ebc964af5dbb213795013950b6b8b234aacf7fb20f5a791e5d7 (SHA256)
   if printf '%s' "$keyname" | /usr/bin/grep -Eq '^[0-9a-fA-F]{32,}$'; then
+    return 0
+  fi
+
+  # Feature flags (ALL_CAPS keys with underscores) - system A/B testing configs
+  # Examples: SIRI_MEMORY_SYNC_CONFIG, HEALTH_FEATURE_AVAILABILITY
+  if printf '%s' "$keyname" | /usr/bin/grep -Eq '^[A-Z][A-Z_0-9]+$' && printf '%s' "$keyname" | /usr/bin/grep -q '_'; then
     return 0
   fi
 
