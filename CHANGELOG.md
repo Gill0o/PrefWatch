@@ -2,6 +2,11 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.21-beta — 2026-02-05
+- **FIX**: Finder noise filter now matches both `com.apple.finder` and `com.apple.Finder`
+  - macOS uses capitalized `Finder` in some contexts; zsh `case` is case-sensitive
+  - `name` key (current folder name) now correctly filtered in all cases
+
 ## 2.9.20-beta — 2026-02-05
 - **CLEANUP**: Remove redundant `defaults delete` when PlistBuddy is available
   - Delete operations now show only PlistBuddy commands (consistent with additions)
