@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.4-beta
+# Version: 2.9.5-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -749,8 +749,9 @@ snapshot_notice() {
 # Stable text output of a plist
 dump_plist() {
   local src="$1" out="$2"
+  # Suppress all plutil errors (including "invalid object" for NSData/binary plists)
   if /usr/bin/plutil -p "$src" >/dev/null 2>&1; then
-    /usr/bin/plutil -p "$src" > "$out" 2>/dev/null || /bin/cat "$src" > "$out" 2>/dev/null || :
+    ( /usr/bin/plutil -p "$src" > "$out" ) 2>/dev/null || /bin/cat "$src" > "$out" 2>/dev/null || :
   else
     /bin/cat "$src" > "$out" 2>/dev/null || :
   fi
@@ -759,12 +760,9 @@ dump_plist() {
 # JSON output of a plist
 dump_plist_json() {
   local src="$1" out="$2"
+  # Suppress all plutil errors (including "invalid object" for NSData/binary plists)
   if [ -f "$src" ]; then
-    if /usr/bin/plutil -convert json -o "$out" "$src" 2>/dev/null; then
-      :
-    else
-      : > "$out" 2>/dev/null || true
-    fi
+    ( /usr/bin/plutil -convert json -o "$out" "$src" ) 2>/dev/null 1>&2 || : > "$out" 2>/dev/null
   else
     : > "$out" 2>/dev/null || true
   fi
@@ -1508,9 +1506,9 @@ show_domain_diff() {
 
   "${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - > "$tmpplist" 2>/dev/null || :
   if [ -s "$tmpplist" ]; then
-    /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
+    ( /usr/bin/plutil -p "$tmpplist" > "$curr" ) 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
     curr_json="$CACHE_DIR/${key}.curr.json"
-    /usr/bin/plutil -convert json -o "$curr_json" "$tmpplist" 2>/dev/null || : > "$curr_json" 2>/dev/null || true
+    ( /usr/bin/plutil -convert json -o "$curr_json" "$tmpplist" ) 2>/dev/null 1>&2 || : > "$curr_json" 2>/dev/null || true
   else
     : > "$curr" 2>/dev/null || true
     curr_json="$CACHE_DIR/${key}.curr.json"

@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.5-beta — 2026-02-04
+- **FIX**: Suppressed plutil error messages for binary plist objects
+  - **ISSUE**: Terminal showed "invalid object in plist for destination format" errors
+  - **CAUSE**: Some plists contain NSData/binary objects that plutil can't convert
+  - **EXAMPLES**: `com.apple.suggestions.plist`, `com.topazlabs.Topaz Video.plist`
+  - **SOLUTION**: Wrapped plutil calls in subshells with enhanced stderr suppression
+  - **FUNCTIONS**: `dump_plist()`, `dump_plist_json()`, and domain diff functions
+  - **RESULT**: Clean terminal output, errors still logged internally for debugging
+
 ## 2.9.4-beta — 2026-02-04
 - **FILTER**: Extended global filters for session/cache data (user feedback)
   - **NEW PATTERNS**:
