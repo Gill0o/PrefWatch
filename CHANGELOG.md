@@ -2,6 +2,14 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.12-beta — 2026-02-05
+- **FIX**: Dock and plists with binary data now properly detected
+  - **ROOT CAUSE**: `plutil -convert json` fails on plists containing NSData (e.g., com.apple.dock)
+  - **RESULT**: Empty JSON snapshot → Python `emit_array_additions` finds nothing → no output
+  - **SOLUTION**: Added Python `plistlib` fallback in `dump_plist_json()` when plutil fails
+  - **SANITIZE**: Binary data → `<data:N>`, datetime → ISO string, UID → integer
+  - **IMPACT**: Dock icon additions, and any domain with binary plist data, now detected correctly
+
 ## 2.9.11-beta — 2026-02-05
 - **FIX**: PlistBuddy generation for nested dicts (Dock app additions)
   - **ROOT CAUSE**: Shell `convert_to_plistbuddy()` parser was flat, couldn't handle nested dicts
