@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.7-beta
+# Version: 2.9.8-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -538,13 +538,17 @@ is_noisy_key() {
   # ========================================================================
 
   case "$domain" in
-    # Dock preferences: Keep useful settings, filter workspace state
+    # Dock preferences: Keep useful settings, filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
         # Noisy: workspace IDs, counts, expose gestures
         workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp)
           return 0 ;;
-        # Keep: orientation, autohide, tilesize, magnification, etc.
+        # Noisy: internal tile/app metadata (shown as flat keys on app add/remove)
+        GUID|dock-extra|tile-type|is-beta|_CFURLStringType)
+          return 0 ;;
+        # Keep: orientation, autohide, tilesize, magnification, persistent-apps,
+        #       bundle-identifier, _CFURLString, etc.
       esac
       ;;
 

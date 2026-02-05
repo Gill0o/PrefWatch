@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.8-beta — 2026-02-05
+- **FILTER**: Dock internal tile metadata filtered
+  - Filtered: `GUID`, `dock-extra`, `tile-type`, `is-beta`, `_CFURLStringType`
+  - Kept: `bundle-identifier`, `_CFURLString` (useful for admin deployment)
+  - Result: 2 useful lines instead of 7 when adding an app to Dock
+
 ## 2.9.7-beta — 2026-02-05
 - **FIX**: Python3 validation before snapshots (macOS Sonoma compatibility)
   - **ISSUE**: On macOS Sonoma, `/usr/bin/python3` exists as a stub requiring Command Line Tools
