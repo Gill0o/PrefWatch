@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.25-beta — 2026-02-05
+- **FILTER**: Extended noise filtering from idle monitoring session
+  - Domain exclusions: `com.apple.cseventlistener`, `com.apple.spotlightknowledge`,
+    `com.apple.amsengagementd`, `com.apple.StatusKitAgent`, `com.apple.Accessibility.Assets`,
+    `com.apple.AOSKit*` (event counters, sync telemetry, asset refresh timestamps)
+  - Key filters: `com.apple.controlcenter` NSStatusItem* (UI positioning),
+    `com.apple.dock` lastShowIndicatorTime, `com.apple.HIToolbox` AppleSavedCurrentInputSource
+    (transient keyboard switch state, not layout additions/removals)
+
 ## 2.9.24-beta — 2026-02-05
 - **FILTER**: Comprehensive noise filtering after systematic testing
   - Removed `com.apple.Spotlight` from global exclusions — now intelligently filtered per-key
