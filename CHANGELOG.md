@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.16-beta — 2026-02-05
+- **FIX**: Suppress residual flat `defaults write` for `_CFURLString` and `file-data`
+  - Added `_CFURLString`, `_CFURLStringType`, `file-data` to secondary array-additions filter
+  - These keys are only meaningful inside PlistBuddy paths, never as flat `defaults write`
+  - Applied to both ALL mode and DOMAIN mode callers
+
 ## 2.9.15-beta — 2026-02-05
 - **FIX**: DOMAIN mode now uses `dump_plist_json()` with Python plistlib fallback
   - **ROOT CAUSE**: Domain-specific monitoring used raw `plutil -convert json` (line 1602)
