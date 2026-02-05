@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.9-beta
+# Version: 2.9.10-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -544,11 +544,12 @@ is_noisy_key() {
         # Noisy: workspace IDs, counts, expose gestures
         workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp)
           return 0 ;;
-        # Noisy: internal tile/app metadata (shown as flat keys on app add/remove)
-        GUID|dock-extra|tile-type|is-beta|_CFURLStringType)
+        # Noisy: ALL persistent-apps tile sub-keys shown as flat defaults write
+        # These flat commands NEVER work for adding/removing Dock apps
+        # Only PlistBuddy with proper :persistent-apps:N:tile-data:key paths works
+        GUID|dock-extra|tile-type|is-beta|_CFURLStringType|bundle-identifier|_CFURLString|file-label|file-data|tile-data)
           return 0 ;;
-        # Keep: orientation, autohide, tilesize, magnification, persistent-apps,
-        #       bundle-identifier, _CFURLString, etc.
+        # Keep: orientation, autohide, tilesize, magnification, persistent-apps, etc.
       esac
       ;;
 

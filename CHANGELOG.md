@@ -2,6 +2,14 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.10-beta — 2026-02-05
+- **FIX**: Filter ALL Dock persistent-apps tile sub-keys
+  - Flat `defaults write com.apple.dock "bundle-identifier"` NEVER works for adding apps
+  - Added `bundle-identifier`, `_CFURLString`, `file-label`, `file-data`, `tile-data` to Dock filter
+  - Only PlistBuddy with `:persistent-apps:N:tile-data:key` paths works for Dock apps
+  - When Python3 is available: PlistBuddy commands are auto-generated
+  - When Python3 is unavailable: startup warning suggests `xcode-select --install`
+
 ## 2.9.9-beta — 2026-02-05
 - **FIX**: Dock app additions now generate PlistBuddy commands instead of flat defaults write
   - **ISSUE**: `defaults write com.apple.dock "bundle-identifier"` does NOT add an app to the Dock
