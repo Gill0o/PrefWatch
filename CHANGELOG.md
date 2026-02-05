@@ -2,6 +2,13 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.18-beta — 2026-02-05
+- **PERFORMANCE**: Eliminated all `printf | grep` forks in hot paths
+  - Replaced 25+ `printf | grep -Eq` calls with zsh built-in `[[ =~ ]]` and `[[ == ]]`
+  - Affected: `is_noisy_key()`, `log_line/user/system()`, type detection, ByHost checks
+  - **BEFORE**: Dock change with 20 apps = ~2000 external process forks (5-10s)
+  - **AFTER**: Zero forks for pattern matching (microseconds vs milliseconds per check)
+
 ## 2.9.17-beta — 2026-02-05
 - **FIX**: PlistBuddy commands now executable for Dock icon additions
   - Added missing `Add :persistent-apps:N dict` (create array entry before sub-keys)
