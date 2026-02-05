@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.20-beta — 2026-02-05
+- **CLEANUP**: Remove redundant `defaults delete` when PlistBuddy is available
+  - Delete operations now show only PlistBuddy commands (consistent with additions)
+  - `defaults delete` kept as fallback only when PlistBuddy conversion fails
+  - Applied to all 4 delete handlers (emit_array_deletions, ALL USER/SYSTEM, DOMAIN)
+
 ## 2.9.19-beta — 2026-02-05
 - **FIX**: Instant detection on startup — no more 1-minute wait
   - `start_watch()` now takes an initial baseline snapshot before the polling loop
