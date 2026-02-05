@@ -1,341 +1,304 @@
 # Watch Preferences
 
-![Version](https://img.shields.io/badge/version-2.9.0--beta-orange.svg)
+![Version](https://img.shields.io/badge/version-2.9.25--beta-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
+![Shell](https://img.shields.io/badge/shell-zsh-blue.svg)
 ![Status](https://img.shields.io/badge/status-BETA-orange.svg)
 
-⚠️ **BETA VERSION** - Active development with known issues. Versions 2.7.x-2.9.x are being actively debugged and improved. Use with caution in production environments.
+A macOS shell script that monitors preference domains (plist files) in real-time and generates executable commands (`defaults write` / `PlistBuddy`) to reproduce configuration changes on other machines. Built for Jamf Pro workflows and macOS system administration.
 
-A powerful macOS shell script for monitoring and capturing system preference changes in real-time. Perfect for system administrators, IT professionals, and anyone managing macOS configurations with Jamf Pro or other MDM solutions.
+## What It Does
 
-## 🎯 Purpose
+1. You run the script
+2. You change a setting in System Settings, Finder, Dock, or any app
+3. The script outputs the exact command to reproduce that change
 
-**Watch Preferences** monitors macOS preference domains (plist files) and automatically generates executable `defaults` commands that can be used to reproduce the same configuration changes on other machines. This is invaluable for:
-
-- Creating Jamf Pro configuration profiles
-- Documenting user preference changes
-- Replicating configurations across multiple Macs
-- Troubleshooting preference-related issues
-- Learning which preferences control specific UI behaviors
-
-## ✨ Key Features
-
-- **Real-time monitoring** of preference changes using multiple detection methods
-- **Automatic command generation** for `defaults write`, `defaults delete`, and array operations
-- **PlistBuddy alternatives** for complex dictionary and array operations
-- **Smart filtering** to exclude noisy system preferences
-- **ALL mode** to monitor all preference domains simultaneously
-- **Comprehensive logging** with timestamps and change details
-- **Type detection** for strings, booleans, integers, floats, arrays, and dictionaries
-- **Array change tracking** including additions and deletions with correct indexing
-- **ByHost preferences support** with automatic `-currentHost` flag detection
-
-## 📋 Requirements
-
-- macOS 10.14 or later
-- Bash or Zsh shell
-- Standard macOS utilities: `defaults`, `plutil`, `PlistBuddy`, `fs_usage`
-
-## 🚀 Quick Start
-
-### Basic Usage (CLI Mode)
-
-Monitor ALL preference domains (default behavior):
-```bash
-./watch-preferences.sh              # Monitor all domains (quiet mode)
-./watch-preferences.sh -v           # Monitor all with verbose output
-./watch-preferences.sh --log /tmp/all.log  # Monitor all with custom log
+```
+$ ./watch-preferences.sh com.apple.dock -v
+[2026-02-05 14:30:15] Diff com.apple.dock: + "orientation" => "left"
+[2026-02-05 14:30:15] Cmd: defaults write com.apple.dock "orientation" -string "left"
 ```
 
-Monitor a specific preference domain:
+## Requirements
+
+- macOS 10.14+ (tested on Sonoma & Tahoe)
+- Zsh (default macOS shell since Catalina)
+- Python 3 (recommended, for array/dict change detection). Install Command Line Tools if missing: `xcode-select --install`
+- Standard macOS utilities: `defaults`, `plutil`, `PlistBuddy`, `fs_usage`
+- ALL mode requires `sudo` (for `fs_usage`)
+
+## Quick Start
+
+```bash
+# Monitor ALL preference domains (requires sudo for fs_usage)
+sudo ./watch-preferences.sh -v
+
+# Monitor a specific domain (no sudo needed)
+./watch-preferences.sh com.apple.dock -v
+./watch-preferences.sh com.apple.finder -v
+./watch-preferences.sh NSGlobalDomain -v
+
+# Quiet mode: only output executable commands (default)
+./watch-preferences.sh com.apple.dock
+
+# Custom log file
+./watch-preferences.sh com.apple.dock -l /tmp/dock-changes.log
+```
+
+## Two Monitoring Modes
+
+### Domain Mode (recommended for targeted monitoring)
+
 ```bash
 ./watch-preferences.sh com.apple.dock
-./watch-preferences.sh com.apple.finder -v
 ```
 
-With custom log file and verbose output:
-```bash
-./watch-preferences.sh com.apple.finder --log /tmp/finder.log --verbose
-# Or using short flags:
-./watch-preferences.sh com.apple.finder -l /tmp/finder.log -v
-```
+- Monitors a single domain via **mtime polling** (0.5s interval)
+- Low CPU (~1-2%)
+- No sudo required
+- Detects all changes including keyboard shortcuts (`com.apple.symbolichotkeys`)
 
-Monitor with system preferences excluded and custom exclusions:
-```bash
-./watch-preferences.sh --no-system --exclude "com.apple.Safari*,com.adobe.*"
-# Or using short flags:
-./watch-preferences.sh --no-system -e "com.apple.Safari*,com.adobe.*"
-```
-
-Show help and available options:
-```bash
-./watch-preferences.sh --help
-```
-
-### With Jamf Pro (Automatic Detection)
-
-When run via Jamf Pro, the script automatically detects Jamf mode and uses parameters starting at $4:
+### ALL Mode (broad discovery)
 
 ```bash
-# Jamf Pro automatically passes $1=mount_point, $2=computer_name, $3=username
-# Your parameters start at $4:
-# $4: Domain (ALL or specific domain like com.apple.dock)
-# $5: Log file path (optional, auto-generated if not specified)
-# $6: Include system preferences (true/false, default: true)
-# $7: Only show commands (true/false, default: true)
-# $8: Excluded domains (glob patterns, comma-separated)
-
-# Example Jamf policy script:
-#!/bin/zsh
-/path/to/watch-preferences.sh ALL "" true false "com.apple.Safari*,com.apple.security*"
+sudo ./watch-preferences.sh ALL -v
 ```
 
-## 📖 Detailed Usage
+- Monitors **all** preference domains simultaneously
+- Uses `fs_usage` (filesystem event tracing) + polling fallback
+- Takes an initial snapshot, then reports changes as they happen
+- Higher CPU (~5-10% during changes)
+- Requires sudo for `fs_usage`
 
-### CLI Mode Options
-
-**Syntax:** `./watch-preferences.sh [domain] [OPTIONS]`
+## CLI Options
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `[domain]` | — | Preference domain to watch (optional) | `ALL` |
-| `--log <path>` | `-l` | Custom log file path | Auto-generated¹ |
-| `--include-system` | `-s` | Include system preferences in ALL mode | Enabled |
-| `--no-system` | — | Exclude system preferences in ALL mode | — |
-| `--verbose` | `-v` | Show detailed debug output with timestamps | — |
-| `--only-cmds` | `-q` | Show only executable commands (no debug) | Enabled |
-| `--exclude <glob>` | `-e` | Comma-separated glob patterns to exclude | Built-in² |
-| `--help` | `-h` | Show help message and exit | — |
+| `[domain]` | -- | Preference domain to monitor | `ALL` |
+| `--verbose` | `-v` | Show diff details, key names, and commands | Off (quiet) |
+| `--log <path>` | `-l` | Custom log file path | Auto-generated |
+| `--no-system` | -- | Exclude `/Library/Preferences` in ALL mode | Include |
+| `--exclude <glob>` | `-e` | Comma-separated domain patterns to exclude | Built-in list |
+| `--only-cmds` | `-q` | Show only executable commands | On (default) |
+| `--help` | `-h` | Show help | -- |
 
-**Examples:**
+## Output Format
+
+### Scalar values: `defaults write`
+
+For simple key-value changes (strings, booleans, integers, floats):
+
 ```bash
-# Monitor all domains (default)
-./watch-preferences.sh
-./watch-preferences.sh -v
-
-# Monitor specific domain with verbose output
-./watch-preferences.sh com.apple.dock -v
-
-# Monitor all domains, custom log, exclude Safari
-./watch-preferences.sh -l /tmp/prefs.log -e "com.apple.Safari*"
-
-# Monitor all user preferences only (no system)
-./watch-preferences.sh --no-system
-
-# Show only commands (quiet mode, good for piping)
-./watch-preferences.sh --only-cmds
+defaults write com.apple.dock "orientation" -string "left"
+defaults write com.apple.dock "tilesize" -int 48
+defaults write com.apple.dock "autohide" -bool TRUE
+defaults write com.apple.dock "magnification" -float 1.5
 ```
 
-¹ **Auto-generated paths:**
-- ALL mode: `/var/log/watch.preferences-v2.9.0.log`
-- Domain mode: `/var/log/watch.preferences-v2.9.0-<domain>.log`
+The script detects the actual plist type via `defaults read-type` to avoid misdetection (e.g., a float `1.0` detected as boolean).
 
-² **Built-in exclusions** include noisy system domains like `com.apple.cfprefsd.*`, `com.jamf*`, etc.
+### Array operations: `PlistBuddy Add`
 
-### Jamf Pro Mode Parameters
+For adding items to arrays (Dock icons, keyboard layouts):
 
-| Parameter | Description | Default | Example |
-|-----------|-------------|---------|---------|
-| `$4` (DOMAIN) | Preference domain to watch or "ALL" | `ALL` | `com.apple.dock` or `ALL` |
-| `$5` (LOG_FILE) | Custom log file path | Auto-generated¹ | `/var/log/custom.log` |
-| `$6` (INCLUDE_SYSTEM) | Include system preferences in ALL mode | `true` | `false` |
-| `$7` (ONLY_CMDS) | Show only executable commands | `true` | `false` |
-| `$8` (EXCLUDE_DOMAINS) | Comma-separated glob patterns to exclude | Built-in² | `"com.apple.Safari*"` |
-
-### Output Examples
-
-**Standard output:**
 ```bash
-[2025-02-03 14:30:15] Change detected in com.apple.dock
-[2025-02-03 14:30:15] + persistent-apps:0:tile-data:file-label: "Safari"
-[2025-02-03 14:30:15] Cmd: defaults write com.apple.dock persistent-apps -array-add '<dict><key>tile-data</key><dict><key>file-label</key><string>Safari</string></dict></dict>'
+# Adding a keyboard layout
+/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3 dict' ~/Library/Preferences/com.apple.HIToolbox.plist
+/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3:InputSourceKind string Keyboard Layout' ~/Library/Preferences/com.apple.HIToolbox.plist
+/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3:KeyboardLayout ID integer 252' ~/Library/Preferences/com.apple.HIToolbox.plist
 ```
 
-**Commands-only output** (with `--only-cmds` or `-q`):
+### Nested dict changes: `PlistBuddy Set`
+
+For changes inside nested dictionaries (keyboard shortcuts in `symbolichotkeys`):
+
 ```bash
-defaults write com.apple.dock persistent-apps -array-add '<dict><key>tile-data</key><dict><key>file-label</key><string>Safari</string></dict></dict>'
-defaults write com.apple.HIToolbox AppleEnabledInputSources -array-add '<dict><key>InputSourceKind</key><string>Keyboard Layout</string><key>KeyboardLayout ID</key><integer>252</integer></dict>'
+# Changing a keyboard shortcut key binding
+/usr/libexec/PlistBuddy -c 'Set :AppleSymbolicHotKeys:32:value:parameters:1 122' ~/Library/Preferences/com.apple.symbolichotkeys.plist
 ```
 
-## 🔧 Advanced Features
+### Array deletions: `PlistBuddy Delete`
 
-### Excluded Domains (Smart Filtering)
-
-The script automatically excludes noisy system domains that change frequently but are rarely useful:
-
-- `com.apple.cfprefsd.*`
-- `com.apple.notificationcenterui.*`
-- `com.apple.Spotlight.*`
-- `com.apple.security.*`
-- And many more...
-
-Add custom exclusions:
-```bash
-./watch-preferences.sh ALL --exclude "my.custom.domain*,another.domain"
-# Or with short flag:
-./watch-preferences.sh ALL -e "my.custom.domain*,another.domain"
-```
-
-### PlistBuddy Commands
-
-For complex dictionaries and arrays, the script generates **PlistBuddy commands exclusively** (v2.8.6+):
+For removing items from arrays (removing a Dock icon, removing a keyboard layout):
 
 ```bash
-# PlistBuddy commands for array additions (more reliable for complex structures)
-/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:3:InputSourceKind string 'Keyboard Layout'" ~/Library/Preferences/com.apple.HIToolbox.plist
-/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:3:KeyboardLayout ID integer 252" ~/Library/Preferences/com.apple.HIToolbox.plist
-```
-
-**⚠️ Important for Admins: Sequential Execution Required**
-
-When multiple array additions are detected in quick succession, all commands may reference the **same initial index** (e.g., `:5:`). This is because indices are calculated at detection time, not after execution.
-
-**Correct execution:** Run commands **sequentially in order**
-```bash
-# Command 1 adds at index :5: (creates the entry)
-/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:5:InputSourceKind string 'Keyboard Layout'" ~/Library/Preferences/com.apple.HIToolbox.plist
-
-# Command 2 for the same addition continues adding to :5:
-/usr/libexec/PlistBuddy -c "Add :AppleEnabledInputSources:5:KeyboardLayout ID integer 252" ~/Library/Preferences/com.apple.HIToolbox.plist
-
-# Next addition will naturally go to :6: after :5: is complete
-```
-
-**❌ Do NOT:** Execute all commands simultaneously or out of order - this will cause index conflicts.
-
-### Array Deletion Warnings
-
-When deleting array elements, the script provides index warnings:
-
-```bash
-# WARNING: Array deletion - indices shift after each deletion
+# WARNING: Array deletion - indexes change after each deletion
 # For multiple deletions: execute from HIGHEST index to LOWEST
-defaults delete com.apple.HIToolbox ":AppleEnabledInputSources:3"
+/usr/libexec/PlistBuddy -c 'Delete :persistent-apps:3' ~/Library/Preferences/com.apple.dock.plist
 ```
 
-## 📂 Project Structure
+### ByHost preferences: `-currentHost`
+
+For per-machine preferences (trackpad, display), the script auto-detects ByHost plists:
+
+```bash
+defaults write com.apple.AppleMultitouchTrackpad "ActuateDetents" -currentHost -int 1
+defaults write com.apple.AppleMultitouchTrackpad "ForceSuppressed" -currentHost -bool FALSE
+```
+
+## Jamf Pro Integration
+
+When run via Jamf Pro, the script auto-detects Jamf mode (positional parameters):
+
+```bash
+# $1-$3: Reserved by Jamf (mount_point, computer_name, username)
+# $4: Domain (ALL or specific, e.g. com.apple.dock)
+# $5: Log file path (optional)
+# $6: Include system preferences (true/false, default: true)
+# $7: Only show commands (true/false, default: true)
+# $8: Excluded domains (comma-separated glob patterns)
+```
+
+Features specific to Jamf workflows:
+- Auto-launches **Console.app** with the log file for real-time viewing
+- Stops monitoring when Console.app is closed
+- Runs as root with `sudo -u` to read the console user's preferences
+- Triple logging: stdout + log file + `syslog` (`/usr/bin/logger`)
+
+## Intelligent Noise Filtering
+
+The script filters at three levels to keep output clean:
+
+### 1. Domain exclusions (40+ patterns)
+
+Entire domains that produce only background noise:
+
+| Category | Examples |
+|----------|----------|
+| Background daemons | `com.apple.cfprefsd*`, `com.apple.notificationcenterui*`, `ContextStoreAgent*` |
+| Cloud sync | `com.apple.CloudKit*`, `com.apple.bird`, `com.apple.cloudd` |
+| Event counters | `com.apple.cseventlistener`, `com.apple.spotlightknowledge`, `com.apple.amsengagementd` |
+| Telemetry observers | `com.apple.suggestions.*Observer*`, `com.apple.personalizationportrait.*Observer*` |
+| MDM internals | `com.jamf*`, `com.jamfsoftware*` |
+| Third-party updaters | `com.microsoft.autoupdate*`, `*.zoom.updater*` |
+
+### 2. Per-key intelligent filtering
+
+Domains with useful *and* noisy keys are filtered at key level:
+
+| Domain | Filtered (noise) | Kept (useful) |
+|--------|-------------------|---------------|
+| `com.apple.dock` | `workspace-*`, `mod-count`, `GUID`, `lastShowIndicatorTime` | `orientation`, `autohide`, `tilesize`, `persistent-apps` |
+| `com.apple.finder` | `FXRecentFolders`, `GoToField*`, `name` | `ShowPathbar`, `FXPreferredViewStyle`, `AppleShowAllFiles` |
+| `com.apple.HIToolbox` | `AppleSavedCurrentInputSource` (transient switch) | `AppleEnabledInputSources` (layout additions) |
+| `com.apple.Spotlight` | `engagementCount*`, `lastWindowPosition`, `NSStatusItem*` | `EnabledPreferenceRules`, `orderedItems` |
+| `com.apple.controlcenter` | `NSStatusItem*` (UI positioning) | Preference toggles |
+
+### 3. Global noisy patterns
+
+Applied to all domains: `NSWindow Frame*`, `*timestamp*`, `*LastUpdate*`, `*Cache*`, `*UUID*`, `*RecentFolders`, SHA256 hash keys, `ALL_CAPS_FEATURE_FLAGS`, etc.
+
+Override with `--exclude` to use only your custom exclusions, or use `-v` (verbose) to see filtered keys.
+
+## Tested Categories
+
+Systematically tested on macOS Tahoe (26.x):
+
+| Category | Tested | Status |
+|----------|--------|--------|
+| **Dock**: position, size, magnification, auto-hide, add/remove icons | `com.apple.dock` | Working |
+| **Finder**: default view style (list/column/gallery/icon), show path bar, show status bar | `com.apple.finder` | Working |
+| **Mission Control**: auto-rearrange spaces, group windows by app | `com.apple.dock` | Working |
+| **Keyboard layouts**: add/remove input sources | `com.apple.HIToolbox` | Working |
+| **Keyboard shortcuts**: custom key bindings (symbolichotkeys) | `com.apple.symbolichotkeys` | Working (domain mode) |
+| **Trackpad**: force click, three-finger tap, actuate detents | `com.apple.AppleMultitouchTrackpad` | Working |
+| **Accessibility**: reduce transparency, increase contrast, reduce motion | `com.apple.universalaccess` | Working |
+| **Safari, Mail, third-party apps** | Various | Working |
+| **Spotlight**: search categories (EnabledPreferenceRules) | `com.apple.Spotlight` | Partial |
+
+## Known Limitations
+
+### Not Detectable (not plist-based)
+
+| What | Storage | Why |
+|------|---------|-----|
+| **Finder sidebar favorites** | `.sfl2` binary format | Not a plist file |
+| **Finder per-folder view settings** | `.DS_Store` files | Not a plist file |
+| **TCC permissions** (Camera, Microphone, etc.) | SQLite database (`TCC.db`) | Protected by SIP |
+| **Login Items** (modern) | Background Task Management framework | Not plist-based |
+
+### Partial Detection
+
+| What | Issue | Workaround |
+|------|-------|------------|
+| **Keyboard shortcuts** in ALL mode | `fs_usage` doesn't always catch `symbolichotkeys` writes | Use domain mode: `./watch-preferences.sh com.apple.symbolichotkeys -v` |
+| **Spotlight "associated content"** toggle | macOS writes to different domains for enable vs disable (asymmetric) | Deletion detected, re-enable detected via different domain |
+| **Display resolution** | ByHost plist detected but domain is noisy (`com.apple.windowserver`) | Filtered by default |
+
+### System Requirements
+
+- **SIP**: Can be enabled (recommended)
+- **Full Disk Access**: Required for some system preferences in ALL mode
+- **Python 3**: Required for array/dict change detection. Without it, only scalar changes are detected.
+
+## Architecture
+
+```
+watch-preferences.sh (2300 lines, zsh)
+├── CLI / Jamf argument parsing
+├── Domain exclusion engine (glob patterns, cached)
+├── Intelligent key filtering (is_noisy_key: global + per-domain patterns)
+├── Plist manipulation (plutil + Python plistlib fallback for NSData)
+├── PlistBuddy command generation
+│   ├── Add (array additions — emit_array_additions)
+│   ├── Set (nested dict changes — emit_nested_dict_changes)
+│   └── Delete (array deletions — emit_array_deletions)
+├── JSON diff engine (Python, embedded)
+│   ├── Array element matching (unordered comparison)
+│   ├── Recursive leaf change detection (nested dicts)
+│   └── _skip_keys metadata (prevents duplicate defaults write)
+├── Monitoring
+│   ├── Domain mode: mtime polling (stat -f %m, 0.5s)
+│   └── ALL mode: fs_usage + find -newer polling
+└── Logging (stdout + file + syslog)
+```
+
+## Project Structure
 
 ```
 Watch-preferences/
 ├── watch-preferences.sh    # Main script (latest version)
 ├── versions/               # All historical versions
-│   ├── latest             # Symlink to current version
-│   ├── watch-preferences-v2.4.0.sh
-│   └── ...
-├── CHANGELOG.md           # Detailed version history
-├── release.sh             # Version release helper
-├── pre-commit             # Git pre-commit hook
-└── README.md              # This file
+│   ├── latest              # Symlink to current version
+│   └── watch-preferences-v2.9.*.sh
+├── CHANGELOG.md            # Detailed version history
+├── release.sh              # Version release helper
+├── pre-commit              # Git pre-commit hook
+└── README.md
 ```
 
-## 🔄 Version Management
+## Version Management
 
-This project uses automated versioning:
+1. Update version in `watch-preferences.sh` header
+2. Update `CHANGELOG.md`
+3. Commit: the pre-commit hook automatically creates a versioned copy in `versions/`
+4. Optionally tag: `git tag -a watch-preferences-v2.9.25 -m "Version 2.9.25-beta"`
 
-1. Update version number in [watch-preferences.sh](watch-preferences.sh) header
-2. Update [CHANGELOG.md](CHANGELOG.md) with changes
-3. Commit: the pre-commit hook automatically creates a versioned copy
-4. Tag: `git tag -a watch-preferences-v2.4.0 -m "Version 2.4.0"`
+## License
 
-## 🤝 Contributing
+MIT License - see [LICENSE](LICENSE).
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+## Issues and Support
 
-### Development Workflow
+- Report bugs: [GitHub Issues](https://github.com/Gill0o/Watch-preferences/issues)
+- Questions: [GitHub Discussions](https://github.com/Gill0o/Watch-preferences/discussions)
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes
-4. Update CHANGELOG.md
-5. Commit and push
-6. Create a Pull Request
+## Version History
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🐛 Issues and Support
-
-- Report bugs via [GitHub Issues](https://github.com/Gill0o/Watch-preferences/issues)
-- For questions, use [GitHub Discussions](https://github.com/Gill0o/Watch-preferences/discussions)
-
-## ⚠️ Known Limitations
-
-### What Works (95%+ of use cases)
-✅ **All user preferences** - 100% coverage
-✅ **Third-party applications** - Full support
-✅ **Sandboxed apps** (Safari, Mail, etc.) - Auto-detected
-✅ **System UI** (Dock, Finder, Accessibility) - Complete monitoring
-✅ **Input devices** (Keyboard, Trackpad, Mouse) - All preferences
-
-### System Limitations
-
-#### 1. TCC Database (System Integrity Protection)
-**Domain**: `com.apple.TCC`
-**Status**: ❌ Not monitorable
-
-The TCC (Transparency, Consent, and Control) database stores privacy permissions (Camera, Microphone, Accessibility, etc.) but uses SQLite format instead of plists. It's protected by macOS System Integrity Protection (SIP) and cannot be monitored by any user-space tool.
-
-**Impact**: None for typical use cases - TCC permissions aren't configured via `defaults` commands anyway.
-
-**Workaround**: Use `tccutil` command-line tool or Privacy settings in System Preferences.
-
-#### 2. Managed Preferences (MDM/Jamf)
-**Domain**: `/Library/Managed Preferences/`
-**Status**: ⚠️ Requires elevated privileges
-
-Preferences managed by MDM systems (Jamf Pro, etc.) may require root access to monitor.
-
-**Impact**: Limited when running in CLI mode as regular user.
-
-**Workaround**:
-- Execute via Jamf Pro policy (automatic root privileges)
-- Run with `sudo` for system-wide monitoring
-
-#### 3. Undefined Preferences
-**Status**: ✅ Normal behavior
-
-When a preference has never been modified, macOS uses hardcoded defaults that don't appear in plist files. This is expected behavior.
-
-**Impact**: None - the script only captures actual changes, which is the intended use case.
-
-**Example**: If you've never set Safari's HomePage, `defaults read com.apple.Safari HomePage` returns "does not exist" - this is normal.
-
-### System Requirements
-
-- **SIP (System Integrity Protection)**: Can be enabled (recommended) - only affects TCC monitoring
-- **Full Disk Access**: Required for monitoring some system preferences in ALL mode
-- **FileVault**: No impact - works with FileVault enabled or disabled
-
-### Performance Notes
-
-- **Domain-specific mode**: Uses optimized `mtime` checking (~1-2% CPU)
-- **ALL mode**: Uses `fs_usage` + polling (~5-10% CPU during changes)
-- **Memory usage**: ~20-50MB typical, scales with number of monitored domains
-
-## 🙏 Acknowledgments
-
-- Built for the macOS system administration community
-- Optimized for Jamf Pro workflows
-- Inspired by the need to document and replicate user preferences
-
-## 📊 Version History
-
-Current version: **2.9.0-beta** (2026-02-04)
-
-⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active debugging and improvements in progress
+Current version: **2.9.25-beta** (2026-02-05)
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### Recent Changes (v2.9.0-beta)
+### Recent Changes
 
-- **PERFORMANCE**: Restored optimized mtime polling (~1-2% CPU vs ~5-10%)
-- **FIXED** (v2.8.8): Critical detection bug - missing `_has_array_additions` variable
-- **CLEANUP** (v2.8.6): Removed `defaults write -array-add` commands from output
-- **RESULT**: Only PlistBuddy commands shown for array operations
-- **STATUS**: All core functionality working, optimized and stable
+- **v2.9.25**: Extended noise filtering (cseventlistener, spotlightknowledge, controlcenter, HIToolbox)
+- **v2.9.24**: Intelligent Spotlight filtering, Observer domain exclusions
+- **v2.9.23**: Fix `_skip_keys` subshell bug (process substitution)
+- **v2.9.22**: Nested dict change detection (`PlistBuddy Set` for symbolichotkeys)
+- **v2.9.20**: PlistBuddy-only for deletions (removed redundant `defaults delete`)
+- **v2.9.19**: Instant detection on startup (baseline snapshot before polling)
 
 ---
 
-**Made with ❤️ for macOS system administrators**
+**Built for macOS system administrators and Jamf Pro workflows.**
