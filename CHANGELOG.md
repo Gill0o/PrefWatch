@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.17-beta — 2026-02-05
+- **FIX**: PlistBuddy commands now executable for Dock icon additions
+  - Added missing `Add :persistent-apps:N dict` (create array entry before sub-keys)
+  - Restored `_CFURLStringType` in output (value 15 = file reference URL, required by Dock)
+  - Commands are now complete and can be run sequentially + `killall Dock`
+
 ## 2.9.16-beta — 2026-02-05
 - **FIX**: Suppress residual flat `defaults write` for `_CFURLString` and `file-data`
   - Added `_CFURLString`, `_CFURLStringType`, `file-data` to secondary array-additions filter
