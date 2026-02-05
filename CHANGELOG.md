@@ -2,6 +2,13 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.23-beta — 2026-02-05
+- **FIX**: Resolve `_skip_keys` subshell bug — nested keys no longer leak as flat `defaults write`
+  - **ROOT CAUSE**: `diff | awk | while` pipe created subshell; `_skip_keys` was inaccessible
+  - **FIX**: Replaced pipe with process substitution (`< <(diff | awk)`)
+  - While loop now runs in parent shell with full access to `_skip_keys`
+  - Applied to both ALL mode and DOMAIN mode diff handlers
+
 ## 2.9.22-beta — 2026-02-05
 - **FEATURE**: Detect changes inside nested dicts (e.g. `com.apple.symbolichotkeys`)
   - New `emit_nested_dict_changes()` function: deep recursive comparison of JSON snapshots
