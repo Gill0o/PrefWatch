@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.13-beta — 2026-02-05
+- **FIX**: PlistBuddy output now filtered for noisy internal keys
+  - **BEFORE**: 14 lines for Dock icon addition (GUID, tile-type, book, file-mod-date, etc.)
+  - **AFTER**: ~5 useful lines (bundle-identifier, _CFURLString, file-label + structural dicts)
+  - PBCMD handler now extracts leaf key and checks `is_noisy_key()` before display
+  - Binary data placeholders (`<data:N>`) automatically filtered
+  - Dock filter updated: internal metadata only (GUID, dock-extra, tile-type, is-beta, _CFURLStringType, file-type, file-mod-date, parent-mod-date, book)
+  - Useful keys (bundle-identifier, _CFURLString, file-label) now shown in PlistBuddy output
+
 ## 2.9.12-beta — 2026-02-05
 - **FIX**: Dock and plists with binary data now properly detected
   - **ROOT CAUSE**: `plutil -convert json` fails on plists containing NSData (e.g., com.apple.dock)
