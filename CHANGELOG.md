@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.19-beta — 2026-02-05
+- **FIX**: Instant detection on startup — no more 1-minute wait
+  - `start_watch()` now takes an initial baseline snapshot before the polling loop
+  - Previously: first change was consumed as baseline (no `prev` to diff against)
+  - Now: baseline created at startup, first user change detected immediately
+
 ## 2.9.18-beta — 2026-02-05
 - **PERFORMANCE**: Eliminated all `printf | grep` forks in hot paths
   - Replaced 25+ `printf | grep -Eq` calls with zsh built-in `[[ =~ ]]` and `[[ == ]]`
