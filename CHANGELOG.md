@@ -2,6 +2,23 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.4-beta — 2026-02-04
+- **FILTER**: Extended global filters for session/cache data (user feedback)
+  - **NEW PATTERNS**:
+    - `*StartupTime*`, `*StartTime*` (CloudKit/app startup timestamps)
+    - `*-library-id`, `*-persistent-id`, `*-device-id` (device/library identifiers)
+    - `uuid`, `UUID`, `flags` (notification center transient states)
+    - Hash keys detection: hex strings 32+ chars (session IDs, e.g., `bc4a9925...`)
+  - **DOMAIN-SPECIFIC**:
+    - Finder: Filter `name` key (temporary window names)
+  - **EXAMPLES FILTERED**:
+    - `com.apple.appleaccountd "CKStartupTime"`
+    - `com.apple.amp.mediasharingd "shared-library-id"`
+    - `com.apple.ncprefs "flags"`, `"uuid"`
+    - `com.apple.finder "name" -string "Preferences"`
+    - Hash keys like `"bc4a9925ba8a1ebc964af5dbb213795013950b6b8b234aacf7fb20f5a791e5d7"`
+  - **NOTE**: All filtered items visible in verbose mode (`-v`) for debugging
+
 ## 2.9.3-beta — 2026-02-04
 - **ARCHITECTURE**: Refactored filtering to use universal global patterns
   - **IMPROVEMENT**: Moved domain-specific filters to global patterns for universal coverage

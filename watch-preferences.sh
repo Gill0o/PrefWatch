@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.3-beta
+# Version: 2.9.4-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -454,12 +454,20 @@ is_noisy_key() {
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
-    # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*)
+    # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, etc.
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*)
       return 0 ;;
 
     # Date fields (float/string dates are usually metadata)
     *Date|Date)
+      return 0 ;;
+
+    # Device/Library/Session IDs (change per device, not user preferences)
+    *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id)
+      return 0 ;;
+
+    # UUIDs and flags (transient notification/state identifiers)
+    uuid|UUID|flags)
       return 0 ;;
 
     # File metadata (changes on every file operation)
@@ -487,6 +495,12 @@ is_noisy_key() {
       return 0 ;;
   esac
 
+  # Hash keys (session IDs, cache keys) - long hex strings
+  # Examples: bc4a9925ba8a1ebc964af5dbb213795013950b6b8b234aacf7fb20f5a791e5d7 (SHA256)
+  if printf '%s' "$keyname" | /usr/bin/grep -Eq '^[0-9a-fA-F]{32,}$'; then
+    return 0
+  fi
+
   # ========================================================================
   # DOMAIN-SPECIFIC NOISY KEYS
   # ========================================================================
@@ -505,8 +519,8 @@ is_noisy_key() {
     # Finder preferences: Keep view settings, filter recent folders
     com.apple.finder)
       case "$keyname" in
-        # Noisy: recent folders, trash state, search history
-        FXRecentFolders|GoToField*|LastTrashState|FXDesktopVolumePositions)
+        # Noisy: recent folders, trash state, search history, window name
+        FXRecentFolders|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
