@@ -2,6 +2,13 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.14-beta — 2026-02-05
+- **FIX**: PlistBuddy commands now correctly displayed (critical bug fix)
+  - **ROOT CAUSE**: `emit_array_additions()` called inside `$()` — `log_*` stdout captured instead of displayed
+  - **SOLUTION**: Moved PBCMD handling to callers (outside `$()`) so `log_*` writes to terminal
+  - **ALSO FIXED**: `file-label` incorrectly in global noisy filter — removed (useful for Dock app names)
+  - **RESULT**: Dock icon additions now show ~5 clean PlistBuddy commands
+
 ## 2.9.13-beta — 2026-02-05
 - **FIX**: PlistBuddy output now filtered for noisy internal keys
   - **BEFORE**: 14 lines for Dock icon addition (GUID, tile-type, book, file-mod-date, etc.)
