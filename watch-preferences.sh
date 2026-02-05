@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.6-beta
+# Version: 2.9.7-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -317,12 +317,30 @@ fi
 HAVE_BIN_DATE="false"
 [ -x /bin/date ] && HAVE_BIN_DATE="true"
 
-# Python3 detection (used for JSON processing if available)
+# Python3 detection & validation (used for JSON processing if available)
+# On macOS Sonoma, /usr/bin/python3 may exist as a stub requiring Command Line Tools
 PYTHON3_BIN=""
-if command -v /usr/bin/python3 >/dev/null 2>&1; then
-  PYTHON3_BIN="/usr/bin/python3"
-elif command -v python3 >/dev/null 2>&1; then
-  PYTHON3_BIN="$(command -v python3)"
+_python3_validate() {
+  local candidate="$1"
+  # Actually run python3 to verify it works (not just that binary exists)
+  if "$candidate" -c 'import json; print("ok")' >/dev/null 2>&1; then
+    PYTHON3_BIN="$candidate"
+    return 0
+  fi
+  return 1
+}
+
+if [ -x /usr/bin/python3 ] && _python3_validate /usr/bin/python3; then
+  : # validated
+elif command -v python3 >/dev/null 2>&1 && _python3_validate "$(command -v python3)"; then
+  : # validated
+fi
+
+if [ -z "$PYTHON3_BIN" ]; then
+  # Python3 not available or Command Line Tools not installed
+  # Script will still work but without array change detection (JSON diff)
+  _py_warn="Python3 not available — array change detection disabled."
+  _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
 # Cache initialization
@@ -2000,6 +2018,14 @@ if [ "$ALL_MODE" = "true" ]; then
   log_line "Starting: monitoring ALL preferences"
 else
   log_line "Starting monitoring on $DOMAIN"
+fi
+
+# Python3 status (warn before snapshots if unavailable)
+if [ -n "$PYTHON3_BIN" ]; then
+  log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
+else
+  log_line "WARNING: ${_py_warn:-Python3 not available}"
+  log_line "TIP: Run 'xcode-select --install' to enable array change detection"
 fi
 
 # Stop if domain explicitly excluded (domain mode only)

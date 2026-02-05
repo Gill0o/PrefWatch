@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.7-beta — 2026-02-05
+- **FIX**: Python3 validation before snapshots (macOS Sonoma compatibility)
+  - **ISSUE**: On macOS Sonoma, `/usr/bin/python3` exists as a stub requiring Command Line Tools
+  - **BEFORE**: `command -v` detected the stub as valid, but Python failed during snapshots
+  - **AFTER**: Actually runs `python3 -c 'import json'` to verify it works
+  - **WARNING**: Clear message shown before snapshots if Python3 not available
+  - **TIP**: Suggests `xcode-select --install` to the user
+  - **RESULT**: Script still works without Python3, but array change detection is disabled
+
 ## 2.9.6-beta — 2026-02-04
 - **FILTER**: Added filtering for error states, rollout configs, and feature flags
   - **NEW GLOBAL PATTERNS**:
