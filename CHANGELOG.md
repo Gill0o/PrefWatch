@@ -2,6 +2,17 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.22-beta — 2026-02-05
+- **FEATURE**: Detect changes inside nested dicts (e.g. `com.apple.symbolichotkeys`)
+  - New `emit_nested_dict_changes()` function: deep recursive comparison of JSON snapshots
+  - Generates PlistBuddy `Set` commands with full paths for changed leaf values
+  - Example: `Set :AppleSymbolicHotKeys:32:value:parameters:1 124`
+- **FIX**: `emit_array_deletions` now skips nested arrays (only handles top-level)
+  - Previously emitted wrong paths like `:parameters:1` instead of full nested path
+- **FIX**: PBCMD handler now supports both `Add` and `Set` commands
+- **FILTER**: Added `com.apple.BezelServices`, `com.microsoft.autoupdate*`, `*.zoom.updater*`
+  to excluded domains; added `*.extension` to systemsettings noise filter
+
 ## 2.9.21-beta — 2026-02-05
 - **FIX**: Finder noise filter now matches both `com.apple.finder` and `com.apple.Finder`
   - macOS uses capitalized `Finder` in some contexts; zsh `case` is case-sensitive
