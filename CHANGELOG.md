@@ -2,6 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.24-beta — 2026-02-05
+- **FILTER**: Comprehensive noise filtering after systematic testing
+  - Removed `com.apple.Spotlight` from global exclusions — now intelligently filtered per-key
+  - Spotlight filter: keeps preference settings (DisabledUTTypes, EnabledPreferenceRules, orderedItems),
+    filters UI state (window position, counters, engagement data, FTE state)
+  - Added domain exclusions: `com.apple.windowserver*`, `com.apple.jetpackassetd`,
+    `diagnostics_agent`, `com.apple.suggestions.*Observer*`, `com.apple.personalizationportrait.*Observer*`
+  - Added global noisy patterns: `*LastSuccess*`, `*lastSuccess*`, `*LastKnown*`, `*lastKnown*`
+
 ## 2.9.23-beta — 2026-02-05
 - **FIX**: Resolve `_skip_keys` subshell bug — nested keys no longer leak as flat `defaults write`
   - **ROOT CAUSE**: `diff | awk | while` pipe created subshell; `_skip_keys` was inaccessible
