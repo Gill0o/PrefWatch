@@ -8,6 +8,8 @@
 
 A macOS shell script that monitors preference domains (plist files) in real-time and generates executable commands (`defaults write` / `PlistBuddy`) to reproduce configuration changes on other machines. Built for Jamf Pro workflows and macOS system administration.
 
+Test version 2.9.29
+
 ## What It Does
 
 1. You run the script
