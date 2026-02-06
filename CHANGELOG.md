@@ -2,6 +2,13 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.27-beta — 2026-02-05
+- **REFACTOR**: Simplified section headers for better readability
+  - Replace numbered sections (SECTION 1, 1.5, 2...) with semantic names
+  - 4 main sections: CONFIGURATION, EXCLUSIONS, FUNCTIONS, MAIN
+  - FUNCTIONS uses lightweight subsections: `# --- Name ---`
+  - Subsections: Preflight & Environment, Utilities, Filtering, Logging, Plist, PlistBuddy, Diff Engine, Monitoring
+
 ## 2.9.26-beta — 2026-02-05
 - **REFACTOR**: Code cleanup and optimization (~175 lines removed)
   - Remove dead code: `convert_to_plistbuddy()` and `array_add_command()` (never called)
