@@ -2,11 +2,15 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.28-beta — 2026-02-05
+- **STYLE**: More visible subsection headers in FUNCTIONS
+  - Replace `# --- Name ---` with 3-line block format for better visibility
+  - Format: `# ---------------------------------------` / `# Name` / `# ---------------------------------------`
+
 ## 2.9.27-beta — 2026-02-05
 - **REFACTOR**: Simplified section headers for better readability
   - Replace numbered sections (SECTION 1, 1.5, 2...) with semantic names
   - 4 main sections: CONFIGURATION, EXCLUSIONS, FUNCTIONS, MAIN
-  - FUNCTIONS uses lightweight subsections: `# --- Name ---`
   - Subsections: Preflight & Environment, Utilities, Filtering, Logging, Plist, PlistBuddy, Diff Engine, Monitoring
 
 ## 2.9.26-beta — 2026-02-05
