@@ -2,6 +2,12 @@
 
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
+## 2.9.26-beta — 2026-02-05
+- **REFACTOR**: Code cleanup and optimization (~175 lines removed)
+  - Remove dead code: `convert_to_plistbuddy()` and `array_add_command()` (never called)
+  - Consolidate `log_line/log_user/log_system` into single `_log()` core function with thin wrappers
+  - Script reduced from 2304 to 2130 lines (-7.5%)
+
 ## 2.9.25-beta — 2026-02-05
 - **FILTER**: Extended noise filtering from idle monitoring session
   - Domain exclusions: `com.apple.cseventlistener`, `com.apple.spotlightknowledge`,
