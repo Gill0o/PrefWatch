@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 2.9.28-beta
+# Version: 3.0.0-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -844,15 +844,6 @@ extract_type_value_with_plutil() {
   return 0
 }
 
-# Extract domain from a defaults write command
-extract_domain_from_defaults_cmd() {
-  local text="$1"
-  local domain
-  domain=$(printf '%s' "$text" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write([[:space:]]+-[^[:space:]]+)*[[:space:]]+["]?([^"[:space:]]+).*/\3/p')
-  [ -z "$domain" ] && domain=$(printf '%s' "$text" | /usr/bin/sed -nE "s/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write([[:space:]]+-[^[:space:]]+)*[[:space:]]+'([^'[:space:]]+)'.*/\\3/p")
-  printf '%s' "$domain"
-}
-
 # ---------------------------------------
 # PlistBuddy
 # ---------------------------------------
@@ -905,61 +896,6 @@ parse_array_index_key() {
     fi
   fi
   return 1
-}
-
-# Generate an array-add command for an array element
-array_add_command() {
-  local dom="$1" colon_key="$2"
-  local parsed base idx json payload
-  [ -n "$PYTHON3_BIN" ] || return 1
-
-  if ! parsed=$(parse_array_index_key "$colon_key"); then
-    return 1
-  fi
-
-  base="${parsed%% *}"
-  idx="${parsed##* }"
-  json=$("${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - 2>/dev/null | /usr/bin/plutil -convert json -o - - 2>/dev/null) || return 1
-  [ -n "$json" ] || return 1
-
-  payload=$(printf '%s' "$json" | "$PYTHON3_BIN" - "$base" "$idx" <<'PY'
-import json, sys
-array_name = sys.argv[1]
-index = int(sys.argv[2])
-data = json.load(sys.stdin)
-entry = None
-if array_name in data and isinstance(data[array_name], list):
-    arr = data[array_name]
-    if 0 <= index < len(arr):
-        entry = arr[index]
-if entry is None:
-    alt_key = f":{array_name}:{index}"
-    entry = data.get(alt_key)
-if entry is None:
-    sys.exit(1)
-def fmt_value(val):
-    if isinstance(val, str):
-        return '"' + val.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    if isinstance(val, bool):
-        return 'YES' if val else 'NO'
-    if isinstance(val, (int, float)):
-        return str(val)
-    if val is None:
-        return '""'
-    return '"' + str(val).replace('\\', '\\\\').replace('"', '\\"') + '"'
-parts = []
-for key, value in entry.items():
-    escaped_key = '"' + key.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    parts.append(f'{escaped_key} = {fmt_value(value)};')
-payload = '{ ' + ' '.join(parts) + ' }'
-print(payload)
-PY
-) || return 1
-
-  payload=$(printf '%s' "$payload" | /usr/bin/tr '\n' ' ' | /usr/bin/sed -E 's/[[:space:]]+/ /g')
-  [ -n "$payload" ] || return 1
-  printf "defaults write %s \"%s\" -array-add '%s'\n" "$dom" "$base" "$payload"
-  return 0
 }
 
 # Detect and emit commands for array additions

@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.0-beta — 2026-02-08
+- **RELEASE**: First 3.x release — code cleanup, documentation overhaul, repo reorganization
+  - Removed dead code: `array_add_command()` and `extract_domain_from_defaults_cmd()` (64 lines)
+  - Script reduced from 2130 to 2066 lines
+  - README streamlined for clarity (removed verbose sections, lead with simplest use case)
+  - CHANGELOG fully translated to English
+  - Repo cleaned: removed internal dev files from tracking (versions/, pre-commit, release.sh)
+  - All features from 2.9.x preserved, no functional changes
+
 ⚠️ **BETA VERSIONS (2.7.x - 2.9.x)**: Active development, use with caution
 
 ## 2.9.28-beta — 2026-02-05
