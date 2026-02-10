@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 3.1.1-beta
+# Version: 3.1.2-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -667,14 +667,6 @@ is_noisy_key() {
       esac
       ;;
 
-    # TextEdit: Keep format preferences, filter window state
-    com.apple.TextEdit)
-      case "$keyname" in
-        # Noisy: window frames already filtered by global patterns
-        # Keep: RichText, Font, PlainTextEncodingForWrite, etc.
-      esac
-      ;;
-
     # Print presets: Keep meaningful settings, filter Fiery driver defaults & print metadata
     com.apple.print.custompresets*)
       case "$keyname" in
@@ -802,10 +794,8 @@ snapshot_notice() {
 # Stable text output of a plist
 dump_plist() {
   local src="$1" out="$2"
-  # Suppress all plutil errors (including "invalid object" for NSData/binary plists)
-  if /usr/bin/plutil -p "$src" >/dev/null 2>&1; then
-    ( /usr/bin/plutil -p "$src" > "$out" ) 2>/dev/null || /bin/cat "$src" > "$out" 2>/dev/null || :
-  else
+  # Try plutil -p (single call), fall back to raw copy on failure
+  if ! ( /usr/bin/plutil -p "$src" > "$out" ) 2>/dev/null; then
     /bin/cat "$src" > "$out" 2>/dev/null || :
   fi
 }
@@ -981,30 +971,6 @@ def diff(prev_obj, curr_obj, path):
                 results.append((tuple(path), idx, item))
     else:
         return
-
-def escape_string(value: str) -> str:
-    return value.replace('\\', '\\\\').replace('"', '\\"')
-
-def shell_escape_single(value: str) -> str:
-    return value.replace("'", "'\"'\"'")
-
-def format_value(obj):
-    if isinstance(obj, str):
-        return '"' + escape_string(obj) + '"'
-    if isinstance(obj, bool):
-        return 'YES' if obj else 'NO'
-    if isinstance(obj, (int, float)) and not isinstance(obj, bool):
-        return str(obj)
-    if obj is None:
-        return '""'
-    if isinstance(obj, dict):
-        parts = []
-        for key, value in obj.items():
-            parts.append('"' + escape_string(str(key)) + '" = ' + format_value(value) + ';')
-        return '{ ' + ' '.join(parts) + ' }'
-    if isinstance(obj, list):
-        return '(' + ', '.join(format_value(item) for item in obj) + ')'
-    return '"' + escape_string(str(obj)) + '"'
 
 def all_keys_recursive(obj):
     """Collect ALL keys recursively from nested dicts (for _skip_keys)"""
@@ -1323,20 +1289,17 @@ show_plist_diff() {
     fi
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
-      local _pb_plist_path
-      _pb_plist_path="$(get_plist_path "$_dom" 2>/dev/null)"
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
-          [ -n "$_pb_plist_path" ] || continue
           local _pb_cmd="$_array_idx"
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
           local _pb_leaf="${_pb_path##*:}"
           is_noisy_key "$_dom" "$_pb_leaf" && continue
           [[ "$_pb_cmd" == *"'<data:"* ]] && continue
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_pb_plist_path}\""
+          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${path}\""
           case "$kind" in
             USER) log_user "Cmd: $pb_full" ;;
             SYSTEM) log_system "Cmd: $pb_full" ;;
@@ -1410,7 +1373,7 @@ show_plist_diff() {
           fi
         fi
 
-        if is_noisy_key "$dom" "$keyname"; then
+        if is_noisy_key "$_dom" "$keyname"; then
           continue
         fi
 

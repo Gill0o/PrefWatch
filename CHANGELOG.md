@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.2-beta — 2026-02-10
+- **FIX**: `$dom` variable undefined in `show_plist_diff` noise filter — used `$_dom` (correct scope)
+- **FIX**: PlistBuddy paths wrong in ALL mode (root) — use actual file path instead of `get_plist_path`
+- **CLEANUP**: Removed dead Python code (`shell_escape_single`, `format_value`) from `emit_array_additions`
+- **CLEANUP**: Removed empty TextEdit case block (covered by global patterns)
+- **PERF**: `dump_plist` now calls `plutil -p` once instead of twice (test + output)
+
 ## 3.1.1-beta — 2026-02-10
 - **FIX**: Duplicate PlistBuddy commands — `skip_arrays` parameter was broken (passed `"skip_arrays"` instead of `"true"`)
 - **FIX**: False Delete commands for transient cfprefsd writes — re-read live plist before emitting scalar Delete
