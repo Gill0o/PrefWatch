@@ -1,10 +1,9 @@
 # PrefWatch
 
-![Version](https://img.shields.io/badge/version-3.0.0--beta-orange.svg)
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 ![Shell](https://img.shields.io/badge/shell-zsh-blue.svg)
-![Status](https://img.shields.io/badge/status-BETA-orange.svg)
 
 A macOS monitoring tool that watches preference changes in real-time and generates the exact `defaults write` or `PlistBuddy` commands to reproduce them.
 
@@ -124,6 +123,13 @@ The script auto-detects Jamf mode when called with positional parameters:
 ```
 
 In Jamf mode: auto-launches Console.app for live viewing, stops when Console is closed, reads the logged-in user's preferences via `sudo -u`, and logs to stdout + file + syslog.
+
+## Experimental Features
+
+The following features are included but considered **beta** — they may change in future versions:
+
+- **CUPS printer monitoring** (`cups_watch`) — detects printer add/remove in ALL mode, emits `lpadmin` commands
+- **Print preset filtering** (`com.apple.print.custompresets*`) — filters Fiery driver defaults, keeps useful keys (Duplex, PageSize, ColorMode, etc.)
 
 ## Known Limitations
 

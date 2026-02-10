@@ -27,7 +27,7 @@ This project follows a code of conduct to ensure a welcoming environment for all
 2. **Clone your fork** locally:
    ```bash
    git clone https://github.com/Gill0o/PrefWatch.git
-   cd Watch-preferences
+   cd PrefWatch
    ```
 3. **Add the upstream remote**:
    ```bash
