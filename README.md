@@ -131,6 +131,7 @@ In Jamf mode: auto-launches Console.app for live viewing, stops when Console is 
 - Finder sidebar favorites (`.sfl2` binary)
 - Finder per-folder view settings (`.DS_Store`)
 - TCC permissions — Camera, Microphone, etc. (SQLite, SIP-protected)
+- Spotlight "Help Apple improve Search" (server-side / CloudKit sync)
 - Modern Login Items (Background Task Management framework)
 
 **Partial detection:**

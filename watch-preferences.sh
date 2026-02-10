@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 3.1.0-beta
+# Version: 3.1.1-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -239,6 +239,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Network internals (frequent changes, not user preferences)
   "com.apple.networkextension*"
   "com.apple.LaunchServices*"
+  "com.apple.launchservices*"
 
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"
@@ -298,6 +299,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.proactive.PersonalizationPortrait*"
   "com.apple.chronod"
   "com.apple.studentd"
+  "com.apple.configurationprofiles*"
+  "com.apple.sharingd"
+  "com.apple.controlcenter.displayablemenuextras*"
 
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
@@ -507,7 +511,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|*WindowBounds*|*WindowState*)
+    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -1048,15 +1052,20 @@ diff(prev, curr, [])
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
-    if not isinstance(item, dict):
-        continue
-    keys = ','.join(sorted(all_keys_recursive(item)))
-    # Output metadata line (for _skip_keys in shell)
-    print(f"{prefix[0]}\t{index}\t{keys}\t")
-    # Output PlistBuddy commands: first create the array entry, then sub-keys
-    print(f"PBCMD\tAdd :{prefix[0]}:{index} dict")
-    for pb_line in emit_plistbuddy(prefix[0], index, item):
-        print(pb_line)
+    if isinstance(item, dict):
+        keys = ','.join(sorted(all_keys_recursive(item)))
+        # Output metadata line (for _skip_keys in shell)
+        print(f"{prefix[0]}\t{index}\t{keys}\t")
+        # Output PlistBuddy commands: first create the array entry, then sub-keys
+        print(f"PBCMD\tAdd :{prefix[0]}:{index} dict")
+        for pb_line in emit_plistbuddy(prefix[0], index, item):
+            print(pb_line)
+    else:
+        # Scalar array elements (string, int, float, bool)
+        tv = pb_type_value(item)
+        if tv:
+            print(f"{prefix[0]}\t{index}\t\t")
+            print(f"PBCMD\tAdd :{prefix[0]}:{index} {tv[0]} {tv[1]}")
 PY
 ) || return 0
 
@@ -1363,6 +1372,15 @@ show_plist_diff() {
   fi
 
   if [ -s "$prev" ] && [ "$silent" != "true" ]; then
+    # Pre-collect keys from + lines to identify value changes (not deletions)
+    typeset -A _added_keys
+    _added_keys=()
+    while IFS= read -r _aline; do
+      local _ak
+      _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
+      [ -n "$_ak" ] && _added_keys["$_ak"]=1
+    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
+
     # Use process substitution (not pipe) so _skip_keys is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
@@ -1485,11 +1503,16 @@ show_plist_diff() {
             fi
             ;;
           -*)
-            if /usr/bin/grep -F -- "\"$keyname\"" "$curr" >/dev/null 2>&1; then
+            # Skip value changes (key exists in both - and + lines = changed, not deleted)
+            if [ -n "${_added_keys[$keyname]:-}" ]; then
               continue
             fi
             # Skip flat key deletes for print presets (array deletion covers all sub-keys)
             if [[ "$_dom" == com.apple.print.custompresets* ]]; then
+              continue
+            fi
+            # Verify key is truly deleted (not a transient cfprefsd write)
+            if [ -z "$array_name" ] && /usr/bin/plutil -p "$path" 2>/dev/null | /usr/bin/grep -qF "\"$keyname\""; then
               continue
             fi
             local base dom hostflag target delete_cmd
@@ -1560,7 +1583,8 @@ show_domain_diff() {
   local dom="$1"
   local skip_arrays="${2:-false}"
 
-  if is_excluded_domain "$dom"; then
+  # In ALL mode, skip excluded domains. In domain mode, user explicitly requested it.
+  if [ "${ALL_MODE:-false}" = "true" ] && is_excluded_domain "$dom"; then
     return 0
   fi
 
@@ -1647,6 +1671,15 @@ show_domain_diff() {
   fi
 
   if [ -s "$prev" ]; then
+    # Pre-collect keys from + lines to identify value changes (not deletions)
+    typeset -A _added_keys
+    _added_keys=()
+    while IFS= read -r _aline; do
+      local _ak
+      _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
+      [ -n "$_ak" ] && _added_keys["$_ak"]=1
+    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
+
     # Use process substitution (not pipe) so _skip_keys is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
@@ -1754,7 +1787,8 @@ show_domain_diff() {
             fi
             ;;
           -*)
-            if /usr/bin/grep -F -- "\"$keyname\"" "$curr" >/dev/null 2>&1; then
+            # Skip value changes (key exists in both - and + lines = changed, not deleted)
+            if [ -n "${_added_keys[$keyname]:-}" ]; then
               continue
             fi
             # Skip flat key deletes for print presets (array deletion covers all sub-keys)
@@ -1983,9 +2017,9 @@ start_watch_all() {
           continue
         fi
         if [ "$cat_type" = "USER" ]; then
-          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
+          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
         else
-          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
+          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
         fi
       done
     else
@@ -2007,9 +2041,9 @@ start_watch_all() {
           continue
         fi
         if [ "$cat_type" = "USER" ]; then
-          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
+          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
         else
-          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
+          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
         fi
       done
     fi
@@ -2032,7 +2066,7 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
-          log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
+          log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
       if [ "${INCLUDE_SYSTEM}" = "true" ] && [ -d "$prefs_system" ] && [ "$(id -u)" -eq 0 ]; then
@@ -2042,7 +2076,7 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
-          log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
+          log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
       /bin/mv -f "$now" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
@@ -2137,10 +2171,9 @@ else
   log_line "TIP: Run 'xcode-select --install' to enable array change detection"
 fi
 
-# Stop if domain explicitly excluded (domain mode only)
+# Warn if domain is normally excluded (but don't stop — user explicitly requested it)
 if [ "$ALL_MODE" != "true" ] && is_excluded_domain "$DOMAIN"; then
-  log_line "Domain excluded by default: $DOMAIN — stopping monitoring"
-  exit 0
+  log_line "NOTE: $DOMAIN is normally excluded in ALL mode, but monitoring as explicitly requested"
 fi
 
 # Try to open Console.app

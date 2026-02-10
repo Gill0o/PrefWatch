@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.1-beta — 2026-02-10
+- **FIX**: Duplicate PlistBuddy commands — `skip_arrays` parameter was broken (passed `"skip_arrays"` instead of `"true"`)
+- **FIX**: False Delete commands for transient cfprefsd writes — re-read live plist before emitting scalar Delete
+- **FIX**: Domain mode now monitors excluded domains when explicitly requested (warn instead of exit)
+- **FIX**: Scalar array elements (string/int/float/bool) now detected in `emit_array_additions`
+- **FIX**: False Delete for value changes — pre-collect `_added_keys` from diff `+` lines
+- **NOISE**: Added `NSStatusItem*` to global noisy key patterns
+- **NOISE**: Added `com.apple.launchservices*` (lowercase) for case-sensitive zsh matching
+- **NOISE**: Added domain exclusions: `com.apple.configurationprofiles*`, `com.apple.sharingd`,
+  `com.apple.controlcenter.displayablemenuextras*`
+- **DOCS**: Added Spotlight "Help Apple improve Search" to Known Limitations in README
+
 ## 3.1.0-beta — 2026-02-10
 - **FEATURE**: CUPS printer monitoring — detect printer add/remove in ALL mode
   - New `cups_watch()` polls `lpstat` every 2s, emits `lpadmin -p`/`lpadmin -x` commands
