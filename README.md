@@ -26,6 +26,16 @@ defaults write NSGlobalDomain "AppleShowAllExtensions" -bool TRUE
 
 Change Finder view, add an app to the Dock, flip a trackpad setting — every change becomes a copy-paste command. The script automatically picks `defaults write` or `PlistBuddy` depending on the type of change.
 
+## Key Features
+
+- **Zero dependencies** — single zsh script, no package manager, no Python runtime required for basic use
+- **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
+- **Full type coverage** — scalars (`defaults write`), arrays, nested dicts, and array deletions (`PlistBuddy`)
+- **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
+- **Noise filtering** — 40+ domain exclusions and global key patterns so you only see real preference changes
+- **Jamf Pro native** — runs as a Jamf policy with positional parameters, Console.app live view, syslog output
+- **CUPS printer monitoring** *(beta)* — detects printer add/remove and emits `lpadmin` commands
+
 ## Quick Start
 
 ```bash
