@@ -145,8 +145,8 @@ MIT License — see [LICENSE](LICENSE).
 ## Links
 
 - [CHANGELOG.md](CHANGELOG.md) — full version history
-- [Issues](https://github.com/Gill0o/Watch-preferences/issues) — bug reports
-- [Discussions](https://github.com/Gill0o/Watch-preferences/discussions) — questions
+- [Issues](https://github.com/Gill0o/PrefWatch/issues) — bug reports
+- [Discussions](https://github.com/Gill0o/PrefWatch/discussions) — questions
 
 ---
 

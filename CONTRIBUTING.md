@@ -26,12 +26,12 @@ This project follows a code of conduct to ensure a welcoming environment for all
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/Gill0o/Watch-preferences.git
+   git clone https://github.com/Gill0o/PrefWatch.git
    cd Watch-preferences
    ```
 3. **Add the upstream remote**:
    ```bash
-   git remote add upstream https://github.com/Gill0o/Watch-preferences.git
+   git remote add upstream https://github.com/Gill0o/PrefWatch.git
    ```
 4. **Install the pre-commit hook** (optional but recommended):
    ```bash
@@ -304,9 +304,9 @@ function extract_type_value() {
 ## Questions?
 
 If you have questions not covered in this guide:
-- Open a [Question Issue](https://github.com/Gill0o/Watch-preferences/issues/new?template=question.md)
-- Check existing [Issues](https://github.com/Gill0o/Watch-preferences/issues)
-- Review [Discussions](https://github.com/Gill0o/Watch-preferences/discussions)
+- Open a [Question Issue](https://github.com/Gill0o/PrefWatch/issues/new?template=question.md)
+- Check existing [Issues](https://github.com/Gill0o/PrefWatch/issues)
+- Review [Discussions](https://github.com/Gill0o/PrefWatch/discussions)
 
 ## Thank You!
 
