@@ -10,7 +10,7 @@ assignees: ''
 A clear and concise description of what the bug is.
 
 ## Steps to Reproduce
-1. Run the script with these parameters: `./watch-preferences.sh ...`
+1. Run the script with these parameters: `./prefwatch.sh ...`
 2. Perform these actions: '...'
 3. Observe the error: '...'
 

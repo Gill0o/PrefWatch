@@ -1,6 +1,6 @@
-# Contributing to Watch Preferences
+# Contributing to PrefWatch
 
-Thank you for your interest in contributing to Watch Preferences! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to PrefWatch! This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 - [Code of Conduct](#code-of-conduct)
@@ -190,7 +190,7 @@ This project uses semantic versioning (MAJOR.MINOR.PATCH):
 
 3. **Commit both files**:
    ```bash
-   git add watch-preferences.sh CHANGELOG.md
+   git add prefwatch.sh CHANGELOG.md
    git commit -m "feat: your feature description"
    ```
 
@@ -201,7 +201,7 @@ This project uses semantic versioning (MAJOR.MINOR.PATCH):
 
 5. **Tag the release** (after merge to main):
    ```bash
-   git tag -a watch-preferences-v2.5.0 -m "Version 2.5.0"
+   git tag -a prefwatch-v2.5.0 -m "Version 2.5.0"
    git push upstream main --tags
    ```
 
@@ -210,8 +210,8 @@ This project uses semantic versioning (MAJOR.MINOR.PATCH):
 ### Manual Testing Checklist
 Before submitting a PR, test your changes:
 
-- [ ] Test with a specific domain: `./watch-preferences.sh com.apple.dock`
-- [ ] Test with ALL domains: `./watch-preferences.sh ALL`
+- [ ] Test with a specific domain: `./prefwatch.sh com.apple.dock`
+- [ ] Test with ALL domains: `./prefwatch.sh ALL`
 - [ ] Test with various parameter combinations
 - [ ] Test on both zsh and bash (if possible)
 - [ ] Test on different macOS versions (if available)
@@ -222,13 +222,13 @@ Before submitting a PR, test your changes:
 ### Test Environment
 ```bash
 # Basic test
-./watch-preferences.sh com.apple.dock 30
+./prefwatch.sh com.apple.dock 30
 
 # Test with ONLY_CMDS
-./watch-preferences.sh ALL 60 "" "" "" true true
+./prefwatch.sh ALL 60 "" "" "" true true
 
 # Test with exclusions
-./watch-preferences.sh ALL 60 "" "" "" true false "com.apple.Safari*"
+./prefwatch.sh ALL 60 "" "" "" true false "com.apple.Safari*"
 ```
 
 ## Pull Request Process

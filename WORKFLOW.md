@@ -1,6 +1,6 @@
-# Git Workflow Guide for Watch Preferences
+# Git Workflow Guide for PrefWatch
 
-This document explains the recommended Git workflow for the Watch Preferences project.
+This document explains the recommended Git workflow for the PrefWatch project.
 
 ## 📋 Table of Contents
 - [Overview](#overview)
@@ -70,16 +70,16 @@ git checkout -b feature/add-json-export
 # Edit files...
 
 # 4. Update version and changelog
-# Edit watch-preferences.sh (update version number)
+# Edit prefwatch.sh (update version number)
 # Edit CHANGELOG.md (add your changes)
 
 # 5. Commit your changes
-git add watch-preferences.sh CHANGELOG.md
+git add prefwatch.sh CHANGELOG.md
 git commit -m "feat(export): add JSON export functionality"
 # The pre-commit hook will create versioned file automatically
 
 # 6. Stage the versioned files
-git add versions/watch-preferences-v2.5.0.sh versions/latest
+git add versions/prefwatch-v2.5.0.sh versions/latest
 
 # 7. Push to your fork
 git push origin feature/add-json-export
@@ -100,11 +100,11 @@ git checkout -b fix/correct-array-parsing
 # Edit files...
 
 # 3. Update version (PATCH version) and changelog
-# watch-preferences.sh: 2.4.0 -> 2.4.1
+# prefwatch.sh: 2.4.0 -> 2.4.1
 # CHANGELOG.md: Add fix description
 
 # 4. Commit
-git add watch-preferences.sh CHANGELOG.md
+git add prefwatch.sh CHANGELOG.md
 git commit -m "fix(parsing): correct array index handling"
 
 # 5. Push and create PR
@@ -127,7 +127,7 @@ git checkout -b hotfix/security-vulnerability
 # Add urgent fix to CHANGELOG.md
 
 # 4. Commit and push
-git add watch-preferences.sh CHANGELOG.md
+git add prefwatch.sh CHANGELOG.md
 git commit -m "fix(security): patch command injection vulnerability"
 git push origin hotfix/security-vulnerability
 
@@ -137,7 +137,7 @@ git push origin hotfix/security-vulnerability
 # 6. After merge, verify the tag
 git checkout main
 git pull origin main
-git tag -a watch-preferences-v2.4.1 -m "Hotfix: Security vulnerability"
+git tag -a prefwatch-v2.4.1 -m "Hotfix: Security vulnerability"
 git push origin --tags
 ```
 
@@ -224,13 +224,13 @@ Create these labels for issues and PRs:
 
 2. **Verify version files exist**
    ```bash
-   ls -la versions/watch-preferences-v2.4.0.sh
+   ls -la versions/prefwatch-v2.4.0.sh
    ls -la versions/latest
    ```
 
 3. **Create Git tag**
    ```bash
-   git tag -a watch-preferences-v2.4.0 -m "Version 2.4.0: Major refactoring"
+   git tag -a prefwatch-v2.4.0 -m "Version 2.4.0: Major refactoring"
    git push origin --tags
    ```
 
@@ -239,7 +239,7 @@ Create these labels for issues and PRs:
    - Select the tag you just pushed
    - Release title: `v2.4.0 - Major Refactoring`
    - Description: Copy from CHANGELOG.md
-   - Attach the versioned script: `versions/watch-preferences-v2.4.0.sh`
+   - Attach the versioned script: `versions/prefwatch-v2.4.0.sh`
    - Publish release
 
 ### Release Checklist
@@ -360,7 +360,7 @@ git branch -d feature/name
 git push origin --delete feature/name
 
 # Create release tag
-git tag -a watch-preferences-v2.4.0 -m "Version 2.4.0"
+git tag -a prefwatch-v2.4.0 -m "Version 2.4.0"
 git push origin --tags
 ```
 

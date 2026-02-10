@@ -117,11 +117,11 @@ Créer ces labels:
 #### D. Créer la Première Release
 
 `Releases → Create a new release`
-- Tag: `watch-preferences-v2.4.0`
+- Tag: `prefwatch-v2.4.0`
 - Target: `main`
 - Title: `v2.4.0 - Initial Public Release`
 - Description: Copier depuis CHANGELOG.md
-- Attacher le fichier: `versions/watch-preferences-v2.4.0.sh`
+- Attacher le fichier: `versions/prefwatch-v2.4.0.sh`
 - [x] Set as the latest release
 - Publish release
 
@@ -195,7 +195,7 @@ Une fois tout configuré, vous pouvez annoncer:
 
 Template d'annonce:
 ```
-🎉 Watch Preferences v2.4.0 is now open source!
+🎉 PrefWatch v2.4.0 is now open source!
 
 A powerful macOS utility for system administrators to monitor and capture
 preference changes in real-time. Perfect for creating Jamf Pro policies.

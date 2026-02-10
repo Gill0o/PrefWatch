@@ -34,12 +34,12 @@ Describe the testing you've done:
 ### Test Commands
 ```bash
 # Example commands you used to test
-./watch-preferences.sh ALL 60
+./prefwatch.sh ALL 60
 ```
 
 ## Checklist
 - [ ] My code follows the project's style guidelines
-- [ ] I have updated the version number in watch-preferences.sh header (if applicable)
+- [ ] I have updated the version number in prefwatch.sh header (if applicable)
 - [ ] I have updated the CHANGELOG.md file
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have tested my changes thoroughly

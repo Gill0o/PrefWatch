@@ -9,7 +9,7 @@ ROOT_DIR=$(git rev-parse --show-toplevel)
 cd "$ROOT_DIR"
 
 # CHANGE-ME: Keep in sync if you rename the main script
-SRC_REL="watch-preferences/watch-preferences.sh"
+SRC_REL="prefwatch/prefwatch.sh"
 
 if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   # Extract staged and HEAD versions
@@ -17,7 +17,7 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   HEAD_VERSION=$(git show "HEAD:$SRC_REL" 2>/dev/null | grep -m1 -E '^# Version:' | awk -F': ' '{print $2}' | tr -d '\r' || true)
 
   if [ -n "$STAGED_VERSION" ] && [ "$STAGED_VERSION" != "$HEAD_VERSION" ]; then
-    CHANGELOG_REL="watch-preferences/CHANGELOG.md"
+    CHANGELOG_REL="prefwatch/CHANGELOG.md"
     DATE_STR=$(date +%Y-%m-%d)
     ensure_entry() {
       local file="$1"; local ver="$2"; local date="$3"
@@ -57,8 +57,8 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   fi
 
   echo "[pre-commit] Running release for $SRC_REL"
-  "watch-preferences/release.sh" "${STAGED_VERSION:-}"
-  git add -A "watch-preferences/versions" || true
+  "prefwatch/release.sh" "${STAGED_VERSION:-}"
+  git add -A "prefwatch/versions" || true
 fi
 
 exit 0

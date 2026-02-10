@@ -1,13 +1,13 @@
 #!/bin/zsh
 # ============================================================================
-# Script: watch-preferences.sh
+# Script: prefwatch.sh
 # Version: 3.1.2-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
 #
 # CLI Mode (direct execution):
-#   ./watch-preferences.sh [domain] [OPTIONS]
+#   ./prefwatch.sh [domain] [OPTIONS]
 #
 #   Arguments:
 #     [domain]              Preference domain (default: "ALL")
@@ -23,11 +23,11 @@
 #     -h, --help            Show this help message
 #
 #   Examples:
-#     ./watch-preferences.sh                    # Monitor ALL (default)
-#     ./watch-preferences.sh -v                 # Monitor ALL verbose
-#     ./watch-preferences.sh --log /tmp/all.log # Monitor ALL with custom log
-#     ./watch-preferences.sh com.apple.dock     # Monitor specific domain
-#     ./watch-preferences.sh com.apple.finder -v # Specific domain verbose
+#     ./prefwatch.sh                    # Monitor ALL (default)
+#     ./prefwatch.sh -v                 # Monitor ALL verbose
+#     ./prefwatch.sh --log /tmp/all.log # Monitor ALL with custom log
+#     ./prefwatch.sh com.apple.dock     # Monitor specific domain
+#     ./prefwatch.sh com.apple.finder -v # Specific domain verbose
 #
 # Jamf Pro Mode (automatic detection):
 #   When run via Jamf Pro, parameters are automatically shifted.
@@ -56,7 +56,7 @@ set -o pipefail
 # Help message
 show_help() {
   cat << 'EOF'
-Usage: watch-preferences.sh [domain] [OPTIONS]
+Usage: prefwatch.sh [domain] [OPTIONS]
 
 Monitor and log changes to macOS preference domains in real-time.
 
@@ -75,19 +75,19 @@ Options:
 
 Examples:
   # Monitor all domains (default behavior)
-  ./watch-preferences.sh
-  ./watch-preferences.sh -v
-  ./watch-preferences.sh --log /tmp/all-prefs.log
+  ./prefwatch.sh
+  ./prefwatch.sh -v
+  ./prefwatch.sh --log /tmp/all-prefs.log
 
   # Monitor a specific domain
-  ./watch-preferences.sh com.apple.dock
-  ./watch-preferences.sh com.apple.finder -v
+  ./prefwatch.sh com.apple.dock
+  ./prefwatch.sh com.apple.finder -v
 
   # Monitor with exclusions
-  ./watch-preferences.sh -v --exclude "com.apple.Safari*,ContextStoreAgent*"
+  ./prefwatch.sh -v --exclude "com.apple.Safari*,ContextStoreAgent*"
 
   # Monitor without system preferences
-  ./watch-preferences.sh --no-system
+  ./prefwatch.sh --no-system
 
 Jamf Pro Mode:
   When run via Jamf Pro, use positional parameters:
@@ -752,7 +752,7 @@ _log() {
 
     printf "%s\n" "$out"
     printf "%s\n" "$out" >> "$LOGFILE" 2>/dev/null || true
-    /usr/bin/logger -t "watch-preferences[$tag]" -- "$out"
+    /usr/bin/logger -t "prefwatch[$tag]" -- "$out"
     return 0
   fi
 
@@ -768,7 +768,7 @@ _log() {
 
   printf "%s\n" "$line"
   printf "%s\n" "$line" >> "$LOGFILE" 2>/dev/null || true
-  /usr/bin/logger -t "watch-preferences[$tag]" -- "$msg"
+  /usr/bin/logger -t "prefwatch[$tag]" -- "$msg"
 }
 
 # Log wrappers (thin delegates to _log with appropriate syslog tag)
@@ -784,7 +784,7 @@ snapshot_notice() {
   local line="[$ts] [snapshot] $msg"
   printf "%s\n" "$line"
   printf "%s\n" "$line" >> "$LOGFILE" 2>/dev/null || true
-  /usr/bin/logger -t "watch-preferences[snapshot]" -- "$msg"
+  /usr/bin/logger -t "prefwatch[snapshot]" -- "$msg"
 }
 
 # ---------------------------------------
@@ -2118,7 +2118,7 @@ if [ "${ONLY_CMDS:-false}" = "true" ]; then
 else
   { printf "[init] Log file: %s\n" "$LOGFILE"; } | { cat; cat >> "$LOGFILE" 2>/dev/null || true; }
 fi
-/usr/bin/logger -t "watch-preferences[init]" -- "Log file: $LOGFILE"
+/usr/bin/logger -t "prefwatch[init]" -- "Log file: $LOGFILE"
 
 if [ "$ALL_MODE" = "true" ]; then
   log_line "Starting: monitoring ALL preferences"
