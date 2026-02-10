@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: watch-preferences.sh
-# Version: 3.0.0-beta
+# Version: 3.1.0-beta
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
@@ -267,9 +267,13 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.jamf*"
   "com.jamfsoftware*"
 
-  # Third-party updaters (background noise, not user preferences)
+  # Third-party updaters & telemetry (background noise, not user preferences)
   "com.microsoft.autoupdate*"
+  "com.microsoft.shared"
   "*.zoom.updater*"
+  "com.openai.chat"
+  "ChatGPTHelper"
+  "com.segment.storage.*"
 
   # Background observers (constant telemetry, not user preferences)
   "com.apple.suggestions.*Observer*"
@@ -282,6 +286,18 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.StatusKitAgent"
   "com.apple.Accessibility.Assets"
   "com.apple.AOSKit*"
+
+  # Data sync daemons (CalDAV/CardDAV/Exchange account refresh states)
+  "com.apple.dataaccess*"
+
+  # Siri assistant (account validation token renewal)
+  "com.apple.assistant*"
+
+  # Tips, personalization & time sync (notification counters, ML internals, clock daemon)
+  "com.apple.tipsd"
+  "com.apple.proactive.PersonalizationPortrait*"
+  "com.apple.chronod"
+  "com.apple.studentd"
 
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
@@ -491,7 +507,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*)
+    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|*WindowBounds*|*WindowState*)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -655,6 +671,23 @@ is_noisy_key() {
       esac
       ;;
 
+    # Print presets: Keep meaningful settings, filter Fiery driver defaults & print metadata
+    com.apple.print.custompresets*)
+      case "$keyname" in
+        # Keep: preset identity
+        PresetName|PresetBehavior|com.apple.print.preset.id|com.apple.print.preset.behavior) ;;
+        # Keep: core print settings
+        Duplex|*PageSize|*InputSlot|*MediaType|AP_ColorMatchingMode) ;;
+        # Keep: useful Fiery settings
+        *EFDuplex|*EFColorMode|*EFMediaType|*EFResolution|*EFSort|*EFNUpOption) ;;
+        # Keep: Apple print settings
+        com.apple.print.PrintSettings.PMDuplexing|com.apple.print.PrintSettings.PMColorSpaceModel) ;;
+        com.apple.print.PageFormat.PMOrientation|com.apple.print.preset.Orientation) ;;
+        # Filter: everything else (Fiery defaults, PPD metadata, transient data)
+        *) return 0 ;;
+      esac
+      ;;
+
     # NOTE: FaceTime, Bluetooth, VoiceTrigger, and third-party app state filters
     # have been moved to GLOBAL PATTERNS above for universal coverage.
     # This keeps the script maintainable and works with any app.
@@ -682,7 +715,7 @@ is_noisy_command() {
 
   # Filter known keys that change frequently
   case "$cmd" in
-    *"NSWindow Frame"*|*"NSToolbar Configuration"*|*"NSNavPanel"*|*"NSSplitView"*)
+    *"NSWindow Frame"*|*"NSToolbar Configuration"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
       return 0
       ;;
   esac
@@ -1246,8 +1279,21 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
+  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously
+  local lockdir="$CACHE_DIR/${key}.lock"
+  if ! /bin/mkdir "$lockdir" 2>/dev/null; then
+    return 0
+  fi
+
   dump_plist "$path" "$curr"
   dump_plist_json "$path" "$curr_json"
+
+  # Dedup: skip if no change since last processing
+  if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
+    /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
+    /bin/rmdir "$lockdir" 2>/dev/null || true
+    return 0
+  fi
 
   typeset -A _skip_keys
   _skip_keys=()
@@ -1442,6 +1488,10 @@ show_plist_diff() {
             if /usr/bin/grep -F -- "\"$keyname\"" "$curr" >/dev/null 2>&1; then
               continue
             fi
+            # Skip flat key deletes for print presets (array deletion covers all sub-keys)
+            if [[ "$_dom" == com.apple.print.custompresets* ]]; then
+              continue
+            fi
             local base dom hostflag target delete_cmd
             base="$(/usr/bin/basename "$path")"
             dom="${base%.plist}"
@@ -1502,11 +1552,13 @@ show_plist_diff() {
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
   /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
+  /bin/rmdir "$lockdir" 2>/dev/null || true
 }
 
 # Domain diff (text export)
 show_domain_diff() {
   local dom="$1"
+  local skip_arrays="${2:-false}"
 
   if is_excluded_domain "$dom"; then
     return 0
@@ -1536,7 +1588,7 @@ show_domain_diff() {
   local _array_meta_raw=""
   local _has_array_additions=false
 
-  if [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
+  if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     _array_meta_raw=$(emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json") || _array_meta_raw=""
     emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json"
     # Detect changes inside nested dicts (e.g. symbolichotkeys)
@@ -1703,6 +1755,10 @@ show_domain_diff() {
             ;;
           -*)
             if /usr/bin/grep -F -- "\"$keyname\"" "$curr" >/dev/null 2>&1; then
+              continue
+            fi
+            # Skip flat key deletes for print presets (array deletion covers all sub-keys)
+            if [[ "$dom" == com.apple.print.custompresets* ]]; then
               continue
             fi
             local target delete_cmd
@@ -1927,9 +1983,9 @@ start_watch_all() {
           continue
         fi
         if [ "$cat_type" = "USER" ]; then
-          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom"
+          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
         else
-          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom"
+          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
         fi
       done
     else
@@ -1951,9 +2007,9 @@ start_watch_all() {
           continue
         fi
         if [ "$cat_type" = "USER" ]; then
-          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom"
+          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
         else
-          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom"
+          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
         fi
       done
     fi
@@ -1976,7 +2032,7 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
-          log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom"
+          log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
         done
       fi
       if [ "${INCLUDE_SYSTEM}" = "true" ] && [ -d "$prefs_system" ] && [ "$(id -u)" -eq 0 ]; then
@@ -1986,7 +2042,7 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
-          log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom"
+          log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" skip_arrays
         done
       fi
       /bin/mv -f "$now" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
@@ -1995,13 +2051,60 @@ start_watch_all() {
     done
   }
 
-  # Start both mechanisms
+  # CUPS printer monitoring function
+  cups_watch() {
+    local cups_snapshot cups_current
+    cups_snapshot=$(/usr/bin/mktemp "/tmp/prefs-cups.snap.XXXXXX")
+    cups_current=$(/usr/bin/mktemp "/tmp/prefs-cups.curr.XXXXXX")
+
+    # Initial snapshot of installed printers
+    /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
+
+      # Detect added printers
+      /usr/bin/comm -13 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
+        [ -z "$printer" ] && continue
+        log_line "CUPS: printer added — $printer"
+
+        # Extract URI
+        local uri=""
+        uri=$(/usr/bin/lpstat -v "$printer" 2>/dev/null | /usr/bin/sed -nE 's/.*:[[:space:]]+(.*)/\1/p')
+
+        # Extract non-default options
+        local opts=""
+        opts=$(/usr/bin/lpoptions -p "$printer" 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/grep -E '^(media|sides|print-color-mode|print-quality|printer-is-shared)=' | while IFS= read -r o; do printf " -o %s" "$o"; done)
+
+        # Build lpadmin command
+        local cmd="lpadmin -p \"$printer\""
+        [ -n "$uri" ] && cmd="$cmd -v \"$uri\""
+        cmd="$cmd -m everywhere -E${opts}"
+        log_line "Cmd: $cmd"
+      done
+
+      # Detect removed printers
+      /usr/bin/comm -23 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
+        [ -z "$printer" ] && continue
+        log_line "CUPS: printer removed — $printer"
+        log_line "Cmd: lpadmin -x \"$printer\""
+      done
+
+      # Update snapshot
+      /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
+    done
+  }
+
+  # Start all mechanisms
   fs_watch &
   local FS_PID=$!
   poll_watch &
   local POLL_PID=$!
+  cups_watch &
+  local CUPS_PID=$!
 
-  trap 'kill -TERM $FS_PID $POLL_PID 2>/dev/null || true; wait $FS_PID $POLL_PID 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM $FS_PID $POLL_PID $CUPS_PID 2>/dev/null || true; wait $FS_PID $POLL_PID $CUPS_PID 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 

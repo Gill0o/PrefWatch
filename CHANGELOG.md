@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.1.0-beta — 2026-02-10
+- **FEATURE**: CUPS printer monitoring — detect printer add/remove in ALL mode
+  - New `cups_watch()` polls `lpstat` every 2s, emits `lpadmin -p`/`lpadmin -x` commands
+  - Runs as third background process alongside `fs_watch` and `poll_watch`
+- **FEATURE**: Print preset filtering for `com.apple.print.custompresets*` domains
+  - Whitelist useful keys (Duplex, PageSize, ColorMode, Resolution, etc.)
+  - Filter ~140 Fiery driver defaults and PPD metadata per preset
+  - Suppress redundant flat key Delete commands when array deletion covers them
+- **FIX**: Duplicate commands in ALL mode (fs_watch + poll_watch race condition)
+  - Added `mkdir`-based file lock in `show_plist_diff` to serialize parallel access
+  - Added `cmp` dedup to skip unchanged files
+  - Pass `skip_arrays` to `show_domain_diff` in ALL mode call sites
+- **FIX**: Added `*WindowBounds*|*WindowState*` to `is_noisy_key` and `is_noisy_command`
+- **NOISE**: Added domain exclusions: `com.apple.dataaccess*`, `com.apple.assistant*`,
+  `com.apple.tipsd`, `com.apple.proactive.PersonalizationPortrait*`, `com.apple.chronod`,
+  `com.apple.studentd`, `com.openai.chat`, `ChatGPTHelper`, `com.segment.storage.*`,
+  `com.microsoft.shared`
+
 ## 3.0.0-beta — 2026-02-08
 - **RELEASE**: First 3.x release — code cleanup, documentation overhaul, repo reorganization
   - Removed dead code: `array_add_command()` and `extract_domain_from_defaults_cmd()` (64 lines)
