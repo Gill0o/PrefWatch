@@ -140,6 +140,7 @@ The following features are included but considered **beta** — they may change 
 
 - **CUPS printer monitoring** (`cups_watch`) — detects printer add/remove in ALL mode, emits `lpadmin` commands
 - **Print preset filtering** (`com.apple.print.custompresets*`) — filters Fiery driver defaults, keeps useful keys (Duplex, PageSize, ColorMode, etc.)
+- **Energy/Battery monitoring** (`pmset_watch`) — detects power setting changes in ALL mode, emits `pmset -b`/`-c` commands
 
 ## Known Limitations
 
@@ -152,6 +153,7 @@ The following features are included but considered **beta** — they may change 
 
 **Partial detection:**
 - Keyboard shortcuts in ALL mode — use domain mode instead: `./prefwatch.sh com.apple.symbolichotkeys -v`
+- Energy/Battery settings — only in ALL mode (via `pmset` polling), not available in domain mode
 - Python 3 required for array/dict changes — without it, only scalar changes are detected
 
 ## License

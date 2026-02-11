@@ -5,6 +5,14 @@
   - Renamed project from Watch Preferences to PrefWatch
   - Updated all references: script, README, LICENSE, CI, GitHub templates
   - GitHub repo renamed to `Gill0o/PrefWatch`
+- **FIX**: PlistBuddy paths with spaces (e.g. `KeyboardLayout Name`) now escaped with `\ ` via `pb_escape()`
+- **FIX**: PlistBuddy string values no longer wrapped in single quotes (conflicted with shell `-c` quoting)
+- **FIX**: PBCMD `Add` commands no longer filtered by `is_noisy_key` — array sub-keys need all fields for reconstruction
+- **FIX**: `symbolichotkeys` flat `enabled` key filtered (duplicate of PlistBuddy Set commands)
+- **NOISE**: Added domain exclusions: `com.apple.powerlogd`, `com.apple.corespotlightui`
+- **FEATURE**: Contextual `# NOTE:` comments in output for keyboard layouts (logout/login required) and Dock changes (`killall Dock`)
+- **FEATURE**: Energy/Battery monitoring via `pmset_watch()` — polls `pmset -g custom`, emits `pmset -b`/`-c` commands (ALL mode only, beta)
+- **CLEANUP**: Removed internal dev/tooling files from repo (`pre-commit`, `release.sh`, `WORKFLOW.md`, `NEXT_STEPS.md`)
 - **NOTE**: CUPS printer monitoring and print preset filtering are **experimental (beta)**
   - `cups_watch()` and `com.apple.print.custompresets*` filtering may change in future versions
 

@@ -403,9 +403,9 @@ if [ -n "$LOG_FILE_PARAM" ]; then
   LOGFILE="$LOG_FILE_PARAM"
 else
   if [ "$ALL_MODE" = "true" ]; then
-    LOGFILE="/var/log/watch.preferences-v${SCRIPT_VERSION}.log"
+    LOGFILE="/var/log/prefwatch-v${SCRIPT_VERSION}.log"
   else
-    LOGFILE="/var/log/watch.preferences-v${SCRIPT_VERSION}-${DOMAIN}.log"
+    LOGFILE="/var/log/prefwatch-v${SCRIPT_VERSION}-${DOMAIN}.log"
   fi
 fi
 
@@ -1043,6 +1043,24 @@ PY
   printf '%s\n' "$py_output"
 }
 
+# Emit contextual notes for domains that need extra steps
+# Called once per domain after array metadata processing
+_emit_contextual_note() {
+  local dom="$1" array_base="$2"
+  case "$dom" in
+    com.apple.HIToolbox)
+      case "$array_base" in
+        AppleEnabledInputSources|AppleSelectedInputSources|AppleInputSourceHistory)
+          log_line "Cmd: # NOTE: Keyboard layout changes require logout/login to take effect" ;;
+      esac ;;
+    com.apple.dock)
+      case "$array_base" in
+        persistent-apps|persistent-others)
+          log_line "Cmd: # NOTE: Run 'killall Dock' to apply Dock changes" ;;
+      esac ;;
+  esac
+}
+
 # Detect and emit commands for array deletions
 emit_array_deletions() {
   local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
@@ -1110,8 +1128,15 @@ PY
 
   [ -n "$py_output" ] || return 0
 
+  typeset -A _noted_del_arrays=()
   while IFS=$'\t' read -r base idx keylist; do
     [ -n "$base" ] || continue
+
+    # Emit contextual note once per array
+    if [ -z "${_noted_del_arrays[$base]:-}" ]; then
+      _emit_contextual_note "$dom" "$base"
+      _noted_del_arrays[$base]=1
+    fi
 
     local delete_cmd="defaults delete ${dom} \":${base}:${idx}\""
 
@@ -1289,6 +1314,7 @@ show_plist_diff() {
     fi
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
+      typeset -A _noted_arrays=()
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
@@ -1327,6 +1353,11 @@ show_plist_diff() {
               _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
             fi
           done
+        fi
+        # Emit contextual note once per array
+        if [ -z "${_noted_arrays[$_array_base]:-}" ]; then
+          _emit_contextual_note "$_dom" "$_array_base"
+          _noted_arrays[$_array_base]=1
         fi
       done <<< "$_array_meta_raw"
     fi
@@ -1593,6 +1624,7 @@ show_domain_diff() {
       _has_array_additions=true
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
+      typeset -A _noted_arrays=()
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
@@ -1628,6 +1660,11 @@ show_domain_diff() {
               _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
             fi
           done
+        fi
+        # Emit contextual note once per array
+        if [ -z "${_noted_arrays[$_array_base]:-}" ]; then
+          _emit_contextual_note "$dom" "$_array_base"
+          _noted_arrays[$_array_base]=1
         fi
       done <<< "$_array_meta_raw"
     fi
@@ -2064,7 +2101,7 @@ start_watch_all() {
       # Detect added printers
       /usr/bin/comm -13 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
-        log_line "CUPS: printer added — $printer"
+        log_line "Cmd: # CUPS: printer added — $printer"
 
         # Extract URI
         local uri=""
@@ -2084,12 +2121,94 @@ start_watch_all() {
       # Detect removed printers
       /usr/bin/comm -23 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
-        log_line "CUPS: printer removed — $printer"
+        log_line "Cmd: # CUPS: printer removed — $printer"
         log_line "Cmd: lpadmin -x \"$printer\""
       done
 
       # Update snapshot
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
+    done
+  }
+
+  # Monitor energy/battery settings via pmset
+  pmset_watch() {
+    # Human-readable labels for known pmset values
+    _pmset_label() {
+      local key="$1" val="$2"
+      case "$key" in
+        powermode)
+          case "$val" in
+            0) printf 'Low Power' ;; 1) printf 'Automatic' ;; 2) printf 'High Performance' ;; *) printf '%s' "$val" ;;
+          esac ;;
+        hibernatemode)
+          case "$val" in
+            0) printf 'Off' ;; 3) printf 'Safe Sleep' ;; 25) printf 'Hibernate' ;; *) printf '%s' "$val" ;;
+          esac ;;
+        displaysleep|disksleep|sleep)
+          if [ "$val" = "0" ]; then printf 'Never'
+          elif [ "$val" = "1" ]; then printf '1 min'
+          else printf '%s min' "$val"
+          fi ;;
+        "Sleep On Power Button"|womp|powernap|lessbright|standby|tcpkeepalive|networkoversleep|ttyskeepawake|proximitywake|acwake|lidwake|halfdim|autorestart|autopoweroff|ring|lowpowermode)
+          case "$val" in
+            0) printf 'Off' ;; 1) printf 'On' ;; *) printf '%s' "$val" ;;
+          esac ;;
+        standbydelayhigh|standbydelaylow|autopoweroffdelay)
+          if [ "$val" = "0" ]; then printf 'Off'
+          else printf '%s sec' "$val"
+          fi ;;
+        highstandbythreshold)
+          printf '%s%%' "$val" ;;
+        *) printf '%s' "$val" ;;
+      esac
+    }
+
+    local pmset_snapshot pmset_current
+    pmset_snapshot=$(/usr/bin/mktemp "/tmp/prefs-pmset.snap.XXXXXX")
+    pmset_current=$(/usr/bin/mktemp "/tmp/prefs-pmset.curr.XXXXXX")
+
+    # Initial snapshot
+    /usr/bin/pmset -g custom > "$pmset_snapshot" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      /usr/bin/pmset -g custom > "$pmset_current" 2>/dev/null || true
+
+      # Quick check — skip parsing if nothing changed
+      if ! /usr/bin/cmp -s "$pmset_snapshot" "$pmset_current"; then
+        # Parse both snapshots into "section|key|value" lines and diff
+        local snap_parsed curr_parsed
+        snap_parsed=$(/usr/bin/awk '/^[A-Z]/{sec=$0; sub(/:$/,"",sec); next} NF>=2{val=$NF; key=""; for(i=1;i<NF;i++){if(i>1)key=key" "; key=key$i}; gsub(/^[[:space:]]+|[[:space:]]+$/,"",key); print sec "|" key "|" val}' "$pmset_snapshot")
+        curr_parsed=$(/usr/bin/awk '/^[A-Z]/{sec=$0; sub(/:$/,"",sec); next} NF>=2{val=$NF; key=""; for(i=1;i<NF;i++){if(i>1)key=key" "; key=key$i}; gsub(/^[[:space:]]+|[[:space:]]+$/,"",key); print sec "|" key "|" val}' "$pmset_current")
+
+        # Find changed or added settings in current
+        while IFS='|' read -r section key val; do
+          [ -z "$key" ] && continue
+          local old_val=""
+          old_val=$(printf '%s\n' "$snap_parsed" | /usr/bin/grep "^${section}|${key}|" | /usr/bin/cut -d'|' -f3)
+          [ "$old_val" = "$val" ] && continue
+
+          local flag=""
+          case "$section" in
+            "Battery Power") flag="-b" ;;
+            "AC Power")      flag="-c" ;;
+            *)               flag="-a" ;;
+          esac
+
+          local old_label="" new_label=""
+          new_label=$(_pmset_label "$key" "$val")
+          if [ -n "$old_val" ]; then
+            old_label=$(_pmset_label "$key" "$old_val")
+            log_line "Cmd: # Energy: ${section} — ${key} changed: ${old_label} → ${new_label}"
+          else
+            log_line "Cmd: # Energy: ${section} — ${key} set to ${new_label}"
+          fi
+          log_line "Cmd: pmset ${flag} ${key} ${val}"
+        done <<< "$curr_parsed"
+      fi
+
+      # Update snapshot
+      /bin/cp -f "$pmset_current" "$pmset_snapshot" 2>/dev/null || true
     done
   }
 
@@ -2100,8 +2219,10 @@ start_watch_all() {
   local POLL_PID=$!
   cups_watch &
   local CUPS_PID=$!
+  pmset_watch &
+  local PMSET_PID=$!
 
-  trap 'kill -TERM $FS_PID $POLL_PID $CUPS_PID 2>/dev/null || true; wait $FS_PID $POLL_PID $CUPS_PID 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM $FS_PID $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait $FS_PID $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
