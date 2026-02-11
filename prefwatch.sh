@@ -302,6 +302,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.configurationprofiles*"
   "com.apple.sharingd"
   "com.apple.controlcenter.displayablemenuextras*"
+  "com.apple.NewDeviceOutreach"
+  "com.apple.settings.storage*"
+  "com.apple.StorageManagement*"
 
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
@@ -664,6 +667,13 @@ is_noisy_key() {
         SafeBrowsing*|History*|LastSession*)
           return 0 ;;
         # Keep: HomePage, SearchEngine, AutoFillPasswords, etc.
+      esac
+      ;;
+
+    # CUPS printing prefs: Keep UseLastPrinter, filter printer history
+    org.cups.PrintingPrefs)
+      case "$keyname" in
+        Network|PrinterID) return 0 ;;
       esac
       ;;
 
