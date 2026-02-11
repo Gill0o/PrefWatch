@@ -98,6 +98,12 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 - Startup Disk (`nvram` / `bless`)
 - Focus / Do Not Disturb (assertion-based + SQLite)
 - User accounts (Directory Services, `dscl`)
+- Safari bookmarks, history, extensions (`~/Library/Safari/`, not preferences)
+- Bluetooth on/off (IOBluetooth daemon, runtime state)
+- Computer name (`scutil`, SystemConfiguration framework)
+- iPhone widgets on Mac (WidgetKit, iCloud sync)
+- Default browser / email app (LaunchServices API, excluded as noise)
+- Touch ID fingerprints (Secure Enclave, `bioutil`)
 
 **Partial:**
 - Keyboard shortcuts — use domain mode: `./prefwatch.sh com.apple.symbolichotkeys -v`

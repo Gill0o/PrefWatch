@@ -305,6 +305,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.NewDeviceOutreach"
   "com.apple.settings.storage*"
   "com.apple.StorageManagement*"
+  "com.apple.MIDI*"
+  "com.apple.corespotlightui"
 
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
