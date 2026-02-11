@@ -5,36 +5,40 @@
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 ![Shell](https://img.shields.io/badge/shell-zsh-blue.svg)
 
-A macOS monitoring tool that watches preference changes in real-time and generates the exact `defaults write` or `PlistBuddy` commands to reproduce them.
+A macOS monitoring tool that watches preference changes in real-time and generates the exact commands to reproduce them.
 
 ```bash
 sudo ./prefwatch.sh
 ```
 
-The script monitors **all** preference domains and outputs only executable commands:
+Change any setting — Dock, Finder, trackpad, keyboard, energy, printers — and PrefWatch outputs the command to reproduce it:
 
-```
-# Simple settings → defaults write
-defaults write com.apple.finder "FXPreferredViewStyle" -string "clmv"
+```bash
+# Preferences → defaults write
 defaults write com.apple.dock "autohide" -bool TRUE
-defaults write NSGlobalDomain "AppleShowAllExtensions" -bool TRUE
 
-# Complex changes (Dock icons, keyboard layouts) → PlistBuddy
-/usr/libexec/PlistBuddy -c 'Add :persistent-apps:5 dict' ~/Library/Preferences/com.apple.dock.plist
+# Dock icons, keyboard layouts → PlistBuddy
+# NOTE: Run 'killall Dock' to apply Dock changes
 /usr/libexec/PlistBuddy -c 'Add :persistent-apps:5:tile-data:bundle-identifier string com.apple.Safari' ~/Library/Preferences/com.apple.dock.plist
-```
 
-Change Finder view, add an app to the Dock, flip a trackpad setting — every change becomes a copy-paste command. The script automatically picks `defaults write` or `PlistBuddy` depending on the type of change.
+# Energy/Battery → pmset
+# Energy: AC Power — powermode changed: Automatic → High Performance
+pmset -c powermode 2
+
+# Printers → lpadmin
+# CUPS: printer added — HP_LaserJet
+lpadmin -p "HP_LaserJet" -v "lpd://192.168.1.50" -m everywhere -E
+```
 
 ## Key Features
 
-- **Zero dependencies** — single zsh script, no package manager, no Python runtime required for basic use
+- **Full command coverage** — `defaults write`, `PlistBuddy`, `pmset`, `lpadmin` depending on what changed
 - **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
-- **Full type coverage** — scalars (`defaults write`), arrays, nested dicts, and array deletions (`PlistBuddy`)
+- **Contextual notes** — each command includes actionable comments (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
 - **Noise filtering** — 40+ domain exclusions and global key patterns so you only see real preference changes
+- **Zero dependencies** — single zsh script, Python 3 only needed for array/dict detection
 - **Jamf Pro native** — runs as a Jamf policy with positional parameters, Console.app live view, syslog output
-- **CUPS printer monitoring** *(beta)* — detects printer add/remove and emits `lpadmin` commands
 
 ## Quick Start
 
@@ -87,35 +91,69 @@ sudo ./prefwatch.sh
 
 ## Output Examples
 
-The script generates copy-paste commands for every type of preference change:
+### Scalar preferences — `defaults write`
 
 ```bash
-# Scalar values → defaults write
 defaults write com.apple.dock "orientation" -string "left"
 defaults write com.apple.dock "tilesize" -int 48
 defaults write com.apple.dock "autohide" -bool TRUE
-
-# Array additions → PlistBuddy Add (Dock icons, keyboard layouts)
-/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3 dict' ~/Library/Preferences/com.apple.HIToolbox.plist
-/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3:InputSourceKind string Keyboard Layout' ~/Library/Preferences/com.apple.HIToolbox.plist
-
-# Nested dict changes → PlistBuddy Set (keyboard shortcuts)
-/usr/libexec/PlistBuddy -c 'Set :AppleSymbolicHotKeys:32:value:parameters:1 122' ~/Library/Preferences/com.apple.symbolichotkeys.plist
-
-# Array deletions → PlistBuddy Delete
-# WARNING: for multiple deletions, execute from HIGHEST index to LOWEST
-/usr/libexec/PlistBuddy -c 'Delete :persistent-apps:3' ~/Library/Preferences/com.apple.dock.plist
+defaults write com.apple.finder "FXPreferredViewStyle" -string "clmv"
 
 # ByHost preferences → auto-detected -currentHost flag
 defaults write com.apple.AppleMultitouchTrackpad "ActuateDetents" -currentHost -int 1
 ```
 
+### Arrays and nested dicts — `PlistBuddy`
+
+```bash
+# Add a Dock icon
+# NOTE: Run 'killall Dock' to apply Dock changes
+/usr/libexec/PlistBuddy -c 'Add :persistent-apps:5 dict' ~/Library/Preferences/com.apple.dock.plist
+/usr/libexec/PlistBuddy -c 'Add :persistent-apps:5:tile-data:bundle-identifier string com.apple.Safari' ~/Library/Preferences/com.apple.dock.plist
+
+# Add a keyboard layout
+# NOTE: Keyboard layout changes require logout/login to take effect
+/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3 dict' ~/Library/Preferences/com.apple.HIToolbox.plist
+/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3:InputSourceKind string Keyboard\ Layout' ~/Library/Preferences/com.apple.HIToolbox.plist
+/usr/libexec/PlistBuddy -c 'Add :AppleEnabledInputSources:3:KeyboardLayout\ Name string French' ~/Library/Preferences/com.apple.HIToolbox.plist
+
+# Keyboard shortcut change
+/usr/libexec/PlistBuddy -c 'Set :AppleSymbolicHotKeys:32:value:parameters:1 122' ~/Library/Preferences/com.apple.symbolichotkeys.plist
+
+# Remove a Dock icon
+# WARNING: for multiple deletions, execute from HIGHEST index to LOWEST
+/usr/libexec/PlistBuddy -c 'Delete :persistent-apps:3' ~/Library/Preferences/com.apple.dock.plist
+```
+
+### Energy/Battery — `pmset`
+
+```bash
+# Energy: AC Power — powermode changed: Automatic → High Performance
+pmset -c powermode 2
+
+# Energy: Battery Power — displaysleep changed: 5 min → 10 min
+pmset -b displaysleep 10
+
+# Energy: Battery Power — powernap changed: On → Off
+pmset -b powernap 0
+```
+
+### Printers — `lpadmin`
+
+```bash
+# CUPS: printer added — HP_LaserJet
+lpadmin -p "HP_LaserJet" -v "lpd://192.168.1.50" -m everywhere -E
+
+# CUPS: printer removed — Old_Printer
+lpadmin -x "Old_Printer"
+```
+
 ## Noise Filtering
 
-The script automatically filters background noise at three levels so you only see meaningful preference changes:
+The script automatically filters background noise at three levels:
 
 1. **Domain exclusions** (40+ patterns) — background daemons, cloud sync, telemetry, MDM internals
-2. **Per-key filtering** — within useful domains (Dock, Finder, Spotlight), noisy keys like timestamps, window positions, and counters are filtered while preference keys are kept
+2. **Per-key filtering** — within useful domains (Dock, Finder, Spotlight), noisy keys like timestamps, window positions, and counters are filtered
 3. **Global patterns** — `NSWindow Frame*`, `*timestamp*`, `*Cache*`, `*UUID*`, hash keys, etc.
 
 Use `-v` (verbose) to see everything including filtered keys. Use `--exclude` to add your own exclusions.
@@ -140,7 +178,7 @@ The following features are included but considered **beta** — they may change 
 
 - **CUPS printer monitoring** (`cups_watch`) — detects printer add/remove in ALL mode, emits `lpadmin` commands
 - **Print preset filtering** (`com.apple.print.custompresets*`) — filters Fiery driver defaults, keeps useful keys (Duplex, PageSize, ColorMode, etc.)
-- **Energy/Battery monitoring** (`pmset_watch`) — detects power setting changes in ALL mode, emits `pmset -b`/`-c` commands
+- **Energy/Battery monitoring** (`pmset_watch`) — detects power setting changes in ALL mode, emits `pmset -b`/`-c` commands with human-readable labels
 
 ## Known Limitations
 
