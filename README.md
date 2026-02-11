@@ -17,9 +17,8 @@ Change any setting — Dock, Finder, trackpad, keyboard, energy, printers — an
 # Preferences → defaults write
 defaults write com.apple.dock "autohide" -bool TRUE
 
-# Dock icons, keyboard layouts → PlistBuddy
-# NOTE: Run 'killall Dock' to apply Dock changes
-/usr/libexec/PlistBuddy -c 'Add :persistent-apps:5:tile-data:bundle-identifier string com.apple.Safari' ~/Library/Preferences/com.apple.dock.plist
+# Keyboard shortcuts → PlistBuddy
+/usr/libexec/PlistBuddy -c 'Set :AppleSymbolicHotKeys:32:value:parameters:1 122' ~/Library/Preferences/com.apple.symbolichotkeys.plist
 
 # Energy/Battery → pmset
 # Energy: AC Power — powermode changed: Automatic → High Performance
@@ -87,7 +86,7 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Known Limitations
 
-**Not detectable** (not stored in plist files):
+**Not detectable**
 - Finder sidebar favorites (`.sfl2` binary), per-folder views (`.DS_Store`)
 - TCC permissions — Camera, Microphone, etc. (SQLite, SIP-protected)
 - Modern Login Items (Background Task Management framework)
