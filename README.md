@@ -36,7 +36,7 @@ lpadmin -p "HP_LaserJet" -v "lpd://192.168.1.50" -m everywhere -E
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
 - **Noise filtering** — 40+ domain exclusions and global key patterns to surface only real changes
-- **Zero dependencies** — single zsh script, Python 3 only needed for array/dict detection
+- **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
 
 ## Quick Start
 

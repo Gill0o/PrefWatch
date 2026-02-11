@@ -238,7 +238,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Network internals (frequent changes, not user preferences)
   "com.apple.networkextension*"
-  "com.apple.LaunchServices*"
+  "com.apple.LaunchServices*"  # zsh globs are case-sensitive, need both
   "com.apple.launchservices*"
 
   # Graphics internals (updates on every window change)

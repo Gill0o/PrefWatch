@@ -9,7 +9,10 @@
 - **FIX**: PlistBuddy string values no longer wrapped in single quotes (conflicted with shell `-c` quoting)
 - **FIX**: PBCMD `Add` commands no longer filtered by `is_noisy_key` — array sub-keys need all fields for reconstruction
 - **FIX**: `symbolichotkeys` flat `enabled` key filtered (duplicate of PlistBuddy Set commands)
-- **NOISE**: Added domain exclusions: `com.apple.powerlogd`, `com.apple.corespotlightui`
+- **NOISE**: Added domain exclusions: `com.apple.powerlogd`, `com.apple.corespotlightui`,
+  `com.apple.NewDeviceOutreach`, `com.apple.settings.storage*`, `com.apple.StorageManagement*`,
+  `com.apple.MIDI*`
+- **NOISE**: Added `org.cups.PrintingPrefs` key filter (Network/PrinterID)
 - **FEATURE**: Contextual `# NOTE:` comments in output for keyboard layouts (logout/login required) and Dock changes (`killall Dock`)
 - **FEATURE**: Energy/Battery monitoring via `pmset_watch()` — polls `pmset -g custom`, emits `pmset -b`/`-c` commands (ALL mode only, beta)
 - **CLEANUP**: Removed internal dev/tooling files from repo (`pre-commit`, `release.sh`, `WORKFLOW.md`, `NEXT_STEPS.md`)
