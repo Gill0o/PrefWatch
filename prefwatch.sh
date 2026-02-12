@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.0
+# Version: 1.1.1
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:

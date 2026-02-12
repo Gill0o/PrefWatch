@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-02-12
+- **FIX**: Xcode CLT install popup no longer triggered on fresh macOS (check `xcode-select -p` before running `/usr/bin/python3`)
+- **FIX**: Python3 preflight warnings now visible in `--only-cmds` mode (use `printf` instead of `log_line`)
+
 ## 1.1.0 — 2026-02-12
 - **UX**: Snapshot progress — spinner + counter in terminal, clear messages in Console.app
   - "Taking initial baseline — please wait before making changes"
