@@ -41,8 +41,12 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist-based preferences, energy settings (`pmset`), and printer configuration (`lpadmin`). Settings stored outside these sources (SQLite databases, SIP-protected frameworks, Secure Enclave, runtime state) are out of scope by design. Performance in ALL mode varies with the number of active preferences on the system.
-Keyboard shortcuts require domain mode: `./prefwatch.sh com.apple.symbolichotkeys`
+PrefWatch monitors plist-based preferences, energy settings (`pmset`), and printer configuration (`lpadmin`). Settings stored outside these sources (SQLite databases, SIP-protected frameworks, Secure Enclave, runtime state) are out of scope by design.
+
+## Notes
+
+- Performance in ALL mode varies with the number of active preferences on the system.
+- Keyboard shortcuts require domain mode: `./prefwatch.sh com.apple.symbolichotkeys`
 
 ## License
 
