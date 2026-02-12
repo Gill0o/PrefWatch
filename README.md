@@ -13,6 +13,8 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Quick Start
 
+Run in Terminal. Output is also logged and viewable in Console.app.
+
 ```bash
 # Monitor all preferences
 sudo ./prefwatch.sh
@@ -45,7 +47,7 @@ PrefWatch monitors plist-based preferences, energy settings (`pmset`), and print
 
 ## Notes
 
-- Performance in ALL mode varies with the number of active preferences on the system.
+- ALL mode takes an initial baseline snapshot before monitoring. This can take a minute or more depending on the number of installed apps. Wait for "you can now make your changes" before modifying settings.
 - Keyboard shortcuts require domain mode: `./prefwatch.sh com.apple.symbolichotkeys`
 
 ## License

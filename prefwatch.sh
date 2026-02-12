@@ -252,9 +252,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.PowerManagement*"
   "com.apple.BackgroundTaskManagement*"
 
-  # System internals (no user-configurable settings)
+  # System internals (no plist-based user settings)
   "com.apple.loginwindow"
-  "com.apple.Console"
   "com.apple.spaces"
   "com.apple.BezelServices"
   "com.apple.jetpackassetd"
@@ -788,14 +787,19 @@ log_line()   { _log "$DOMAIN_TAG" "$1"; }
 log_user()   { _log "user" "$1"; }
 log_system() { _log "system" "$1"; }
 
-# Snapshot log (always verbose, bypasses ONLY_CMDS filter)
+# Snapshot log — verbose: all lines, ONLY_CMDS: start/complete only
 snapshot_notice() {
-  local msg="$1"
+  local msg="$1" verbose_only="${2:-false}"
   local ts
   ts="$(get_timestamp)"
   local line="[$ts] [snapshot] $msg"
-  printf "%s\n" "$line"
-  printf "%s\n" "$line" >> "$LOGFILE" 2>/dev/null || true
+  if [ "$verbose_only" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+    # In ONLY_CMDS mode, skip entirely (no terminal, no log, no syslog)
+    return 0
+  else
+    printf "%s\n" "$line"
+    printf "%s\n" "$line" >> "$LOGFILE" 2>/dev/null || true
+  fi
   /usr/bin/logger -t "prefwatch[snapshot]" -- "$msg"
 }
 
@@ -1332,6 +1336,10 @@ show_plist_diff() {
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
+          # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
+          case "$_pb_cmd" in
+            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*) continue ;;
+          esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
           local _pb_leaf="${_pb_path##*:}"
@@ -1643,6 +1651,10 @@ show_domain_diff() {
         if [ "$_array_base" = "PBCMD" ]; then
           [ -n "$_pb_plist_path" ] || continue
           local _pb_cmd="$_array_idx"
+          # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
+          case "$_pb_cmd" in
+            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*) continue ;;
+          esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
           local _pb_leaf="${_pb_path##*:}"
@@ -1970,8 +1982,13 @@ start_watch_all() {
   fi
 
   # Initial snapshot
+  snapshot_notice "Taking initial baseline — please wait before making changes"
+  local _snap_spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+  local _snap_count=0 _snap_idx=0
+
   if [ -d "$prefs_user" ]; then
-    snapshot_notice "Initial user snapshot: starting"
+    snapshot_notice "User snapshot: scanning..."
+    _snap_count=0
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       local dom=""
@@ -1979,15 +1996,20 @@ start_watch_all() {
       if is_excluded_domain "$dom"; then
         continue
       fi
-      snapshot_notice "Snapshot USER: ${dom:-$f}"
+      _snap_count=$(( _snap_count + 1 ))
+      _snap_idx=$(( _snap_count % ${#_snap_spinner[@]} ))
+      printf "\r  ${_snap_spinner[$_snap_idx+1]} User snapshot: %d domains scanned..." "$_snap_count"
+      snapshot_notice "USER: ${dom:-$f}" true
       show_plist_diff USER "$f" silent
     done < <(/usr/bin/find "$prefs_user" -type f -name "*.plist" 2>/dev/null)
-    snapshot_notice "Initial user snapshot: completed"
+    printf "\r  ✓ User snapshot: %d domains scanned    \n" "$_snap_count"
+    snapshot_notice "User snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
   fi
 
   if [ "$INCLUDE_SYSTEM" = "true" ] && [ -d "$prefs_system" ]; then
-    snapshot_notice "Initial system snapshot: starting"
+    snapshot_notice "System snapshot: scanning..."
+    _snap_count=0
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       local dom=""
@@ -1995,10 +2017,14 @@ start_watch_all() {
       if is_excluded_domain "$dom"; then
         continue
       fi
-      snapshot_notice "Snapshot SYSTEM: ${dom:-$f}"
+      _snap_count=$(( _snap_count + 1 ))
+      _snap_idx=$(( _snap_count % ${#_snap_spinner[@]} ))
+      printf "\r  ${_snap_spinner[$_snap_idx+1]} System snapshot: %d domains scanned..." "$_snap_count"
+      snapshot_notice "SYSTEM: ${dom:-$f}" true
       show_plist_diff SYSTEM "$f" silent
     done < <(/usr/bin/find "$prefs_system" -type f -name "*.plist" 2>/dev/null)
-    snapshot_notice "Initial system snapshot: completed"
+    printf "\r  ✓ System snapshot: %d domains scanned    \n" "$_snap_count"
+    snapshot_notice "System snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
   fi
 
@@ -2008,57 +2034,29 @@ start_watch_all() {
 
   # fs_usage monitoring function
   fs_watch() {
-    local FS_CMD
-    FS_CMD=(/usr/sbin/fs_usage -w -f filesys)
-    if command -v script >/dev/null 2>&1; then
-      script -q /dev/null "${FS_CMD[@]}" 2>/dev/null |
-      /usr/bin/sed -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
-      /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
-        path=$0;
-        if (index(path, pu)==1)      { print "USER " path }
-        else if (index(path, ps)==1) { print "SYSTEM " path }
-        else                         { print "OTHER " path }
-      }' | while IFS= read -r line; do
-        cat_type="${line%% *}"; plist="${line#* }"
-        [ -z "$plist" ] && continue
-        if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
-          continue
-        fi
-        dom=$(domain_from_plist_path "$plist")
-        if is_excluded_domain "$dom"; then
-          continue
-        fi
-        if [ "$cat_type" = "USER" ]; then
-          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-        else
-          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-        fi
-      done
-    else
-      /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
-      /usr/bin/sed -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
-      /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
-        path=$0;
-        if (index(path, pu)==1)      { print "USER " path }
-        else if (index(path, ps)==1) { print "SYSTEM " path }
-        else                         { print "OTHER " path }
-      }' | while IFS= read -r line; do
-        cat_type="${line%% *}"; plist="${line#* }"
-        [ -z "$plist" ] && continue
-        if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
-          continue
-        fi
-        dom=$(domain_from_plist_path "$plist")
-        if is_excluded_domain "$dom"; then
-          continue
-        fi
-        if [ "$cat_type" = "USER" ]; then
-          log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-        else
-          log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-        fi
-      done
-    fi
+    script -q /dev/null /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
+    /usr/bin/sed -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
+    /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
+      path=$0;
+      if (index(path, pu)==1)      { print "USER " path }
+      else if (index(path, ps)==1) { print "SYSTEM " path }
+      else                         { print "OTHER " path }
+    }' | while IFS= read -r line; do
+      cat_type="${line%% *}"; plist="${line#* }"
+      [ -z "$plist" ] && continue
+      if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
+        continue
+      fi
+      dom=$(domain_from_plist_path "$plist")
+      if is_excluded_domain "$dom"; then
+        continue
+      fi
+      if [ "$cat_type" = "USER" ]; then
+        log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
+      else
+        log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
+      fi
+    done
   }
 
   # Polling monitoring function
