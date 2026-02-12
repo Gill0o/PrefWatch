@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 — 2026-02-12
+- **UX**: Snapshot progress — spinner + counter in terminal, clear messages in Console.app
+  - "Taking initial baseline — please wait before making changes"
+  - "you can now make your changes" after completion
+  - Snapshot detail lines suppressed in `--only-cmds` mode (cleaner Console.app output)
+- **UX**: Python3 preflight — ALL mode prompts user if Python3/Xcode CLT is missing
+  - Warns about limited detection, offers to continue or abort with install instructions
+  - Jamf mode: continues silently (non-interactive)
+- **NOISE**: PlistBuddy filters: `FXRecentFolders`, `NSWindowTabbingShoudShowTabBarKey`, `ViewSettings`
+- **NOISE**: Domain exclusion: `com.apple.CallHistorySyncHelper` (iCloud sync background noise)
+- **CLEANUP**: Removed dead `fs_watch` duplicate else branch (`script` always available on macOS)
+- **CLEANUP**: Removed `com.apple.Console` from exclusions (has user preferences like tab bar)
+- **DOCS**: README streamlined — minimal style, separate Scope and Notes sections
+
 ## 1.0.0 — 2026-02-11
 - **RELEASE**: First official release as **PrefWatch**
   - Renamed project from Watch Preferences to PrefWatch
