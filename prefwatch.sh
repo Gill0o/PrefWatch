@@ -366,7 +366,8 @@ HAVE_BIN_DATE="false"
 [ -x /bin/date ] && HAVE_BIN_DATE="true"
 
 # Python3 detection & validation (used for JSON processing if available)
-# On macOS Sonoma, /usr/bin/python3 may exist as a stub requiring Command Line Tools
+# On macOS, /usr/bin/python3 is a stub that triggers Xcode CLT install dialog.
+# Check CLT presence first to avoid the popup.
 PYTHON3_BIN=""
 _python3_validate() {
   local candidate="$1"
@@ -378,10 +379,20 @@ _python3_validate() {
   return 1
 }
 
-if [ -x /usr/bin/python3 ] && _python3_validate /usr/bin/python3; then
-  : # validated
-elif command -v python3 >/dev/null 2>&1 && _python3_validate "$(command -v python3)"; then
-  : # validated
+# Check if Xcode CLT is installed before touching /usr/bin/python3
+_clt_installed=false
+if /usr/bin/xcode-select -p >/dev/null 2>&1; then
+  _clt_installed=true
+fi
+
+if [ "$_clt_installed" = "true" ] && [ -x /usr/bin/python3 ] && _python3_validate /usr/bin/python3; then
+  : # validated via CLT python3
+elif command -v python3 >/dev/null 2>&1; then
+  # Try non-system python3 (Homebrew, pyenv, etc.) — safe to run without CLT
+  _candidate="$(command -v python3)"
+  if [ "$_candidate" != "/usr/bin/python3" ] && _python3_validate "$_candidate"; then
+    : # validated via alternative python3
+  fi
 fi
 
 if [ -z "$PYTHON3_BIN" ]; then
@@ -2262,9 +2273,9 @@ fi
 if [ -n "$PYTHON3_BIN" ]; then
   log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
 elif [ "$ALL_MODE" = "true" ] && [ "$JAMF_MODE" != "true" ]; then
-  log_line "WARNING: Python3 not available — some features will be limited"
+  log_line "WARNING: Xcode Command Line Tools not installed — Python3 unavailable"
   log_line "Without Python3: array/dict changes and PlistBuddy commands will not be detected"
-  log_line "Install Command Line Tools for full functionality:"
+  log_line "For full detection, install Xcode CLT:"
   log_line "  xcode-select --install"
   printf "\n"
   printf "Continue with limited detection? (y/n) "
