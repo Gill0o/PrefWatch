@@ -231,6 +231,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.CloudKit*"
   "com.apple.bird"
   "com.apple.cloudd"
+  "com.apple.CallHistorySyncHelper"
 
   # Security & crash reporting (noisy, not user settings)
   "com.apple.CrashReporter"
@@ -1338,7 +1339,7 @@ show_plist_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*) continue ;;
+            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -1653,7 +1654,7 @@ show_domain_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*) continue ;;
+            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -2257,9 +2258,25 @@ else
   log_line "Starting monitoring on $DOMAIN"
 fi
 
-# Python3 status (warn before snapshots if unavailable)
+# Python3 status — in ALL mode, require Python or prompt user
 if [ -n "$PYTHON3_BIN" ]; then
   log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
+elif [ "$ALL_MODE" = "true" ] && [ "$JAMF_MODE" != "true" ]; then
+  log_line "WARNING: Python3 not available — some features will be limited"
+  log_line "Without Python3: array/dict changes and PlistBuddy commands will not be detected"
+  log_line "Install Command Line Tools for full functionality:"
+  log_line "  xcode-select --install"
+  printf "\n"
+  printf "Continue with limited detection? (y/n) "
+  read -r _py_answer </dev/tty 2>/dev/null || _py_answer="y"
+  case "$_py_answer" in
+    [Yy]*) log_line "Continuing with limited detection — only simple key changes will be reported" ;;
+    *)
+      log_line "Install Command Line Tools first, then re-run PrefWatch:"
+      log_line "  xcode-select --install"
+      exit 1
+      ;;
+  esac
 else
   log_line "WARNING: ${_py_warn:-Python3 not available}"
   log_line "TIP: Run 'xcode-select --install' to enable array change detection"
