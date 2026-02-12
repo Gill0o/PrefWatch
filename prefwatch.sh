@@ -2273,18 +2273,18 @@ fi
 if [ -n "$PYTHON3_BIN" ]; then
   log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
 elif [ "$ALL_MODE" = "true" ] && [ "$JAMF_MODE" != "true" ]; then
-  log_line "WARNING: Xcode Command Line Tools not installed — Python3 unavailable"
-  log_line "Without Python3: array/dict changes and PlistBuddy commands will not be detected"
-  log_line "For full detection, install Xcode CLT:"
-  log_line "  xcode-select --install"
+  printf "WARNING: Xcode Command Line Tools not installed — Python3 unavailable\n"
+  printf "Without Python3: array/dict changes and PlistBuddy commands will not be detected\n"
+  printf "For full detection, install Xcode CLT:\n"
+  printf "  xcode-select --install\n"
   printf "\n"
   printf "Continue with limited detection? (y/n) "
   read -r _py_answer </dev/tty 2>/dev/null || _py_answer="y"
   case "$_py_answer" in
-    [Yy]*) log_line "Continuing with limited detection — only simple key changes will be reported" ;;
+    [Yy]*) printf "Continuing with limited detection — only simple key changes will be reported\n" ;;
     *)
-      log_line "Install Command Line Tools first, then re-run PrefWatch:"
-      log_line "  xcode-select --install"
+      printf "Install Command Line Tools first, then re-run PrefWatch:\n"
+      printf "  xcode-select --install\n"
       exit 1
       ;;
   esac
