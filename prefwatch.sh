@@ -538,7 +538,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -745,7 +745,7 @@ is_noisy_command() {
 
   # Filter known keys that change frequently
   case "$cmd" in
-    *"NSWindow Frame"*|*"NSToolbar Configuration"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
+    *"NSWindow Frame"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
       return 0
       ;;
   esac
@@ -1361,7 +1361,7 @@ show_plist_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -1682,7 +1682,7 @@ show_domain_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
