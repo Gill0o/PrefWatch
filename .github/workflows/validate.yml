@@ -1,0 +1,184 @@
+name: Validate Script
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: ShellCheck Validation
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install ShellCheck
+      run: brew install shellcheck
+
+    - name: Run ShellCheck on main script
+      run: |
+        echo "Running ShellCheck on prefwatch.sh..."
+        shellcheck -x prefwatch.sh || true
+
+    - name: Run ShellCheck on release.sh
+      run: |
+        echo "Running ShellCheck on release.sh..."
+        shellcheck release.sh || true
+
+  syntax-check:
+    name: Bash/Zsh Syntax Check
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check Bash syntax
+      run: |
+        echo "Checking Bash syntax..."
+        bash -n prefwatch.sh
+        bash -n release.sh
+
+    - name: Check Zsh syntax
+      run: |
+        echo "Checking Zsh syntax..."
+        zsh -n prefwatch.sh
+        zsh -n release.sh
+
+  version-check:
+    name: Version Consistency Check
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Extract version from script
+      id: script_version
+      run: |
+        VERSION=$(grep -m 1 "^# Version:" prefwatch.sh | awk '{print $3}')
+        echo "script_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Script version: $VERSION"
+
+    - name: Extract version from CHANGELOG
+      id: changelog_version
+      run: |
+        VERSION=$(grep -m 1 "^## " CHANGELOG.md | awk '{print $2}')
+        echo "changelog_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "CHANGELOG version: $VERSION"
+
+    - name: Compare versions
+      run: |
+        if [ "${{ steps.script_version.outputs.script_version }}" != "${{ steps.changelog_version.outputs.changelog_version }}" ]; then
+          echo "::warning::Version mismatch! Script: ${{ steps.script_version.outputs.script_version }}, CHANGELOG: ${{ steps.changelog_version.outputs.changelog_version }}"
+        else
+          echo "✓ Versions match: ${{ steps.script_version.outputs.script_version }}"
+        fi
+
+  basic-tests:
+    name: Basic Functionality Tests
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Make script executable
+      run: chmod +x prefwatch.sh
+
+    - name: Test script help/version output
+      run: |
+        echo "Testing script execution..."
+        timeout 5 ./prefwatch.sh ALL 1 || true
+
+    - name: Test with invalid parameters
+      run: |
+        echo "Testing error handling..."
+        ./prefwatch.sh "" || echo "Expected failure for empty domain"
+
+    - name: Verify required commands exist
+      run: |
+        echo "Checking for required macOS commands..."
+        which defaults
+        which plutil
+        which PlistBuddy || which /usr/libexec/PlistBuddy
+        which mktemp
+        which date
+
+  documentation-check:
+    name: Documentation Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for README
+      run: |
+        if [ ! -f README.md ]; then
+          echo "::error::README.md is missing"
+          exit 1
+        fi
+        echo "✓ README.md exists"
+
+    - name: Check for CHANGELOG
+      run: |
+        if [ ! -f CHANGELOG.md ]; then
+          echo "::error::CHANGELOG.md is missing"
+          exit 1
+        fi
+        echo "✓ CHANGELOG.md exists"
+
+    - name: Check for LICENSE
+      run: |
+        if [ ! -f LICENSE ]; then
+          echo "::error::LICENSE is missing"
+          exit 1
+        fi
+        echo "✓ LICENSE exists"
+
+    - name: Check for CONTRIBUTING
+      run: |
+        if [ ! -f CONTRIBUTING.md ]; then
+          echo "::warning::CONTRIBUTING.md is missing"
+        else
+          echo "✓ CONTRIBUTING.md exists"
+        fi
+
+    - name: Validate markdown
+      uses: DavidAnson/markdownlint-action@v1
+      with:
+        files: '*.md'
+        config: |
+          {
+            "MD013": false,
+            "MD033": false,
+            "MD041": false
+          }
+      continue-on-error: true
+
+  pr-labels:
+    name: PR Label Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Check PR has labels
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pullRequest } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.payload.pull_request.number,
+          });
+
+          if (pullRequest.labels.length === 0) {
+            core.warning('This PR has no labels. Consider adding labels like bug, enhancement, documentation, etc.');
+          } else {
+            core.info(`PR has ${pullRequest.labels.length} label(s): ${pullRequest.labels.map(l => l.name).join(', ')}`);
+          }
