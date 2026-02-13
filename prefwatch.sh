@@ -235,6 +235,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.bird"
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
+  "com.apple.appleaccountd"
 
   # Security & crash reporting (noisy, not user settings)
   "com.apple.CrashReporter"
@@ -255,6 +256,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # App store internals (not user preferences)
   "com.apple.appstored"
   "com.apple.AppleMediaServices*"
+
+  # Calculator currency cache (auto-updated exchange rates)
+  "com.apple.calculateframework"
 
   # Power management internals (constant battery updates)
   "com.apple.PowerManagement*"
@@ -534,7 +538,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*)
+    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -1545,8 +1549,14 @@ show_plist_diff() {
               continue
             fi
             # Verify key is truly deleted (not a transient cfprefsd write)
-            if [ -z "$array_name" ] && /usr/bin/plutil -p "$path" 2>/dev/null | /usr/bin/grep -qF "\"$keyname\""; then
-              continue
+            if [ -z "$array_name" ]; then
+              if /usr/bin/plutil -p "$path" 2>/dev/null | /usr/bin/grep -qF "\"$keyname\""; then
+                continue
+              fi
+              # Also check via defaults — if key still readable, it's a value change not a deletion
+              if /usr/bin/defaults read "$_dom" "$keyname" >/dev/null 2>&1; then
+                continue
+              fi
             fi
             local base dom hostflag target delete_cmd
             base="$(/usr/bin/basename "$path")"
@@ -1836,6 +1846,10 @@ show_domain_diff() {
             fi
             # Skip flat key deletes for print presets (array deletion covers all sub-keys)
             if [[ "$dom" == com.apple.print.custompresets* ]]; then
+              continue
+            fi
+            # Verify scalar key is truly deleted (not just changed)
+            if [ -z "$array_name" ] && /usr/bin/defaults read "$dom" "$keyname" >/dev/null 2>&1; then
               continue
             fi
             local target delete_cmd
