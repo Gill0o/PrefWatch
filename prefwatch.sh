@@ -240,12 +240,14 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Security & crash reporting (noisy, not user settings)
   "com.apple.CrashReporter"
   "com.apple.security*"
+  "com.apple.biometrickitd"
 
   # Network internals (frequent changes, not user preferences)
   "com.apple.networkextension*"
   "com.apple.wifi.known-networks"
   "com.apple.LaunchServices*"  # zsh globs are case-sensitive, need both
   "com.apple.launchservices*"
+  "com.apple.apsd"
 
   # Backup internals (constant state updates, not user preferences)
   "com.apple.TimeMachine"
@@ -259,6 +261,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
+
+  # Software Update cache (available updates metadata, not user settings)
+  "com.apple.SoftwareUpdate"
 
   # Power management internals (constant battery updates)
   "com.apple.PowerManagement*"
