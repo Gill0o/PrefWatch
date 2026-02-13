@@ -1,9 +1,13 @@
 # Changelog
 
 ## 1.0.1 — 2026-02-13
-- **NOISE**: Exclude `com.apple.wifi.known-networks` (WiFi timestamp updates)
-- **NOISE**: Exclude `com.apple.TimeMachine` (backup state internals)
-- **NOISE**: Exclude `com.apple.powerlogd` (energy daemon)
+- **FIX**: Suppress redundant PlistBuddy `Delete` when a `defaults write` follows for the same key (value change, not deletion)
+- **FIX**: Unfilter `NSToolbar Configuration` — show/hide toolbar is a real user preference
+- **FIX**: `*PreferencesWindow*` added to noisy key patterns (window position/state)
+- **NOISE**: Exclude domains: `com.apple.wifi.known-networks`, `com.apple.TimeMachine`,
+  `com.apple.powerlogd`, `com.apple.calculateframework`, `com.apple.SoftwareUpdate`,
+  `com.apple.apsd`, `com.apple.biometrickitd`, `com.apple.appleaccountd`
+- **NOISE**: PlistBuddy filters: `FXRecentFolders`, `NSWindowTabbingShoudShowTabBarKey`, `ViewSettings`
 
 ## 1.0.0 — 2026-02-12
 - **RELEASE**: First official release as **PrefWatch**
