@@ -227,6 +227,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.knowledge-agent"
   "com.apple.DuetExpertCenter*"
   "com.apple.xpc.activity2"
+  "com.apple.powerlogd"
   "ContextStoreAgent*"
 
   # Cloud sync internals (constant updates, not user preferences)
