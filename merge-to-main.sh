@@ -1,7 +1,8 @@
 #!/bin/zsh
 # ============================================================================
 # Merge dev → main, removing dev-only files automatically
-# Usage: ./merge-to-main.sh [commit message]
+# Usage: ./merge-to-main.sh <version> [commit message]
+# Example: ./merge-to-main.sh v1.0.1 "Merge dev — v1.0.1"
 # ============================================================================
 
 # Dev-only files that should never appear on main
@@ -11,6 +12,9 @@ DEV_ONLY_FILES=(
   "release/"
   merge-to-main.sh
 )
+
+# Always return to dev on exit (success or failure)
+trap 'git checkout dev 2>/dev/null' EXIT
 
 # Ensure we're on dev
 current_branch=$(git branch --show-current)
@@ -25,10 +29,25 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-MSG="${1:-Merge dev into main}"
+# Parse arguments
+TAG="$1"
+if [ -z "$TAG" ]; then
+  echo "ERROR: version tag required (e.g. ./merge-to-main.sh v1.0.1)"
+  exit 1
+fi
+MSG="${2:-Merge dev — $TAG}"
+
+# Check if tag already exists
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+  echo "ERROR: tag $TAG already exists — delete it first or use a different version"
+  exit 1
+fi
 
 echo "Switching to main..."
-git checkout main
+git checkout main || exit 1
+
+echo "Pulling latest main..."
+git pull origin main || exit 1
 
 echo "Merging dev --no-commit..."
 git merge dev --no-commit --no-ff 2>/dev/null || true
@@ -51,12 +70,14 @@ for f in "${DEV_ONLY_FILES[@]}"; do
 done
 
 echo "Committing..."
-git commit -m "$MSG"
+git commit -m "$MSG" || { echo "ERROR: commit failed"; exit 1; }
 
 echo "Pushing main..."
-git push origin main
+git push origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
 
-echo "Switching back to dev..."
-git checkout dev
+echo "Creating tag $TAG..."
+git tag -a "$TAG" -m "PrefWatch $TAG"
+git push origin "$TAG" || { echo "ERROR: tag push failed"; exit 1; }
 
-echo "Done."
+echo ""
+echo "Done — merged, pushed, and tagged $TAG."
