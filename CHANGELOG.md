@@ -12,10 +12,11 @@
   `com.apple.SoftwareUpdate`, `com.apple.apsd`, `com.apple.biometrickitd`,
   `com.apple.appleaccountd`, `com.apple.CacheDelete`, `com.apple.inputAnalytics*`,
   `com.apple.vmnet`, `com.apple.audio.SystemSettings`,
-  `com.apple.coreservices.useractivityd*`, `com.apple.AccessibilityHearingNearby`
+  `com.apple.coreservices.useractivityd*`, `com.apple.AccessibilityHearingNearby`,
+  `com.apple.AppStore`, `com.apple.gamed`, `com.apple.gamecenter`
 - **NOISE**: PlistBuddy filters: `FXRecentFolders`, `NSWindowTabbingShoudShowTabBarKey`,
   `ViewSettings`, `FXSync*`, `MRSActivityScheduler`
-- **NOISE**: Key filters: `FK_SidebarWidth*`, `trash-full` (Dock)
+- **NOISE**: Key filters: `FK_SidebarWidth*`, `trash-full` (Dock), `*Analytics*`, `*Telemetry*`, `*lastBootstrap*`
 - **DOC**: README scope section — Safari and other Apple apps may not use plist-based preferences
 
 ## 1.0.0 — 2026-02-12
