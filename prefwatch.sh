@@ -265,7 +265,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # App store internals (not user preferences)
   "com.apple.appstored"
+  "com.apple.AppStore"
   "com.apple.AppleMediaServices*"
+
+  # Game Center internals (daemon state, not user preferences)
+  "com.apple.gamed"
+  "com.apple.gamecenter"
 
   # Input analytics / telemetry (not user preferences)
   "com.apple.inputAnalytics*"
@@ -578,6 +583,10 @@ is_noisy_key() {
 
     # Rollout configs & A/B testing (system telemetry, not user settings)
     rollouts|rolloutId|deploymentId|*RolloutId|*DeploymentId)
+      return 0 ;;
+
+    # Analytics & telemetry counters (not user preferences)
+    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
