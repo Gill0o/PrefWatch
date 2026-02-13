@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.0.0
+# Version: 1.0.1
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -242,8 +242,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Network internals (frequent changes, not user preferences)
   "com.apple.networkextension*"
+  "com.apple.wifi.known-networks"
   "com.apple.LaunchServices*"  # zsh globs are case-sensitive, need both
   "com.apple.launchservices*"
+
+  # Backup internals (constant state updates, not user preferences)
+  "com.apple.TimeMachine"
 
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"

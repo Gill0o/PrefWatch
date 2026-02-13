@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 — 2026-02-13
+- **NOISE**: Exclude `com.apple.wifi.known-networks` (WiFi timestamp updates)
+- **NOISE**: Exclude `com.apple.TimeMachine` (backup state internals)
+- **NOISE**: Exclude `com.apple.powerlogd` (energy daemon)
+
 ## 1.0.0 — 2026-02-12
 - **RELEASE**: First official release as **PrefWatch**
   - Renamed project from Watch Preferences to PrefWatch
