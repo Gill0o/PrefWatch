@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.1 — 2026-02-13
+- **FIX**: Suppress redundant PlistBuddy `Delete` when a `defaults write` follows for the same key — now checks the current snapshot file directly instead of relying on `defaults read` (which fails under sudo)
+- **FIX**: Unfilter `NSToolbar Configuration` — show/hide toolbar is a real user preference
+- **FIX**: `*PreferencesWindow*` added to noisy key patterns (window position/state)
+- **FIX**: `FXRecentFolders` array deletions now filtered via `is_noisy_key` in `emit_array_deletions`
+- **UX**: Warning when running ALL mode without sudo (fs_usage unavailable, polling only)
+- **UX**: Skip `fs_watch` launch when not root (avoids silent failure)
+- **NOISE**: Exclude domains: `com.apple.wifi.known-networks`, `com.apple.TimeMachine`,
+  `com.apple.timemachine*`, `com.apple.powerlogd`, `com.apple.calculateframework`,
+  `com.apple.SoftwareUpdate`, `com.apple.apsd`, `com.apple.biometrickitd`,
+  `com.apple.appleaccountd`, `com.apple.CacheDelete`, `com.apple.inputAnalytics*`,
+  `com.apple.vmnet`, `com.apple.audio.SystemSettings`,
+  `com.apple.coreservices.useractivityd*`, `com.apple.AccessibilityHearingNearby`,
+  `com.apple.AppStore`, `com.apple.gamed`, `com.apple.gamecenter`
+- **NOISE**: PlistBuddy filters: `FXRecentFolders`, `NSWindowTabbingShoudShowTabBarKey`,
+  `ViewSettings`, `FXSync*`, `MRSActivityScheduler`
+- **NOISE**: Key filters: `FK_SidebarWidth*`, `trash-full` (Dock), `*Analytics*`, `*Telemetry*`, `*lastBootstrap*`
+- **DOC**: README scope section — Safari and other Apple apps may not use plist-based preferences
+
 ## 1.0.0 — 2026-02-12
 - **RELEASE**: First official release as **PrefWatch**
   - Renamed project from Watch Preferences to PrefWatch

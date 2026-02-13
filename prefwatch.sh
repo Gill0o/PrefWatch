@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.0.0
+# Version: 1.0.1
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -235,26 +235,61 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.bird"
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
+  "com.apple.appleaccountd"
+
+  # System maintenance & cache (noisy, not user settings)
+  "com.apple.CacheDelete"
 
   # Security & crash reporting (noisy, not user settings)
   "com.apple.CrashReporter"
   "com.apple.security*"
+  "com.apple.biometrickitd"
+
+  # Accessibility telemetry (hearing device state, not user preferences)
+  "com.apple.AccessibilityHearingNearby"
 
   # Network internals (frequent changes, not user preferences)
   "com.apple.networkextension*"
+  "com.apple.wifi.known-networks"
+  "com.apple.vmnet"
   "com.apple.LaunchServices*"  # zsh globs are case-sensitive, need both
   "com.apple.launchservices*"
+  "com.apple.apsd"
+
+  # Backup internals (constant state updates, not user preferences)
+  "com.apple.TimeMachine"
+  "com.apple.timemachine*"
 
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"
 
   # App store internals (not user preferences)
   "com.apple.appstored"
+  "com.apple.AppStore"
   "com.apple.AppleMediaServices*"
+
+  # Game Center internals (daemon state, not user preferences)
+  "com.apple.gamed"
+  "com.apple.gamecenter"
+
+  # Input analytics / telemetry (not user preferences)
+  "com.apple.inputAnalytics*"
+
+  # Calculator currency cache (auto-updated exchange rates)
+  "com.apple.calculateframework"
+
+  # Software Update cache (available updates metadata, not user settings)
+  "com.apple.SoftwareUpdate"
 
   # Power management internals (constant battery updates)
   "com.apple.PowerManagement*"
   "com.apple.BackgroundTaskManagement*"
+
+  # Audio internals (device routing state, not user preferences)
+  "com.apple.audio.SystemSettings"
+
+  # User activity tracking (Handoff/Continuity state, not user preferences)
+  "com.apple.coreservices.useractivityd*"
 
   # System internals (no plist-based user settings)
   "com.apple.loginwindow"
@@ -530,7 +565,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSToolbar\ Configuration*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*|FK_SidebarWidth*)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -548,6 +583,10 @@ is_noisy_key() {
 
     # Rollout configs & A/B testing (system telemetry, not user settings)
     rollouts|rolloutId|deploymentId|*RolloutId|*DeploymentId)
+      return 0 ;;
+
+    # Analytics & telemetry counters (not user preferences)
+    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
@@ -569,6 +608,14 @@ is_noisy_key() {
 
     # Recent items & history (noisy, changes constantly)
     *RecentFolders|*RecentDocuments|*RecentSearches|*History*|*RecentlyUsed*)
+      return 0 ;;
+
+    # Finder sync state (iCloud Drive extension toolbar, not user preferences)
+    FXSync*)
+      return 0 ;;
+
+    # Third-party update schedulers (background check timestamps)
+    MRSActivityScheduler)
       return 0 ;;
 
     # Cache & temporary data
@@ -608,8 +655,8 @@ is_noisy_key() {
     # Dock preferences: Keep useful settings, filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
-        # Noisy: workspace IDs, counts, expose gestures
-        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime)
+        # Noisy: workspace IDs, counts, expose gestures, trash state
+        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full)
           return 0 ;;
         # Noisy: internal tile metadata (useless even in PlistBuddy)
         GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book)
@@ -737,7 +784,7 @@ is_noisy_command() {
 
   # Filter known keys that change frequently
   case "$cmd" in
-    *"NSWindow Frame"*|*"NSToolbar Configuration"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
+    *"NSWindow Frame"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
       return 0
       ;;
   esac
@@ -826,7 +873,7 @@ snapshot_notice() {
 dump_plist() {
   local src="$1" out="$2"
   # Try plutil -p (single call), fall back to raw copy on failure
-  if ! ( /usr/bin/plutil -p "$src" > "$out" ) 2>/dev/null; then
+  if ! /usr/bin/plutil -p "$src" > "$out" 2>/dev/null; then
     /bin/cat "$src" > "$out" 2>/dev/null || :
   fi
 }
@@ -839,7 +886,7 @@ dump_plist_json() {
     return
   fi
   # Try plutil first (fastest)
-  if ( /usr/bin/plutil -convert json -o "$out" "$src" ) 2>/dev/null; then
+  if /usr/bin/plutil -convert json -o "$out" "$src" 2>/dev/null; then
     [ -s "$out" ] && return
   fi
   # Fallback: Python plistlib (handles binary data like NSData in Dock plist)
@@ -1163,6 +1210,9 @@ PY
   while IFS=$'\t' read -r base idx keylist; do
     [ -n "$base" ] || continue
 
+    # Skip noisy arrays
+    is_noisy_key "$dom" "$base" && continue
+
     # Emit contextual note once per array
     if [ -z "${_noted_del_arrays[$base]:-}" ]; then
       _emit_contextual_note "$dom" "$base"
@@ -1353,7 +1403,7 @@ show_plist_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -1540,8 +1590,9 @@ show_plist_diff() {
             if [[ "$_dom" == com.apple.print.custompresets* ]]; then
               continue
             fi
-            # Verify key is truly deleted (not a transient cfprefsd write)
-            if [ -z "$array_name" ] && /usr/bin/plutil -p "$path" 2>/dev/null | /usr/bin/grep -qF "\"$keyname\""; then
+            # Verify key is truly deleted by checking the current snapshot
+            # If the key still exists in $curr, it's a value change not a deletion
+            if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
               continue
             fi
             local base dom hostflag target delete_cmd
@@ -1626,7 +1677,7 @@ show_domain_diff() {
 
   "${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - > "$tmpplist" 2>/dev/null || :
   if [ -s "$tmpplist" ]; then
-    ( /usr/bin/plutil -p "$tmpplist" > "$curr" ) 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
+    /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
     curr_json="$CACHE_DIR/${key}.curr.json"
     dump_plist_json "$tmpplist" "$curr_json"
   else
@@ -1668,7 +1719,7 @@ show_domain_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSToolbar Configuration"*|*":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -1834,6 +1885,11 @@ show_domain_diff() {
             if [[ "$dom" == com.apple.print.custompresets* ]]; then
               continue
             fi
+            # Verify key is truly deleted by checking the current snapshot
+            # If the key still exists in $curr, it's a value change not a deletion
+            if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
+              continue
+            fi
             local target delete_cmd
             if [ -n "$array_name" ]; then
               target=":${array_name}:${array_idx}"
@@ -1982,7 +2038,11 @@ start_watch() {
 
 # Monitor all preferences via fs_usage
 start_watch_all() {
-  log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
+  if [ "$(id -u)" -ne 0 ]; then
+    log_line "Mode: monitoring ALL preferences (polling only — no root)"
+  else
+    log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
+  fi
 
   local console_user console_home prefs_user prefs_system
   console_user=$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || echo "")
@@ -2238,8 +2298,11 @@ start_watch_all() {
   }
 
   # Start all mechanisms
-  fs_watch &
-  local FS_PID=$!
+  local FS_PID=""
+  if [ "$(id -u)" -eq 0 ]; then
+    fs_watch &
+    FS_PID=$!
+  fi
   poll_watch &
   local POLL_PID=$!
   cups_watch &
@@ -2247,7 +2310,7 @@ start_watch_all() {
   pmset_watch &
   local PMSET_PID=$!
 
-  trap 'kill -TERM $FS_PID $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait $FS_PID $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
@@ -2294,6 +2357,17 @@ elif [ "$ALL_MODE" = "true" ] && [ "$JAMF_MODE" != "true" ]; then
 else
   log_line "WARNING: ${_py_warn:-Python3 not available}"
   log_line "TIP: Run 'xcode-select --install' to enable array change detection"
+fi
+
+# Warn if ALL mode without root (fs_usage unavailable)
+if [ "$ALL_MODE" = "true" ] && [ "$(id -u)" -ne 0 ]; then
+  local _ts; _ts="$(get_timestamp)"
+  local _w1="[$_ts] WARNING: Running without sudo — fs_usage is unavailable"
+  local _w2="[$_ts]   Real-time detection disabled; only polling will be used (slower)"
+  local _w3="[$_ts]   For full detection, re-run with: sudo $0 ALL"
+  printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3"
+  printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3" >> "$LOGFILE" 2>/dev/null || true
+  /usr/bin/logger -t "prefwatch[init]" -- "Running without sudo — fs_usage unavailable, polling only"
 fi
 
 # Warn if domain is normally excluded (but don't stop — user explicitly requested it)
