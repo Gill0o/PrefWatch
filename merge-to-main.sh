@@ -4,8 +4,6 @@
 # Usage: ./merge-to-main.sh [commit message]
 # ============================================================================
 
-set -e
-
 # Dev-only files that should never appear on main
 DEV_ONLY_FILES=(
   pre-commit
@@ -34,6 +32,15 @@ git checkout main
 
 echo "Merging dev --no-commit..."
 git merge dev --no-commit --no-ff 2>/dev/null || true
+
+# Resolve any conflicts by taking dev version
+conflicted=($(git diff --name-only --diff-filter=U 2>/dev/null))
+if [ ${#conflicted[@]} -gt 0 ]; then
+  echo "  Resolving ${#conflicted[@]} conflict(s) with dev version..."
+  for f in "${conflicted[@]}"; do
+    git checkout --theirs "$f" 2>/dev/null && git add "$f"
+  done
+fi
 
 # Remove dev-only files if present
 for f in "${DEV_ONLY_FILES[@]}"; do
