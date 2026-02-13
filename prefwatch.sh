@@ -2,6 +2,8 @@
 # ============================================================================
 # Script: prefwatch.sh
 # Version: 1.0.0
+# Author: Gilles Bonpain
+# Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
 # ============================================================================
 # Usage:
