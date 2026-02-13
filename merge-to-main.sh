@@ -46,8 +46,9 @@ fi
 echo "Switching to main..."
 git checkout main || exit 1
 
-echo "Pulling latest main..."
-git pull origin main || exit 1
+echo "Syncing with remote main..."
+git fetch origin main
+git reset --hard origin/main
 
 echo "Merging dev --no-commit..."
 git merge dev --no-commit --no-ff 2>/dev/null || true
