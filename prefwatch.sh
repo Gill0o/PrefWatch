@@ -839,7 +839,7 @@ snapshot_notice() {
 dump_plist() {
   local src="$1" out="$2"
   # Try plutil -p (single call), fall back to raw copy on failure
-  if ! ( /usr/bin/plutil -p "$src" > "$out" ) 2>/dev/null; then
+  if ! /usr/bin/plutil -p "$src" > "$out" 2>/dev/null; then
     /bin/cat "$src" > "$out" 2>/dev/null || :
   fi
 }
@@ -852,7 +852,7 @@ dump_plist_json() {
     return
   fi
   # Try plutil first (fastest)
-  if ( /usr/bin/plutil -convert json -o "$out" "$src" ) 2>/dev/null; then
+  if /usr/bin/plutil -convert json -o "$out" "$src" 2>/dev/null; then
     [ -s "$out" ] && return
   fi
   # Fallback: Python plistlib (handles binary data like NSData in Dock plist)
@@ -1645,7 +1645,7 @@ show_domain_diff() {
 
   "${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - > "$tmpplist" 2>/dev/null || :
   if [ -s "$tmpplist" ]; then
-    ( /usr/bin/plutil -p "$tmpplist" > "$curr" ) 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
+    /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
     curr_json="$CACHE_DIR/${key}.curr.json"
     dump_plist_json "$tmpplist" "$curr_json"
   else
