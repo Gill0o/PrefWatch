@@ -50,8 +50,8 @@ echo "Syncing with remote main..."
 git fetch origin main
 git reset --hard origin/main
 
-echo "Merging dev --no-commit..."
-git merge dev --no-commit --no-ff 2>/dev/null || true
+echo "Merging dev (squash)..."
+git merge dev --squash 2>/dev/null || true
 
 # Resolve any conflicts by taking dev version
 conflicted=($(git diff --name-only --diff-filter=U 2>/dev/null))
