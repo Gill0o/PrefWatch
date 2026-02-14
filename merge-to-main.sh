@@ -82,15 +82,8 @@ done
 echo "Committing..."
 git commit -m "$MSG" || { echo "ERROR: commit failed"; exit 1; }
 
-echo "Force-pushing main (rewritten history)..."
+echo "Force-pushing main (clean history)..."
 git push --force-with-lease origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
-
-# Delete old remote tags for versions > BASE_TAG (they point to polluted history)
-for old_tag in $(git tag -l 'v*' | grep -v "^${BASE_TAG}$" | grep -v "^${TAG}$"); do
-  echo "  Cleaning old tag: $old_tag"
-  git push origin ":refs/tags/$old_tag" 2>/dev/null || true
-  git tag -d "$old_tag" 2>/dev/null || true
-done
 
 echo "Creating tag $TAG..."
 git tag -a "$TAG" -m "PrefWatch $TAG"
