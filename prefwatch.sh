@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.0.1
+# Version: 1.0.2
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -308,6 +308,32 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Address Book UI state (window geometry, selection, not user preferences)
   "com.apple.AddressBook"
 
+  # Messages preview rendering internals (screen scale, dimensions)
+  "com.apple.MobileSMSPreview"
+
+  # Notification Center internal state (app path tracking, binary blobs)
+  "com.apple.ncprefs"
+
+  # Account existence tracking (internal state, not user preferences)
+  "com.apple.accounts.exists"
+
+  # Find My device daemon (APS tokens, internal state)
+  "com.apple.icloud.fmfd"
+
+  # Telephony framework internals (camera/call state)
+  "com.apple.TelephonyUtilities"
+
+  # Apple TV & Music apps (column info, launch state, internal metadata)
+  "com.apple.TV"
+  "com.apple.Music"
+  "com.apple.itunescloud"
+
+  # Find My app & framework (UI state, window geometry, precision flags)
+  "com.apple.findmy*"
+
+  # Books data store (migration state, cache tasks)
+  "com.apple.bookdatastored"
+
   # Legacy (obsolete, replaced by systemsettings)
   "com.apple.systempreferences"
 
@@ -575,7 +601,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
@@ -640,6 +666,10 @@ is_noisy_key() {
     uses|launchCount|*reminder.date|*donate*)
       return 0 ;;
 
+    # Migration flags (one-time internal state, not user preferences)
+    *DidMigrate*|*didMigrate*)
+      return 0 ;;
+
     # Cache & temporary data
     *-cache|*Cache*|*-temp|*Temp*|*-tmp)
       return 0 ;;
@@ -680,8 +710,8 @@ is_noisy_key() {
         # Noisy: workspace IDs, counts, expose gestures, trash state
         workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full)
           return 0 ;;
-        # Noisy: internal tile metadata (useless even in PlistBuddy)
-        GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book)
+        # Noisy: internal tile metadata (reorder noise, useless as flat defaults write)
+        GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|bundle-identifier|_CFURLString|file-label|file-data|tile-data)
           return 0 ;;
         # Note: bundle-identifier, _CFURLString, file-label, tile-data, file-data
         # are kept - useful in PlistBuddy output; suppressed as flat defaults write by _skip_keys
@@ -1098,12 +1128,16 @@ def pb_type_value(val):
         return ("string", f"'{val}'")
     return None
 
+def pb_escape(s):
+    """Escape spaces in PlistBuddy key paths"""
+    return s.replace(' ', '\\ ')
+
 def emit_plistbuddy(array_name, index, item, path_prefix=""):
     """Recursively generate PlistBuddy Add commands for nested dicts"""
     cmds = []
     if isinstance(item, dict):
         for k, v in item.items():
-            key_path = f"{path_prefix}{k}"
+            key_path = f"{path_prefix}{pb_escape(k)}"
             if isinstance(v, dict):
                 cmds.append(f"PBCMD\tAdd :{array_name}:{index}:{key_path} dict")
                 cmds.extend(emit_plistbuddy(array_name, index, v, key_path + ":"))
@@ -1360,7 +1394,7 @@ for top_key in sorted(curr.keys()):
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
     # Emit PlistBuddy Set commands with full paths
     for path_parts, (ptype, pvalue) in changes:
-        full_path = ':'.join(path_parts)
+        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
 ) || return 0
