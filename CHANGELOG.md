@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3 — 2026-02-14
+- **FIX**: Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
+- **FIX**: Pre-commit hook and release.sh paths corrected (root layout, not `prefwatch/` subdir)
+- **NOISE**: Exclude domains: `com.apple.networkd`, `com.apple.AutoWake`,
+  `com.apple.siri.DialogEngine`, `com.apple.siri.sirisuggestions`, `com.apple.siriknowledged`,
+  `com.bjango.istatmenus.status`, `app.monitorcontrol.MonitorControl`
+- **NOISE**: PlistBuddy filter: `com.apple.finder.SyncExtensions` (Finder Sync/Time Machine dirMap)
+
 ## 1.0.2 — 2026-02-14
 - **FIX**: Suppress `plutil -convert json` error messages visible on Sonoma during snapshot — plutil with `-o` flag writes errors to stdout (not stderr), now both suppressed (`>/dev/null 2>&1`)
 - **FIX**: PlistBuddy `Add`/`Set` commands now escape spaces in key names (e.g. `KeyboardLayout\ Name`) — fixes "Unrecognized Type" errors for keys like `KeyboardLayout Name`
