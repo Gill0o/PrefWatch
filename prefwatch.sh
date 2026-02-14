@@ -908,7 +908,9 @@ dump_plist_json() {
     return
   fi
   # Try plutil first (fastest)
-  if /usr/bin/plutil -convert json -o "$out" "$src" 2>/dev/null; then
+  # Note: plutil -convert with -o writes output to file, error messages go to stdout (not stderr)
+  # so we must suppress both stdout and stderr to avoid visible errors on Sonoma
+  if /usr/bin/plutil -convert json -o "$out" "$src" >/dev/null 2>&1; then
     [ -s "$out" ] && return
   fi
   # Fallback: Python plistlib (handles binary data like NSData in Dock plist)
