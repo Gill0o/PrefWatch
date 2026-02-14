@@ -7,16 +7,22 @@
 - **FIX**: `FXRecentFolders` array deletions now filtered via `is_noisy_key` in `emit_array_deletions`
 - **UX**: Warning when running ALL mode without sudo (fs_usage unavailable, polling only)
 - **UX**: Skip `fs_watch` launch when not root (avoids silent failure)
+- **FIX**: Suppress false-positive array additions/deletions on reorder (e.g. Dock `persistent-apps` on app launch) — Python-level length check
 - **NOISE**: Exclude domains: `com.apple.wifi.known-networks`, `com.apple.TimeMachine`,
   `com.apple.timemachine*`, `com.apple.powerlogd`, `com.apple.calculateframework`,
   `com.apple.SoftwareUpdate`, `com.apple.apsd`, `com.apple.biometrickitd`,
   `com.apple.appleaccountd`, `com.apple.CacheDelete`, `com.apple.inputAnalytics*`,
   `com.apple.vmnet`, `com.apple.audio.SystemSettings`,
   `com.apple.coreservices.useractivityd*`, `com.apple.AccessibilityHearingNearby`,
-  `com.apple.AppStore`, `com.apple.gamed`, `com.apple.gamecenter`
+  `com.apple.AppStore`, `com.apple.gamed`, `com.apple.gamecenter`,
+  `com.apple.appleintelligencereporting`, `com.apple.GenerativeFunctions*`,
+  `com.apple.SpeakSelection`, `com.microsoft.office`,
+  `com.apple.ServicesMenu.Services`, `com.apple.AddressBook`
 - **NOISE**: PlistBuddy filters: `FXRecentFolders`, `NSWindowTabbingShoudShowTabBarKey`,
   `ViewSettings`, `FXSync*`, `MRSActivityScheduler`
-- **NOISE**: Key filters: `FK_SidebarWidth*`, `trash-full` (Dock), `*Analytics*`, `*Telemetry*`, `*lastBootstrap*`
+- **NOISE**: Key filters: `FK_SidebarWidth*`, `trash-full` (Dock), `*Analytics*`, `*Telemetry*`, `*lastBootstrap*`,
+  `*LastLoadedOn*`, `NSLinguisticDataAssets*`, `*.column.*.width`, Sparkle updater keys (`SU*`),
+  `uses`, `launchCount`, `*reminder.date`, `*donate*`
 - **DOC**: README scope section — Safari and other Apple apps may not use plist-based preferences
 
 ## 1.0.0 — 2026-02-12

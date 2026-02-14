@@ -247,6 +247,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Accessibility telemetry (hearing device state, not user preferences)
   "com.apple.AccessibilityHearingNearby"
+  "com.apple.SpeakSelection"
 
   # Network internals (frequent changes, not user preferences)
   "com.apple.networkextension*"
@@ -274,6 +275,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Input analytics / telemetry (not user preferences)
   "com.apple.inputAnalytics*"
+  "com.apple.appleintelligencereporting"
+  "com.apple.GenerativeFunctions*"
 
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
@@ -299,6 +302,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.windowserver*"
   "diagnostics_agent"
 
+  # Services menu localization cache (auto-regenerated, not user preferences)
+  "com.apple.ServicesMenu.Services"
+
+  # Address Book UI state (window geometry, selection, not user preferences)
+  "com.apple.AddressBook"
+
   # Legacy (obsolete, replaced by systemsettings)
   "com.apple.systempreferences"
 
@@ -309,6 +318,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Third-party updaters & telemetry (background noise, not user preferences)
   "com.microsoft.autoupdate*"
   "com.microsoft.shared"
+  "com.microsoft.office"
   "*.zoom.updater*"
   "com.openai.chat"
   "ChatGPTHelper"
@@ -565,12 +575,16 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*|FK_SidebarWidth*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+      return 0 ;;
+
+    # Sparkle updater internals (auto-update framework state)
+    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*)
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*)
       return 0 ;;
 
     # Date fields (float/string dates are usually metadata)
@@ -614,8 +628,16 @@ is_noisy_key() {
     FXSync*)
       return 0 ;;
 
+    # Linguistic data assets (spell checker internal state)
+    NSLinguisticDataAssets*)
+      return 0 ;;
+
     # Third-party update schedulers (background check timestamps)
     MRSActivityScheduler)
+      return 0 ;;
+
+    # App launch counters & donation reminders (internal state)
+    uses|launchCount|*reminder.date|*donate*)
       return 0 ;;
 
     # Cache & temporary data
@@ -1096,6 +1118,10 @@ diff(prev, curr, [])
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
+    # Skip reorders: if array length is the same, elements just moved (not added)
+    arr_name = prefix[0]
+    if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
+        continue
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
         # Output metadata line (for _skip_keys in shell)
@@ -1196,6 +1222,9 @@ for path_tuple, index, item in results:
     if len(path_tuple) != 1:
         continue
     array_name = path_tuple[-1] if path_tuple else ""
+    # Skip reorders: if array length is the same, elements just moved (not deleted)
+    if array_name in prev and array_name in curr and isinstance(prev[array_name], list) and isinstance(curr[array_name], list) and len(prev[array_name]) == len(curr[array_name]):
+        continue
     if isinstance(item, dict):
         keys = ','.join(str(k) for k in item.keys())
     else:
