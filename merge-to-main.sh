@@ -1,12 +1,14 @@
 #!/bin/zsh
 # ============================================================================
 # Merge dev → main, removing dev-only files automatically
-# Produces a clean main history: v1.0.0 base + one squash commit per release
+# Produces a clean main history: one squash commit per release
+# First run cleans polluted history (resets to BASE_TAG), subsequent runs
+# build incrementally from the last release tag.
 # Usage: ./merge-to-main.sh <version> [commit message]
 # Example: ./merge-to-main.sh v1.0.2 "Merge dev — v1.0.2"
 # ============================================================================
 
-# Base tag — main is always reset to this before squash-merging
+# Base tag — used for initial cleanup if main history is polluted
 BASE_TAG="v1.0.0"
 
 # Dev-only files that should never appear on main
@@ -55,9 +57,24 @@ fi
 
 echo "Switching to main..."
 git checkout main || exit 1
+git fetch origin main 2>/dev/null || true
 
-echo "Resetting main to $BASE_TAG (clean base)..."
-git reset --hard "$BASE_TAG"
+# Determine if main history is clean (parent of HEAD is a tagged release)
+# Clean: v1.0.0 → squash_v1.0.1 → squash_v1.0.2 (each parent is tagged)
+# Polluted: individual dev commits mixed in
+NEED_FORCE=false
+MAIN_PARENT=$(git rev-parse HEAD~1 2>/dev/null)
+BASE_COMMIT=$(git rev-parse "$BASE_TAG" 2>/dev/null)
+
+if [ "$MAIN_PARENT" = "$BASE_COMMIT" ] || git describe --exact-match "$MAIN_PARENT" 2>/dev/null | grep -q '^v'; then
+  echo "Clean main history — building incrementally from HEAD..."
+  # Main is clean, just sync with remote and build on top
+  git reset --hard origin/main 2>/dev/null || true
+else
+  echo "Polluted main history — resetting to $BASE_TAG (one-time cleanup)..."
+  git reset --hard "$BASE_TAG"
+  NEED_FORCE=true
+fi
 
 echo "Squash-merging dev..."
 git merge dev --squash 2>/dev/null || true
@@ -82,12 +99,17 @@ done
 echo "Committing..."
 git commit -m "$MSG" || { echo "ERROR: commit failed"; exit 1; }
 
-echo "Force-pushing main (clean history)..."
-git push --force-with-lease origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
+if [ "$NEED_FORCE" = "true" ]; then
+  echo "Force-pushing main (cleaned history)..."
+  git push --force-with-lease origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
+else
+  echo "Pushing main..."
+  git push origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
+fi
 
 echo "Creating tag $TAG..."
 git tag -a "$TAG" -m "PrefWatch $TAG"
 git push origin "$TAG" || { echo "ERROR: tag push failed"; exit 1; }
 
 echo ""
-echo "Done — main reset to $BASE_TAG + squash $TAG, pushed and tagged."
+echo "Done — merged, pushed, and tagged $TAG."
