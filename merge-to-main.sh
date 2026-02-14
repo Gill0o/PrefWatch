@@ -1,9 +1,13 @@
 #!/bin/zsh
 # ============================================================================
 # Merge dev → main, removing dev-only files automatically
+# Produces a clean main history: v1.0.0 base + one squash commit per release
 # Usage: ./merge-to-main.sh <version> [commit message]
-# Example: ./merge-to-main.sh v1.0.1 "Merge dev — v1.0.1"
+# Example: ./merge-to-main.sh v1.0.2 "Merge dev — v1.0.2"
 # ============================================================================
+
+# Base tag — main is always reset to this before squash-merging
+BASE_TAG="v1.0.0"
 
 # Dev-only files that should never appear on main
 DEV_ONLY_FILES=(
@@ -32,7 +36,7 @@ fi
 # Parse arguments
 TAG="$1"
 if [ -z "$TAG" ]; then
-  echo "ERROR: version tag required (e.g. ./merge-to-main.sh v1.0.1)"
+  echo "ERROR: version tag required (e.g. ./merge-to-main.sh v1.0.2)"
   exit 1
 fi
 MSG="${2:-Merge dev — $TAG}"
@@ -43,14 +47,19 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Verify base tag exists
+if ! git rev-parse "$BASE_TAG" >/dev/null 2>&1; then
+  echo "ERROR: base tag $BASE_TAG not found"
+  exit 1
+fi
+
 echo "Switching to main..."
 git checkout main || exit 1
 
-echo "Syncing with remote main..."
-git fetch origin main
-git reset --hard origin/main
+echo "Resetting main to $BASE_TAG (clean base)..."
+git reset --hard "$BASE_TAG"
 
-echo "Merging dev (squash)..."
+echo "Squash-merging dev..."
 git merge dev --squash 2>/dev/null || true
 
 # Resolve any conflicts by taking dev version
@@ -73,12 +82,19 @@ done
 echo "Committing..."
 git commit -m "$MSG" || { echo "ERROR: commit failed"; exit 1; }
 
-echo "Pushing main..."
-git push origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
+echo "Force-pushing main (rewritten history)..."
+git push --force-with-lease origin main || { echo "ERROR: push failed — is branch protection disabled?"; exit 1; }
+
+# Delete old remote tags for versions > BASE_TAG (they point to polluted history)
+for old_tag in $(git tag -l 'v*' | grep -v "^${BASE_TAG}$" | grep -v "^${TAG}$"); do
+  echo "  Cleaning old tag: $old_tag"
+  git push origin ":refs/tags/$old_tag" 2>/dev/null || true
+  git tag -d "$old_tag" 2>/dev/null || true
+done
 
 echo "Creating tag $TAG..."
 git tag -a "$TAG" -m "PrefWatch $TAG"
 git push origin "$TAG" || { echo "ERROR: tag push failed"; exit 1; }
 
 echo ""
-echo "Done — merged, pushed, and tagged $TAG."
+echo "Done — main reset to $BASE_TAG + squash $TAG, pushed and tagged."
