@@ -1,15 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Pre-commit hook logic for the template project
-# - If the script is staged and version bumped, auto-update changelog if needed
-# - Then run the local release script and stage versions
+# Pre-commit hook for PrefWatch
+# - If prefwatch.sh is staged with a version bump, auto-update CHANGELOG
+# - Then run release.sh to copy versioned snapshot to release/
 
 ROOT_DIR=$(git rev-parse --show-toplevel)
 cd "$ROOT_DIR"
 
-# CHANGE-ME: Keep in sync if you rename the main script
-SRC_REL="prefwatch/prefwatch.sh"
+SRC_REL="prefwatch.sh"
 
 if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   # Extract staged and HEAD versions
@@ -17,18 +16,16 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   HEAD_VERSION=$(git show "HEAD:$SRC_REL" 2>/dev/null | grep -m1 -E '^# Version:' | awk -F': ' '{print $2}' | tr -d '\r' || true)
 
   if [ -n "$STAGED_VERSION" ] && [ "$STAGED_VERSION" != "$HEAD_VERSION" ]; then
-    CHANGELOG_REL="prefwatch/CHANGELOG.md"
+    CHANGELOG_REL="CHANGELOG.md"
     DATE_STR=$(date +%Y-%m-%d)
     ensure_entry() {
       local file="$1"; local ver="$2"; local date="$3"
-      # Create file if missing
       if [ ! -f "$file" ]; then
         printf "# Changelog\n\n## %s — %s\n- Entrée ajoutée automatiquement\n\n" "$ver" "$date" > "$file"
         git add "$file"
         echo "[pre-commit] $file created and updated for version $ver"
         return
       fi
-      # If version header missing in working tree, insert after title or at top
       if ! grep -Eq "^##[[:space:]]*(v)?$ver(\\b|[[:space:]])" "$file"; then
         tmpfile=$(mktemp)
         if grep -q '^# Changelog' "$file"; then
@@ -43,22 +40,20 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
         git add "$file"
         echo "[pre-commit] $file updated with version $ver"
       else
-        # Ensure staged content includes the change; if not staged yet, add it
         if ! git diff --name-only --cached | grep -qx "$file"; then
           git add "$file"
         fi
       fi
     }
 
-    # Ensure staged content mentions the new version; if not, fix automatically
     if ! git show ":$CHANGELOG_REL" 2>/dev/null | grep -Eq "^##[[:space:]]*(v)?$STAGED_VERSION(\b|[[:space:]])"; then
       ensure_entry "$CHANGELOG_REL" "$STAGED_VERSION" "$DATE_STR"
     fi
   fi
 
   echo "[pre-commit] Running release for $SRC_REL"
-  "prefwatch/release.sh" "${STAGED_VERSION:-}"
-  git add -A "prefwatch/versions" || true
+  "./release.sh" "${STAGED_VERSION:-}"
+  git add -A "release/" || true
 fi
 
 exit 0
