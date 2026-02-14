@@ -43,7 +43,12 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist-based preferences, energy settings (`pmset`), and printer configuration (`lpadmin`). Settings stored outside these sources (SQLite databases, SIP-protected frameworks, Secure Enclave, runtime state) are out of scope by design.
+PrefWatch monitors plist-based preferences, energy settings (`pmset`), and printer configuration (`lpadmin`). Settings stored outside these sources are out of scope by design:
+
+- **Some Apple apps** (Safari, Messages, etc.) — recent macOS versions store preferences outside plists (CloudKit, sandbox databases)
+- **Some System Settings** — certain panels write to SQLite databases or SIP-protected frameworks
+- **Secure Enclave / FileVault** — hardware-level security, not accessible via plists
+- **Runtime state** — transient settings that don't persist to disk
 
 ## Notes
 

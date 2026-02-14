@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.0.2 — 2026-02-14
+- **FIX**: Suppress `plutil -convert json` error messages visible on Sonoma during snapshot — plutil with `-o` flag writes errors to stdout (not stderr), now both suppressed (`>/dev/null 2>&1`)
+- **FIX**: PlistBuddy `Add`/`Set` commands now escape spaces in key names (e.g. `KeyboardLayout\ Name`) — fixes "Unrecognized Type" errors for keys like `KeyboardLayout Name`
+- **FIX**: Dock reorder no longer produces false `defaults write` for tile metadata (`bundle-identifier`, `_CFURLString`, `file-label`, etc.)
+- **NOISE**: Exclude domains: `com.apple.MobileSMSPreview`, `com.apple.ncprefs`,
+  `com.apple.accounts.exists`, `com.apple.icloud.fmfd`, `com.apple.TelephonyUtilities`,
+  `com.apple.TV`, `com.apple.Music`, `com.apple.itunescloud`, `com.apple.findmy*`,
+  `com.apple.bookdatastored`
+- **NOISE**: Key filters: `*WindowFrame*`, `*DidMigrate*`
+
+## 1.0.1 — 2026-02-13
+- **FIX**: Suppress redundant PlistBuddy `Delete` when a `defaults write` follows for the same key — now checks the current snapshot file directly instead of relying on `defaults read` (which fails under sudo)
+- **FIX**: Unfilter `NSToolbar Configuration` — show/hide toolbar is a real user preference
+- **FIX**: `*PreferencesWindow*` added to noisy key patterns (window position/state)
+- **FIX**: `FXRecentFolders` array deletions now filtered via `is_noisy_key` in `emit_array_deletions`
+- **UX**: Warning when running ALL mode without sudo (fs_usage unavailable, polling only)
+- **UX**: Skip `fs_watch` launch when not root (avoids silent failure)
+- **FIX**: Suppress false-positive array additions/deletions on reorder (e.g. Dock `persistent-apps` on app launch) — Python-level length check
+- **NOISE**: Exclude domains: `com.apple.wifi.known-networks`, `com.apple.TimeMachine`,
+  `com.apple.timemachine*`, `com.apple.powerlogd`, `com.apple.calculateframework`,
+  `com.apple.SoftwareUpdate`, `com.apple.apsd`, `com.apple.biometrickitd`,
+  `com.apple.appleaccountd`, `com.apple.CacheDelete`, `com.apple.inputAnalytics*`,
+  `com.apple.vmnet`, `com.apple.audio.SystemSettings`,
+  `com.apple.coreservices.useractivityd*`, `com.apple.AccessibilityHearingNearby`,
+  `com.apple.AppStore`, `com.apple.gamed`, `com.apple.gamecenter`,
+  `com.apple.appleintelligencereporting`, `com.apple.GenerativeFunctions*`,
+  `com.apple.SpeakSelection`, `com.microsoft.office`,
+  `com.apple.ServicesMenu.Services`, `com.apple.AddressBook`
+- **NOISE**: PlistBuddy filters: `FXRecentFolders`, `NSWindowTabbingShoudShowTabBarKey`,
+  `ViewSettings`, `FXSync*`, `MRSActivityScheduler`
+- **NOISE**: Key filters: `FK_SidebarWidth*`, `trash-full` (Dock), `*Analytics*`, `*Telemetry*`, `*lastBootstrap*`,
+  `*LastLoadedOn*`, `NSLinguisticDataAssets*`, `*.column.*.width`, Sparkle updater keys (`SU*`),
+  `uses`, `launchCount`, `*reminder.date`, `*donate*`
+- **DOC**: README scope section — Safari and other Apple apps may not use plist-based preferences
+
 ## 1.0.0 — 2026-02-12
 - **RELEASE**: First official release as **PrefWatch**
   - Renamed project from Watch Preferences to PrefWatch
