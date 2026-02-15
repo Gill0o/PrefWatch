@@ -659,7 +659,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters (not user preferences)
-    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*)
+    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)

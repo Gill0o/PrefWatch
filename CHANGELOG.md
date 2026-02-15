@@ -15,7 +15,8 @@
   `com.apple.IMCoreSpotlight`, `com.apple.identityservicesd`, `com.apple.imagent`
 - PlistBuddy filter: `com.apple.finder.SyncExtensions` (Finder Sync/Time Machine dirMap)
 - Key filters: UUID-formatted key names, `feature.*` flags,
-  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`
+  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`,
+  `*HeartbeatDate*` (WindowManager, controlcenter telemetry)
 
 ### UX
 - All temp files consolidated under `/tmp/prefwatch.PID/` with cleanup on exit
