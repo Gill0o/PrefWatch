@@ -2,75 +2,63 @@
 set -euo pipefail
 
 # Pre-commit hook for PrefWatch
-# - If prefwatch.sh is staged with a version bump, auto-update CHANGELOG
-# - Then run release.sh to copy versioned snapshot to release/
+# When prefwatch.sh is staged:
+#   1. Remind to update CHANGELOG if not modified
+#   2. Auto-stage CHANGELOG if modified but not staged
+#   3. Update CHANGELOG date to today
+#   4. On version bump: create release + CHANGELOG entry
 
 ROOT_DIR=$(git rev-parse --show-toplevel)
 cd "$ROOT_DIR"
 
 SRC_REL="prefwatch.sh"
+CHANGELOG_REL="CHANGELOG.md"
 
 if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   # Extract staged and HEAD versions
   STAGED_VERSION=$(git show ":$SRC_REL" | grep -m1 -E '^# Version:' | awk -F': ' '{print $2}' | tr -d '\r' || true)
   HEAD_VERSION=$(git show "HEAD:$SRC_REL" 2>/dev/null | grep -m1 -E '^# Version:' | awk -F': ' '{print $2}' | tr -d '\r' || true)
+  DATE_STR=$(date +%Y-%m-%d)
 
+  # --- Version bump: CHANGELOG entry + release ---
   if [ -n "$STAGED_VERSION" ] && [ "$STAGED_VERSION" != "$HEAD_VERSION" ]; then
-    CHANGELOG_REL="CHANGELOG.md"
-    DATE_STR=$(date +%Y-%m-%d)
-    ensure_entry() {
-      local file="$1"; local ver="$2"; local date="$3"
-      if [ ! -f "$file" ]; then
-        printf "# Changelog\n\n## %s — %s\n- Entrée ajoutée automatiquement\n\n" "$ver" "$date" > "$file"
-        git add "$file"
-        echo "[pre-commit] $file created and updated for version $ver"
-        return
-      fi
-      if ! grep -Eq "^##[[:space:]]*(v)?$ver(\\b|[[:space:]])" "$file"; then
+    if [ -f "$CHANGELOG_REL" ]; then
+      if ! grep -Eq "^##[[:space:]]*(v)?${STAGED_VERSION}(\\b|[[:space:]])" "$CHANGELOG_REL"; then
         tmpfile=$(mktemp)
-        if grep -q '^# Changelog' "$file"; then
-          awk -v ver="$ver" -v date="$date" 'NR==1{print; print ""; print "## " ver " — " date; print "- Entrée ajoutée automatiquement"; print ""; next}1' "$file" > "$tmpfile"
-        else
-          {
-            printf "## %s — %s\n- Entrée ajoutée automatiquement\n\n" "$ver" "$date"
-            cat "$file"
-          } > "$tmpfile"
-        fi
-        mv "$tmpfile" "$file"
-        git add "$file"
-        echo "[pre-commit] $file updated with version $ver"
-      else
-        if ! git diff --name-only --cached | grep -qx "$file"; then
-          git add "$file"
-        fi
+        awk -v ver="$STAGED_VERSION" -v date="$DATE_STR" \
+          'NR==1{print; print ""; print "## " ver " — " date; print ""; print "### Fix"; print "- ..."; print ""; next}1' \
+          "$CHANGELOG_REL" > "$tmpfile"
+        mv "$tmpfile" "$CHANGELOG_REL"
+        echo "[pre-commit] CHANGELOG.md: new section for v$STAGED_VERSION"
       fi
-    }
-
-    if ! git show ":$CHANGELOG_REL" 2>/dev/null | grep -Eq "^##[[:space:]]*(v)?$STAGED_VERSION(\b|[[:space:]])"; then
-      ensure_entry "$CHANGELOG_REL" "$STAGED_VERSION" "$DATE_STR"
     fi
+    git add "$CHANGELOG_REL"
 
     echo "[pre-commit] Running release for v$STAGED_VERSION"
     "./release.sh" "$STAGED_VERSION"
     git add -A "release/" || true
   fi
 
-  # Update CHANGELOG date for current version to today (even without version bump)
-  CHANGELOG_REL="CHANGELOG.md"
-  if [ -f "$CHANGELOG_REL" ]; then
-    DATE_STR="${DATE_STR:-$(date +%Y-%m-%d)}"
-    CUR_VER="${STAGED_VERSION:-$HEAD_VERSION}"
-    if [ -n "$CUR_VER" ] && grep -Eq "^##[[:space:]]*(v)?${CUR_VER}[[:space:]]*—[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}" "$CHANGELOG_REL"; then
-      sed -i '' -E "s/^(##[[:space:]]*(v)?${CUR_VER}[[:space:]]*—[[:space:]]*)[0-9]{4}-[0-9]{2}-[0-9]{2}/\1${DATE_STR}/" "$CHANGELOG_REL"
-      git add "$CHANGELOG_REL"
-      echo "[pre-commit] CHANGELOG.md date updated to $DATE_STR for v$CUR_VER"
-    fi
+  # --- Auto-stage CHANGELOG if modified (not staged) ---
+  if git diff --name-only -- "$CHANGELOG_REL" 2>/dev/null | grep -qx "$CHANGELOG_REL"; then
+    git add "$CHANGELOG_REL"
+    echo "[pre-commit] CHANGELOG.md auto-staged"
   fi
 
-  # Always stage CHANGELOG if modified (even without version bump)
-  if git diff --name-only -- CHANGELOG.md 2>/dev/null | grep -qx "CHANGELOG.md"; then
-    git add CHANGELOG.md
-    echo "[pre-commit] CHANGELOG.md staged (modified)"
+  # --- Update CHANGELOG date to today ---
+  CUR_VER="${STAGED_VERSION:-$HEAD_VERSION}"
+  if [ -n "$CUR_VER" ] && [ -f "$CHANGELOG_REL" ] && \
+     grep -Eq "^##[[:space:]]*(v)?${CUR_VER}[[:space:]]*—[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}" "$CHANGELOG_REL"; then
+    sed -i '' -E "s/^(##[[:space:]]*(v)?${CUR_VER}[[:space:]]*—[[:space:]]*)[0-9]{4}-[0-9]{2}-[0-9]{2}/\1${DATE_STR}/" "$CHANGELOG_REL"
+    git add "$CHANGELOG_REL"
+    echo "[pre-commit] CHANGELOG.md date → $DATE_STR"
+  fi
+
+  # --- Warn if CHANGELOG not touched ---
+  if ! git diff --name-only --cached | grep -qx "$CHANGELOG_REL"; then
+    echo ""
+    echo "⚠  CHANGELOG.md not updated — pensez à documenter les changements"
+    echo ""
   fi
 fi
 
