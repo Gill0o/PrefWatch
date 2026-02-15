@@ -11,6 +11,8 @@
 - **NOISE**: PlistBuddy filter: `com.apple.finder.SyncExtensions` (Finder Sync/Time Machine dirMap)
 - **NOISE**: Key filters: UUID-formatted key names, `feature.*` flags,
   `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`
+- **FIX**: CUPS printer monitoring — debounce 5s to filter DNS-SD/Bonjour false positives
+- **UX**: All temp files consolidated under `/tmp/prefwatch.PID/` with cleanup on exit
 
 ## 1.0.2 — 2026-02-14
 - **FIX**: Suppress `plutil -convert json` error messages visible on Sonoma during snapshot — plutil with `-o` flag writes errors to stdout (not stderr), now both suppressed (`>/dev/null 2>&1`)
