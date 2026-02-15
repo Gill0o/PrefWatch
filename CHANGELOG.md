@@ -2,8 +2,6 @@
 
 ## 1.0.3 — 2026-02-14
 - **FIX**: Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
-- **FIX**: Pre-commit hook and release.sh paths corrected (root layout, not `prefwatch/` subdir)
-- **FIX**: Pre-commit hook only runs release on version bump (no longer fails on same-version commits)
 - **NOISE**: Exclude domains: `com.apple.networkd`, `com.apple.AutoWake`,
   `com.apple.siri.DialogEngine`, `com.apple.siri.sirisuggestions`, `com.apple.siriknowledged`,
   `com.bjango.istatmenus.status`, `app.monitorcontrol.MonitorControl`,
