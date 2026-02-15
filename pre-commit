@@ -54,6 +54,24 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
     "./release.sh" "$STAGED_VERSION"
     git add -A "release/" || true
   fi
+
+  # Update CHANGELOG date for current version to today (even without version bump)
+  CHANGELOG_REL="CHANGELOG.md"
+  if [ -f "$CHANGELOG_REL" ]; then
+    DATE_STR="${DATE_STR:-$(date +%Y-%m-%d)}"
+    CUR_VER="${STAGED_VERSION:-$HEAD_VERSION}"
+    if [ -n "$CUR_VER" ] && grep -Eq "^##[[:space:]]*(v)?${CUR_VER}[[:space:]]*—[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}" "$CHANGELOG_REL"; then
+      sed -i '' -E "s/^(##[[:space:]]*(v)?${CUR_VER}[[:space:]]*—[[:space:]]*)[0-9]{4}-[0-9]{2}-[0-9]{2}/\1${DATE_STR}/" "$CHANGELOG_REL"
+      git add "$CHANGELOG_REL"
+      echo "[pre-commit] CHANGELOG.md date updated to $DATE_STR for v$CUR_VER"
+    fi
+  fi
+
+  # Always stage CHANGELOG if modified (even without version bump)
+  if git diff --name-only -- CHANGELOG.md 2>/dev/null | grep -qx "CHANGELOG.md"; then
+    git add CHANGELOG.md
+    echo "[pre-commit] CHANGELOG.md staged (modified)"
+  fi
 fi
 
 exit 0

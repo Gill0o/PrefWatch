@@ -506,6 +506,10 @@ if [ -z "$PYTHON3_BIN" ]; then
   _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
+# Temp directory — all temp files under one directory for clean /tmp
+PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
+/bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
+
 # Cache initialization
 typeset -A _EXCLUSION_CACHE  # Cache for domain exclusion checks
 CACHE_DIR=""                  # Cache directory for plist diffs (WATCH_ALL mode)
@@ -574,7 +578,7 @@ hash_path() {
 # Initialize cache directory
 init_cache() {
   if [ -z "$CACHE_DIR" ]; then
-    CACHE_DIR=$(/usr/bin/mktemp -d "/tmp/watchprefs-cache.${$}.XXXXXX") || CACHE_DIR="/tmp/watchprefs-cache.${$}"
+    CACHE_DIR="$PREFWATCH_TMPDIR/cache"
     /bin/mkdir -p "$CACHE_DIR" 2>/dev/null || true
   fi
 }
@@ -2149,7 +2153,7 @@ start_watch() {
     POLL_PID=$!
   fi
 
-  trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
@@ -2254,13 +2258,13 @@ start_watch_all() {
   # Polling monitoring function
   poll_watch() {
     local marker_user marker_sys
-    marker_user=$(/usr/bin/mktemp "/tmp/prefs-user.marker.XXXXXX")
-    marker_sys=$(/usr/bin/mktemp "/tmp/prefs-sys.marker.XXXXXX")
+    marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
+    marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     /usr/bin/touch -t 200001010000 "$marker_user" "$marker_sys" 2>/dev/null || true
 
     while true; do
       local now
-      now=$(/usr/bin/mktemp "/tmp/prefs-scan.now.XXXXXX")
+      now="$PREFWATCH_TMPDIR/poll.now"
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -2290,8 +2294,8 @@ start_watch_all() {
   # CUPS printer monitoring function
   cups_watch() {
     local cups_snapshot cups_current
-    cups_snapshot=$(/usr/bin/mktemp "/tmp/prefs-cups.snap.XXXXXX")
-    cups_current=$(/usr/bin/mktemp "/tmp/prefs-cups.curr.XXXXXX")
+    cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
+    cups_current="$PREFWATCH_TMPDIR/cups.curr"
 
     # Initial snapshot of installed printers
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
@@ -2299,6 +2303,12 @@ start_watch_all() {
     while true; do
       /bin/sleep 2
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
+
+      # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
+      if ! /usr/bin/cmp -s "$cups_snapshot" "$cups_current"; then
+        /bin/sleep 5
+        /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
+      fi
 
       # Detect added printers
       /usr/bin/comm -13 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
@@ -2366,8 +2376,8 @@ start_watch_all() {
     }
 
     local pmset_snapshot pmset_current
-    pmset_snapshot=$(/usr/bin/mktemp "/tmp/prefs-pmset.snap.XXXXXX")
-    pmset_current=$(/usr/bin/mktemp "/tmp/prefs-pmset.curr.XXXXXX")
+    pmset_snapshot="$PREFWATCH_TMPDIR/pmset.snap"
+    pmset_current="$PREFWATCH_TMPDIR/pmset.curr"
 
     # Initial snapshot
     /usr/bin/pmset -g custom > "$pmset_snapshot" 2>/dev/null || true
@@ -2427,7 +2437,7 @@ start_watch_all() {
   pmset_watch &
   local PMSET_PID=$!
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
