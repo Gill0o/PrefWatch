@@ -3,10 +3,16 @@
 ## 1.0.3 — 2026-02-14
 - **FIX**: Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
 - **FIX**: Pre-commit hook and release.sh paths corrected (root layout, not `prefwatch/` subdir)
+- **FIX**: Pre-commit hook only runs release on version bump (no longer fails on same-version commits)
 - **NOISE**: Exclude domains: `com.apple.networkd`, `com.apple.AutoWake`,
   `com.apple.siri.DialogEngine`, `com.apple.siri.sirisuggestions`, `com.apple.siriknowledged`,
-  `com.bjango.istatmenus.status`, `app.monitorcontrol.MonitorControl`
+  `com.bjango.istatmenus.status`, `app.monitorcontrol.MonitorControl`,
+  `com.apple.settings.Storage`, `com.apple.iCal`,
+  `com.apple.icloud.searchpartyuseragent`, `com.apple.rapport`,
+  `com.apple.IMCoreSpotlight`, `com.apple.identityservicesd`, `com.apple.imagent`
 - **NOISE**: PlistBuddy filter: `com.apple.finder.SyncExtensions` (Finder Sync/Time Machine dirMap)
+- **NOISE**: Key filters: UUID-formatted key names, `feature.*` flags,
+  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`
 
 ## 1.0.2 — 2026-02-14
 - **FIX**: Suppress `plutil -convert json` error messages visible on Sonoma during snapshot — plutil with `-o` flag writes errors to stdout (not stderr), now both suppressed (`>/dev/null 2>&1`)
