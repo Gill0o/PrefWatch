@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.3 — 2026-02-14
+## 1.0.3 — 2026-02-15
 - **FIX**: Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
 - **NOISE**: Exclude domains: `com.apple.networkd`, `com.apple.AutoWake`,
   `com.apple.siri.DialogEngine`, `com.apple.siri.sirisuggestions`, `com.apple.siriknowledged`,
