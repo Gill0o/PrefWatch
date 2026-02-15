@@ -1634,6 +1634,11 @@ show_plist_diff() {
             if [ -n "$array_name" ]; then
               continue
             fi
+            # Skip nested keys — only top-level keys (indent ≤ 2 spaces in plutil -p)
+            # produce valid defaults write commands; deeper keys are sub-dict values
+            if [[ "$dline" =~ ^'+'[[:space:]]{4,}\" ]]; then
+              continue
+            fi
             local base dom hostflag cmd trimmed type_val noquotes str
             base="$(/usr/bin/basename "$path")"
             dom="${base%.plist}"
@@ -1703,6 +1708,10 @@ show_plist_diff() {
             fi
             ;;
           -*)
+            # Skip nested keys (same logic as + case above)
+            if [[ "$dline" =~ ^'-'[[:space:]]{4,}\" ]]; then
+              continue
+            fi
             # Skip value changes (key exists in both - and + lines = changed, not deleted)
             if [ -n "${_added_keys[$keyname]:-}" ]; then
               continue
@@ -1935,6 +1944,10 @@ show_domain_diff() {
             if [ -n "$array_name" ]; then
               continue
             fi
+            # Skip nested keys — only top-level keys produce valid defaults write
+            if [[ "$dline" =~ ^'+'[[:space:]]{4,}\" ]]; then
+              continue
+            fi
 
             local trimmed type_val str noquotes cmd
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
@@ -1998,6 +2011,10 @@ show_domain_diff() {
             fi
             ;;
           -*)
+            # Skip nested keys (same logic as + case above)
+            if [[ "$dline" =~ ^'-'[[:space:]]{4,}\" ]]; then
+              continue
+            fi
             # Skip value changes (key exists in both - and + lines = changed, not deleted)
             if [ -n "${_added_keys[$keyname]:-}" ]; then
               continue

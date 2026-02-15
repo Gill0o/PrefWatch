@@ -5,6 +5,7 @@
 ### Fix
 - Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
 - CUPS printer monitoring — debounce 5s to filter DNS-SD/Bonjour false positives
+- Suppress false `defaults write` for nested dict keys (e.g. ColorSync ICC profiles) — only top-level keys produce valid commands
 
 ### Noise
 - Exclude domains: `com.apple.networkd`, `com.apple.AutoWake`,
