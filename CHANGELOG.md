@@ -5,7 +5,6 @@
 ### Fix
 - Suppress false `defaults write` for nested dict keys (e.g. ColorSync ICC profiles) — only top-level keys produce valid commands
 - PlistBuddy string values no longer wrapped in single quotes — fixes broken commands when values contain spaces (e.g. ICC profile paths)
-- Pre-commit hook guards `release.sh` with `-x` check (safe on main branch)
 
 ### Noise
 - Exclude domain: `com.apple.SafariCloudHistoryPushAgent`
