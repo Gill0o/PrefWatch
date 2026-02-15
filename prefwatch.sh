@@ -300,6 +300,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.BezelServices"
   "com.apple.jetpackassetd"
   "com.apple.windowserver*"
+  "com.apple.settings.Storage"
   "diagnostics_agent"
 
   # Services menu localization cache (auto-regenerated, not user preferences)
@@ -307,6 +308,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Address Book UI state (window geometry, selection, not user preferences)
   "com.apple.AddressBook"
+
+  # Calendar internals (account UUIDs, UI state, not user preferences)
+  "com.apple.iCal"
 
   # Messages preview rendering internals (screen scale, dimensions)
   "com.apple.MobileSMSPreview"
@@ -330,6 +334,15 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Find My app & framework (UI state, window geometry, precision flags)
   "com.apple.findmy*"
+  "com.apple.icloud.searchpartyuseragent"
+
+  # AirPlay/Handoff proximity daemon (pruning timestamps, internal state)
+  "com.apple.rapport"
+
+  # iMessage internals (Spotlight indexing, identity services, agent state)
+  "com.apple.IMCoreSpotlight"
+  "com.apple.identityservicesd"
+  "com.apple.imagent"
 
   # Books data store (migration state, cache tasks)
   "com.apple.bookdatastored"
@@ -402,9 +415,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
   # - com.apple.finder (filter FXRecentFolders, keep ShowPathbar, etc.)
-  # - com.apple.Safari (filter History*, keep HomePage, etc.)
+  # - com.apple.Safari (filter History*; limited — most prefs in internal DB since Sequoia)
   # - com.apple.systemsettings (filter timestamps, keep actual settings)
-  # - com.apple.Mail, Messages, Calendar, etc. (see is_noisy_key)
+  # - com.apple.Mail, Messages, etc. (limited — most prefs in internal DB since Sequoia)
 )
 
 # Merge user-provided exclusions with defaults
@@ -655,6 +668,14 @@ is_noisy_key() {
     uuid|UUID|flags|*UUID|*uuid)
       return 0 ;;
 
+    # Feature flags (internal state, not user preferences)
+    feature.*)
+      return 0 ;;
+
+    # Zoom focus tracking state (transient during zoom operations)
+    closeViewZoom*FocusFollowMode*)
+      return 0 ;;
+
     # Metadata counters (change constantly, not user preferences)
     *ChangeCount*|*MetaDataChange*|*ChangeToken*)
       return 0 ;;
@@ -707,6 +728,12 @@ is_noisy_key() {
   # Hash keys (session IDs, cache keys) - long hex strings (zsh built-in regex, no fork)
   # Examples: bc4a9925ba8a1ebc964af5dbb213795013950b6b8b234aacf7fb20f5a791e5d7 (SHA256)
   if [[ "$keyname" =~ ^[0-9a-fA-F]{32,}$ ]]; then
+    return 0
+  fi
+
+  # UUID keys (internal identifiers used as key names, not user preferences)
+  # Examples: 3A4B5C6D-1234-5678-9ABC-DEF012345678 (com.apple.prodisplaylibrary, etc.)
+  if [[ "$keyname" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     return 0
   fi
 
@@ -789,6 +816,13 @@ is_noisy_key() {
         NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
           return 0 ;;
         # Keep: DisabledUTTypes, EnabledPreferenceRules, orderedItems, etc.
+      esac
+      ;;
+
+    # Terminal: Keep profile settings, filter preferences UI state
+    com.apple.Terminal)
+      case "$keyname" in
+        TTAppPreferences\ Selected\ Tab) return 0 ;;
       esac
       ;;
 
