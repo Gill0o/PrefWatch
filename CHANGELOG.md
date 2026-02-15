@@ -111,5 +111,5 @@
 - CUPS printer monitoring and print preset filtering are **experimental (beta)**
 
 ## 0.x — 2025-09 to 2026-02
-- Internal beta development (formerly Watch Preferences v0.1.0 through v0.3.2-beta)
-- Full history available in git log
+- Internal development under the name **Watch Preferences** (v0.1.0 through v3.2-beta), renamed to PrefWatch in v1.0.0
+- No git history prior to v2.5.0 (local development without GitHub) — Claude AI assisted since v2.0.0
