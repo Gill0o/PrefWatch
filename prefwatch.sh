@@ -1636,7 +1636,7 @@ show_plist_diff() {
             fi
             # Skip nested keys — only top-level keys (indent ≤ 2 spaces in plutil -p)
             # produce valid defaults write commands; deeper keys are sub-dict values
-            if [[ "$dline" =~ ^'+'[[:space:]]{4,}\" ]]; then
+            if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
               continue
             fi
             local base dom hostflag cmd trimmed type_val noquotes str
@@ -1709,7 +1709,7 @@ show_plist_diff() {
             ;;
           -*)
             # Skip nested keys (same logic as + case above)
-            if [[ "$dline" =~ ^'-'[[:space:]]{4,}\" ]]; then
+            if [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]]; then
               continue
             fi
             # Skip value changes (key exists in both - and + lines = changed, not deleted)
@@ -1945,7 +1945,7 @@ show_domain_diff() {
               continue
             fi
             # Skip nested keys — only top-level keys produce valid defaults write
-            if [[ "$dline" =~ ^'+'[[:space:]]{4,}\" ]]; then
+            if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
               continue
             fi
 
@@ -2012,7 +2012,7 @@ show_domain_diff() {
             ;;
           -*)
             # Skip nested keys (same logic as + case above)
-            if [[ "$dline" =~ ^'-'[[:space:]]{4,}\" ]]; then
+            if [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]]; then
               continue
             fi
             # Skip value changes (key exists in both - and + lines = changed, not deleted)
