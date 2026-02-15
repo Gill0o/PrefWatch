@@ -1,12 +1,24 @@
 # Changelog
 
+## 1.0.4 — 2026-02-15
+
+### Fix
+- Suppress false `defaults write` for nested dict keys (e.g. ColorSync ICC profiles) — only top-level keys produce valid commands
+- PlistBuddy string values no longer wrapped in single quotes — fixes broken commands when values contain spaces (e.g. ICC profile paths)
+- Pre-commit hook guards `release.sh` with `-x` check (safe on main branch)
+
+### Noise
+- Exclude domain: `com.apple.SafariCloudHistoryPushAgent`
+- Key filter: `*HeartbeatDate*` (WindowManager, controlcenter telemetry)
+
+### Feature
+- Contextual `# NOTE:` for ColorSync ICC profile changes (logout/login required)
+
 ## 1.0.3 — 2026-02-15
 
 ### Fix
 - Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
 - CUPS printer monitoring — debounce 5s to filter DNS-SD/Bonjour false positives
-- Suppress false `defaults write` for nested dict keys (e.g. ColorSync ICC profiles) — only top-level keys produce valid commands
-- PlistBuddy string values no longer wrapped in single quotes — fixes broken commands when values contain spaces (e.g. ICC profile paths)
 
 ### Noise
 - Exclude domains: `com.apple.networkd`, `com.apple.AutoWake`,
@@ -14,12 +26,10 @@
   `com.bjango.istatmenus.status`, `app.monitorcontrol.MonitorControl`,
   `com.apple.settings.Storage`, `com.apple.iCal`,
   `com.apple.icloud.searchpartyuseragent`, `com.apple.rapport`,
-  `com.apple.IMCoreSpotlight`, `com.apple.identityservicesd`, `com.apple.imagent`,
-  `com.apple.SafariCloudHistoryPushAgent`
+  `com.apple.IMCoreSpotlight`, `com.apple.identityservicesd`, `com.apple.imagent`
 - PlistBuddy filter: `com.apple.finder.SyncExtensions` (Finder Sync/Time Machine dirMap)
 - Key filters: UUID-formatted key names, `feature.*` flags,
-  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`,
-  `*HeartbeatDate*` (WindowManager, controlcenter telemetry)
+  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`
 
 ### UX
 - All temp files consolidated under `/tmp/prefwatch.PID/` with cleanup on exit
