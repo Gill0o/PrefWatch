@@ -34,9 +34,11 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
     fi
     git add "$CHANGELOG_REL"
 
-    echo "[pre-commit] Running release for v$STAGED_VERSION"
-    "./release.sh" "$STAGED_VERSION"
-    git add -A "release/" || true
+    if [ -x "./release.sh" ]; then
+      echo "[pre-commit] Running release for v$STAGED_VERSION"
+      "./release.sh" "$STAGED_VERSION"
+      git add -A "release/" || true
+    fi
   fi
 
   # --- Auto-stage CHANGELOG if modified (not staged) ---
