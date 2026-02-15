@@ -343,6 +343,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.IMCoreSpotlight"
   "com.apple.identityservicesd"
   "com.apple.imagent"
+  "com.apple.SafariCloudHistoryPushAgent"
 
   # Books data store (migration state, cache tasks)
   "com.apple.bookdatastored"
@@ -1181,7 +1182,7 @@ def pb_type_value(val):
     if isinstance(val, float):
         return ("real", str(val))
     if isinstance(val, str):
-        return ("string", f"'{val}'")
+        return ("string", val)
     return None
 
 def pb_escape(s):
@@ -1404,7 +1405,7 @@ def pb_type_value(val):
     if isinstance(val, float):
         return ("real", str(val))
     if isinstance(val, str):
-        return ("string", f"'{val}'")
+        return ("string", val)
     return None
 
 def find_leaf_changes(prev_obj, curr_obj, path_parts):
