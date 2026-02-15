@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.0.2
+# Version: 1.0.3
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -300,6 +300,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.BezelServices"
   "com.apple.jetpackassetd"
   "com.apple.windowserver*"
+  "com.apple.settings.Storage"
   "diagnostics_agent"
 
   # Services menu localization cache (auto-regenerated, not user preferences)
@@ -307,6 +308,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Address Book UI state (window geometry, selection, not user preferences)
   "com.apple.AddressBook"
+
+  # Calendar internals (account UUIDs, UI state, not user preferences)
+  "com.apple.iCal"
 
   # Messages preview rendering internals (screen scale, dimensions)
   "com.apple.MobileSMSPreview"
@@ -330,9 +334,35 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Find My app & framework (UI state, window geometry, precision flags)
   "com.apple.findmy*"
+  "com.apple.icloud.searchpartyuseragent"
+
+  # AirPlay/Handoff proximity daemon (pruning timestamps, internal state)
+  "com.apple.rapport"
+
+  # iMessage internals (Spotlight indexing, identity services, agent state)
+  "com.apple.IMCoreSpotlight"
+  "com.apple.identityservicesd"
+  "com.apple.imagent"
 
   # Books data store (migration state, cache tasks)
   "com.apple.bookdatastored"
+
+  # Network daemon internals (probe flags, not user preferences)
+  "com.apple.networkd"
+
+  # Auto-wake scheduler (PIDs, alarm names, internal state)
+  "com.apple.AutoWake"
+
+  # Siri internals (autocomplete counters, suggestions tracking)
+  "com.apple.siri.DialogEngine"
+  "com.apple.siri.sirisuggestions"
+  "com.apple.siriknowledged"
+
+  # iStat Menus status data (satellite TLE, sensor readings)
+  "com.bjango.istatmenus.status"
+
+  # MonitorControl brightness/contrast values (constant adjustments)
+  "app.monitorcontrol.MonitorControl"
 
   # Legacy (obsolete, replaced by systemsettings)
   "com.apple.systempreferences"
@@ -385,9 +415,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
   # - com.apple.finder (filter FXRecentFolders, keep ShowPathbar, etc.)
-  # - com.apple.Safari (filter History*, keep HomePage, etc.)
+  # - com.apple.Safari (filter History*; limited — most prefs in internal DB since Sequoia)
   # - com.apple.systemsettings (filter timestamps, keep actual settings)
-  # - com.apple.Mail, Messages, Calendar, etc. (see is_noisy_key)
+  # - com.apple.Mail, Messages, etc. (limited — most prefs in internal DB since Sequoia)
 )
 
 # Merge user-provided exclusions with defaults
@@ -476,6 +506,10 @@ if [ -z "$PYTHON3_BIN" ]; then
   _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
+# Temp directory — all temp files under one directory for clean /tmp
+PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
+/bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
+
 # Cache initialization
 typeset -A _EXCLUSION_CACHE  # Cache for domain exclusion checks
 CACHE_DIR=""                  # Cache directory for plist diffs (WATCH_ALL mode)
@@ -544,7 +578,7 @@ hash_path() {
 # Initialize cache directory
 init_cache() {
   if [ -z "$CACHE_DIR" ]; then
-    CACHE_DIR=$(/usr/bin/mktemp -d "/tmp/watchprefs-cache.${$}.XXXXXX") || CACHE_DIR="/tmp/watchprefs-cache.${$}"
+    CACHE_DIR="$PREFWATCH_TMPDIR/cache"
     /bin/mkdir -p "$CACHE_DIR" 2>/dev/null || true
   fi
 }
@@ -589,7 +623,6 @@ is_excluded_domain() {
   return $result
 }
 
-# Filter noisy keys (internal metadata)
 # Intelligent key filtering - filters noisy keys while keeping useful preferences
 # This allows monitoring domains like com.apple.dock without the noise
 is_noisy_key() {
@@ -626,7 +659,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters (not user preferences)
-    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*)
+    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
@@ -636,6 +669,14 @@ is_noisy_key() {
     # UUIDs and flags (transient notification/state identifiers)
     # Matches: uuid, UUID, *UUID, *uuid (e.g., sessionUUID, updatedSinceBootUUID)
     uuid|UUID|flags|*UUID|*uuid)
+      return 0 ;;
+
+    # Feature flags (internal state, not user preferences)
+    feature.*)
+      return 0 ;;
+
+    # Zoom focus tracking state (transient during zoom operations)
+    closeViewZoom*FocusFollowMode*)
       return 0 ;;
 
     # Metadata counters (change constantly, not user preferences)
@@ -693,6 +734,12 @@ is_noisy_key() {
     return 0
   fi
 
+  # UUID keys (internal identifiers used as key names, not user preferences)
+  # Examples: 3A4B5C6D-1234-5678-9ABC-DEF012345678 (com.apple.prodisplaylibrary, etc.)
+  if [[ "$keyname" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    return 0
+  fi
+
   # Feature flags (ALL_CAPS keys with underscores) - system A/B testing configs
   # Examples: SIRI_MEMORY_SYNC_CONFIG, HEALTH_FEATURE_AVAILABILITY
   if [[ "$keyname" =~ ^[A-Z][A-Z_0-9]+$ ]] && [[ "$keyname" == *_* ]]; then
@@ -730,7 +777,7 @@ is_noisy_key() {
       ;;
 
     # System Settings: Filter timestamps, keep actual settings
-    com.apple.systemsettings*|com.apple.systempreferences)
+    com.apple.systemsettings*)
       case "$keyname" in
         # Noisy: last seen timestamps, navigation state, indexing timestamps, extension state
         *-last-seen|*LastUpdate*|*NavigationState*|*update-state-indexing*|*.extension)
@@ -775,6 +822,13 @@ is_noisy_key() {
       esac
       ;;
 
+    # Terminal: Keep profile settings, filter preferences UI state
+    com.apple.Terminal)
+      case "$keyname" in
+        TTAppPreferences\ Selected\ Tab) return 0 ;;
+      esac
+      ;;
+
     # Safari: Keep useful prefs, filter safe browsing updates
     com.apple.Safari)
       case "$keyname" in
@@ -795,6 +849,8 @@ is_noisy_key() {
     # Print presets: Keep meaningful settings, filter Fiery driver defaults & print metadata
     com.apple.print.custompresets*)
       case "$keyname" in
+        # Keep: preset array (for emit_array_additions/deletions)
+        com.apple.print.customPresetsInfo) ;;
         # Keep: preset identity
         PresetName|PresetBehavior|com.apple.print.preset.id|com.apple.print.preset.behavior) ;;
         # Keep: core print settings
@@ -1468,7 +1524,7 @@ show_plist_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -1784,7 +1840,7 @@ show_domain_diff() {
           local _pb_cmd="$_array_idx"
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*) continue ;;
           esac
           local _pb_path="${_pb_cmd#* :}"
           _pb_path="${_pb_path%% *}"
@@ -2097,7 +2153,7 @@ start_watch() {
     POLL_PID=$!
   fi
 
-  trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
@@ -2202,13 +2258,13 @@ start_watch_all() {
   # Polling monitoring function
   poll_watch() {
     local marker_user marker_sys
-    marker_user=$(/usr/bin/mktemp "/tmp/prefs-user.marker.XXXXXX")
-    marker_sys=$(/usr/bin/mktemp "/tmp/prefs-sys.marker.XXXXXX")
+    marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
+    marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     /usr/bin/touch -t 200001010000 "$marker_user" "$marker_sys" 2>/dev/null || true
 
     while true; do
       local now
-      now=$(/usr/bin/mktemp "/tmp/prefs-scan.now.XXXXXX")
+      now="$PREFWATCH_TMPDIR/poll.now"
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -2238,8 +2294,8 @@ start_watch_all() {
   # CUPS printer monitoring function
   cups_watch() {
     local cups_snapshot cups_current
-    cups_snapshot=$(/usr/bin/mktemp "/tmp/prefs-cups.snap.XXXXXX")
-    cups_current=$(/usr/bin/mktemp "/tmp/prefs-cups.curr.XXXXXX")
+    cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
+    cups_current="$PREFWATCH_TMPDIR/cups.curr"
 
     # Initial snapshot of installed printers
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
@@ -2247,6 +2303,12 @@ start_watch_all() {
     while true; do
       /bin/sleep 2
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
+
+      # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
+      if ! /usr/bin/cmp -s "$cups_snapshot" "$cups_current"; then
+        /bin/sleep 5
+        /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
+      fi
 
       # Detect added printers
       /usr/bin/comm -13 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
@@ -2314,8 +2376,8 @@ start_watch_all() {
     }
 
     local pmset_snapshot pmset_current
-    pmset_snapshot=$(/usr/bin/mktemp "/tmp/prefs-pmset.snap.XXXXXX")
-    pmset_current=$(/usr/bin/mktemp "/tmp/prefs-pmset.curr.XXXXXX")
+    pmset_snapshot="$PREFWATCH_TMPDIR/pmset.snap"
+    pmset_current="$PREFWATCH_TMPDIR/pmset.curr"
 
     # Initial snapshot
     /usr/bin/pmset -g custom > "$pmset_snapshot" 2>/dev/null || true
@@ -2375,7 +2437,7 @@ start_watch_all() {
   pmset_watch &
   local PMSET_PID=$!
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
