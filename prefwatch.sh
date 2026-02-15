@@ -1256,6 +1256,11 @@ _emit_contextual_note() {
           log_line "Cmd: # NOTE: Run 'killall Dock' to apply Dock changes" ;;
       esac ;;
   esac
+  # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
+  case "$array_base" in
+    com.apple.ColorSync.Devices)
+      log_line "Cmd: # NOTE: Color profile changes require logout/login to take effect" ;;
+  esac
 }
 
 # Detect and emit commands for array deletions
