@@ -619,7 +619,6 @@ is_excluded_domain() {
   return $result
 }
 
-# Filter noisy keys (internal metadata)
 # Intelligent key filtering - filters noisy keys while keeping useful preferences
 # This allows monitoring domains like com.apple.dock without the noise
 is_noisy_key() {
@@ -774,7 +773,7 @@ is_noisy_key() {
       ;;
 
     # System Settings: Filter timestamps, keep actual settings
-    com.apple.systemsettings*|com.apple.systempreferences)
+    com.apple.systemsettings*)
       case "$keyname" in
         # Noisy: last seen timestamps, navigation state, indexing timestamps, extension state
         *-last-seen|*LastUpdate*|*NavigationState*|*update-state-indexing*|*.extension)
