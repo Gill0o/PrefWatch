@@ -784,11 +784,11 @@ is_noisy_key() {
         # Noisy: workspace IDs, counts, expose gestures, trash state
         workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full)
           return 0 ;;
-        # Noisy: internal tile metadata (reorder noise, not user preferences)
-        GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
+        # Noisy: internal tile metadata (reorder noise, useless as flat defaults write)
+        GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|bundle-identifier|_CFURLString|file-label|file-data|tile-data)
           return 0 ;;
-        # Note: bundle-identifier, _CFURLString, file-label are useful in PlistBuddy output
-        # (identify the app); suppressed as flat defaults write by _skip_keys
+        # Note: bundle-identifier, _CFURLString, file-label, tile-data, file-data
+        # are kept - useful in PlistBuddy output; suppressed as flat defaults write by _skip_keys
         # Keep: orientation, autohide, tilesize, magnification, persistent-apps, etc.
       esac
       ;;
@@ -1132,7 +1132,7 @@ parse_array_index_key() {
     local inner="${raw#:}"
     local base="${inner%%:*}"
     local idx="${inner##*:}"
-    if [[ -n "$base" && "$idx" =~ ^[0-9]+$ ]]; then
+    if [[ -n "$base" && "$idx" == <-> ]]; then
       printf '%s %s\n' "$base" "$idx"
       return 0
     fi
@@ -1519,12 +1519,9 @@ show_plist_diff() {
     return 0
   fi
 
+  dump_plist "$path" "$curr"
   if [ "$silent" != "true" ]; then
-    dump_plist "$path" "$curr" &
-    dump_plist_json "$path" "$curr_json" &
-    wait
-  else
-    dump_plist "$path" "$curr"
+    dump_plist_json "$path" "$curr_json"
   fi
 
   # Dedup: skip if no change since last processing
@@ -2252,13 +2249,8 @@ start_watch_all() {
     key=$(hash_path "$path")
     local prev="$CACHE_DIR/${key}.prev"
     local curr="$CACHE_DIR/${key}.curr"
-    local prev_json="$CACHE_DIR/${key}.prev.json"
-    local curr_json="$CACHE_DIR/${key}.curr.json"
-    dump_plist "$path" "$curr" &
-    dump_plist_json "$path" "$curr_json" &
-    wait
+    dump_plist "$path" "$curr"
     /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
-    /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
   }
 
   # Initial snapshot
@@ -2266,7 +2258,7 @@ start_watch_all() {
   local _snap_spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local _snap_count=0 _snap_idx=0
   local -a _snap_pids=()
-  local _max_parallel=16
+  local _max_parallel=8
 
   if [ -d "$prefs_user" ]; then
     snapshot_notice "User snapshot: scanning..."
@@ -2364,13 +2356,7 @@ start_watch_all() {
     [ -f "$marker_user" ] || /usr/bin/touch "$marker_user" 2>/dev/null || true
     [ -f "$marker_sys" ]  || /usr/bin/touch "$marker_sys" 2>/dev/null || true
 
-    local _poll_first=true
     while true; do
-      if [ "$_poll_first" = "true" ]; then
-        _poll_first=false
-      else
-        /bin/sleep 1
-      fi
       local now
       now="$PREFWATCH_TMPDIR/poll.now"
       if [ -d "$prefs_user" ]; then
@@ -2395,6 +2381,7 @@ start_watch_all() {
       fi
       /bin/mv -f "$now" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
+      /bin/sleep 1
     done
   }
 

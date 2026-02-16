@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — 2026-02-17
+
+### Performance
+- Eliminate double-scan: pre-initialize poll markers after snapshot — prevents `poll_watch` from rescanning all plists on first iteration
+- Parallel initial snapshot: up to 16 concurrent plist snapshots (text + JSON) instead of sequential processing
+- Parallel `dump_plist` + `dump_plist_json` on change detection — both plutil calls run concurrently
+- Cache `hash_path()` results in associative array — avoids repeated `/sbin/md5` forks for the same path
+- Reduce polling interval from 2s to 1s — halves worst-case change detection latency
+- Immediate first poll cycle after snapshot — no initial sleep delay
+
+### Fix
+- Dock icon add/remove: `bundle-identifier`, `_CFURLString`, `file-label` no longer filtered in PlistBuddy commands — app name and path now visible in output
+
 ## 1.0.4 — 2026-02-16
 
 ### Fix
