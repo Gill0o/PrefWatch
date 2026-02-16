@@ -331,6 +331,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.TV"
   "com.apple.Music"
   "com.apple.itunescloud"
+  "com.apple.itunescloudd"
 
   # Find My app & framework (UI state, window geometry, precision flags)
   "com.apple.findmy*"
@@ -386,6 +387,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.microsoft.autoupdate*"
   "com.microsoft.shared"
   "com.microsoft.office"
+  "com.microsoft.OneDriveUpdater"
   "*.zoom.updater*"
   "com.openai.chat"
   "ChatGPTHelper"
@@ -394,6 +396,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Background observers (constant telemetry, not user preferences)
   "com.apple.suggestions.*Observer*"
   "com.apple.personalizationportrait.*Observer*"
+
+  # Cellular/comm internals (boot counters, modem state)
+  "com.apple.commcenter*"
+
+  # Ad platform internals (correlation IDs, tracking counters)
+  "com.apple.AdPlatforms"
 
   # Background event counters & sync telemetry (constant updates, not user preferences)
   "com.apple.cseventlistener"
@@ -1597,6 +1605,8 @@ show_plist_diff() {
       [ -n "$_ak" ] && _added_keys["$_ak"]=1
     done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
 
+    typeset -A _noted_dom=()
+
     # Use process substitution (not pipe) so _skip_keys is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
@@ -1716,6 +1726,10 @@ show_plist_diff() {
             elif is_noisy_command "$cmd"; then
               :
             else
+              if [ -z "${_noted_dom[$_dom]:-}" ]; then
+                _emit_contextual_note "$_dom" ""
+                _noted_dom[$_dom]=1
+              fi
               if [ "$kind" = "USER" ]; then
                 log_user "Cmd: $cmd"
               else
@@ -1916,6 +1930,8 @@ show_domain_diff() {
       [ -n "$_ak" ] && _added_keys["$_ak"]=1
     done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
 
+    typeset -A _noted_dom=()
+
     # Use process substitution (not pipe) so _skip_keys is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
@@ -2019,6 +2035,10 @@ show_domain_diff() {
             elif is_noisy_command "$cmd"; then
               :
             else
+              if [ -z "${_noted_dom[$dom]:-}" ]; then
+                _emit_contextual_note "$dom" ""
+                _noted_dom[$dom]=1
+              fi
               if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
                 :
               else

@@ -8,12 +8,15 @@
 
 ### Noise
 - Exclude domains: `com.apple.SafariCloudHistoryPushAgent`, `NetworkInterfaces`,
-  `com.apple.dhcp6d`, `com.teamviewer*`, `com.apple.QuickLookDaemon`
+  `com.apple.dhcp6d`, `com.teamviewer*`, `com.apple.QuickLookDaemon`,
+  `com.microsoft.OneDriveUpdater`, `com.apple.itunescloudd`,
+  `com.apple.commcenter*`, `com.apple.AdPlatforms`
 - Key filters: `*HeartbeatDate*` (WindowManager, controlcenter telemetry),
   Finder `FXConnectToBounds`, `SearchRecentsSavedViewStyle`
 
 ### Feature
 - Contextual `# NOTE:` for ColorSync ICC profile changes (logout/login required)
+- Contextual `# NOTE:` for simple key changes (Dock, etc.)
 
 ## 1.0.3 — 2026-02-15
 
