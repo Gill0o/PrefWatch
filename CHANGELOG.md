@@ -1,14 +1,16 @@
 # Changelog
 
-## 1.0.4 — 2026-02-15
+## 1.0.4 — 2026-02-16
 
 ### Fix
 - Suppress false `defaults write` for nested dict keys (e.g. ColorSync ICC profiles) — only top-level keys produce valid commands
 - PlistBuddy string values no longer wrapped in single quotes — fixes broken commands when values contain spaces (e.g. ICC profile paths)
 
 ### Noise
-- Exclude domain: `com.apple.SafariCloudHistoryPushAgent`
-- Key filter: `*HeartbeatDate*` (WindowManager, controlcenter telemetry)
+- Exclude domains: `com.apple.SafariCloudHistoryPushAgent`, `NetworkInterfaces`,
+  `com.apple.dhcp6d`, `com.teamviewer*`
+- Key filters: `*HeartbeatDate*` (WindowManager, controlcenter telemetry),
+  Finder `FXConnectToBounds`
 
 ### Feature
 - Contextual `# NOTE:` for ColorSync ICC profile changes (logout/login required)

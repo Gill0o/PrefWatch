@@ -348,8 +348,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Books data store (migration state, cache tasks)
   "com.apple.bookdatastored"
 
-  # Network daemon internals (probe flags, not user preferences)
+  # Network internals (daemon state, interface registry)
   "com.apple.networkd"
+  "NetworkInterfaces"
 
   # Auto-wake scheduler (PIDs, alarm names, internal state)
   "com.apple.AutoWake"
@@ -371,6 +372,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # MDM & Jamf internals (if using Jamf Pro)
   "com.jamf*"
   "com.jamfsoftware*"
+
+  # TeamViewer internals (AI nudge, license, version, UI phases)
+  "com.teamviewer*"
+
+  # IPv6 DHCP daemon (interface changes on device connect)
+  "com.apple.dhcp6d"
 
   # Third-party updaters & telemetry (background noise, not user preferences)
   "com.microsoft.autoupdate*"
@@ -771,7 +778,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|FXConnectToBounds|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
