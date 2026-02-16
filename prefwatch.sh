@@ -379,6 +379,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # IPv6 DHCP daemon (interface changes on device connect)
   "com.apple.dhcp6d"
 
+  # QuickLook daemon (plugin modification timestamps)
+  "com.apple.QuickLookDaemon"
+
   # Third-party updaters & telemetry (background noise, not user preferences)
   "com.microsoft.autoupdate*"
   "com.microsoft.shared"
@@ -778,7 +781,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|FXConnectToBounds|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac

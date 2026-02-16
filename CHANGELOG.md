@@ -8,9 +8,9 @@
 
 ### Noise
 - Exclude domains: `com.apple.SafariCloudHistoryPushAgent`, `NetworkInterfaces`,
-  `com.apple.dhcp6d`, `com.teamviewer*`
+  `com.apple.dhcp6d`, `com.teamviewer*`, `com.apple.QuickLookDaemon`
 - Key filters: `*HeartbeatDate*` (WindowManager, controlcenter telemetry),
-  Finder `FXConnectToBounds`
+  Finder `FXConnectToBounds`, `SearchRecentsSavedViewStyle`
 
 ### Feature
 - Contextual `# NOTE:` for ColorSync ICC profile changes (logout/login required)
