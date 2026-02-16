@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.4 — 2026-02-16
+
+### Fix
+- Suppress false `defaults write` for nested dict keys (e.g. ColorSync ICC profiles) — only top-level keys produce valid commands
+- PlistBuddy string values no longer wrapped in single quotes — fixes broken commands when values contain spaces (e.g. ICC profile paths)
+
+### Noise
+- Exclude domains: `com.apple.SafariCloudHistoryPushAgent`, `NetworkInterfaces`,
+  `com.apple.dhcp6d`, `com.teamviewer*`, `com.apple.QuickLookDaemon`,
+  `com.microsoft.OneDriveUpdater`, `com.apple.itunescloudd`,
+  `com.apple.commcenter*`, `com.apple.AdPlatforms`
+- Key filters: `*HeartbeatDate*` (WindowManager, controlcenter telemetry),
+  Finder `FXConnectToBounds`, `SearchRecentsSavedViewStyle`
+
+### Feature
+- Contextual `# NOTE:` for ColorSync ICC profile changes (logout/login required)
+- Contextual `# NOTE:` for simple key changes (Dock, etc.)
+
 ## 1.0.3 — 2026-02-15
 
 ### Fix
@@ -15,8 +33,7 @@
   `com.apple.IMCoreSpotlight`, `com.apple.identityservicesd`, `com.apple.imagent`
 - PlistBuddy filter: `com.apple.finder.SyncExtensions` (Finder Sync/Time Machine dirMap)
 - Key filters: UUID-formatted key names, `feature.*` flags,
-  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`,
-  `*HeartbeatDate*` (WindowManager, controlcenter telemetry)
+  `closeViewZoom*FocusFollowMode*`, Terminal `TTAppPreferences Selected Tab`
 
 ### UX
 - All temp files consolidated under `/tmp/prefwatch.PID/` with cleanup on exit
@@ -99,5 +116,5 @@
 - CUPS printer monitoring and print preset filtering are **experimental (beta)**
 
 ## 0.x — 2025-09 to 2026-02
-- Internal beta development (formerly Watch Preferences v0.1.0 through v0.3.2-beta)
-- Full history available in git log
+- Internal development under the name **Watch Preferences** (v0.1.0 through v3.2-beta), renamed to PrefWatch in v1.0.0
+- No git history prior to v2.5.0 (local development without GitHub) — Claude AI assisted since v2.0.0
