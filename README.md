@@ -53,6 +53,7 @@ PrefWatch monitors plist-based preferences, energy settings (`pmset`), and print
 ## Notes
 
 - ALL mode takes an initial baseline snapshot before monitoring. Wait for "you can now make your changes" before modifying settings.
+- There may be a delay between a preference change and its appearance in the console, depending on when `cfprefsd` flushes to disk.
 
 ## License
 

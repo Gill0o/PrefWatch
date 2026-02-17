@@ -340,10 +340,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # AirPlay/Handoff proximity daemon (pruning timestamps, internal state)
   "com.apple.rapport"
 
-  # iMessage internals (Spotlight indexing, identity services, agent state)
+  # iMessage internals (Spotlight indexing, identity services, agent state, sync errors)
   "com.apple.IMCoreSpotlight"
   "com.apple.identityservicesd"
   "com.apple.imagent"
+  "com.apple.madrid"
   "com.apple.SafariCloudHistoryPushAgent"
 
   # Books data store (migration state, cache tasks)
@@ -376,6 +377,16 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # MDM & Jamf internals (if using Jamf Pro)
   "com.jamf*"
   "com.jamfsoftware*"
+  "com.apple.classroom"
+
+  # Media analysis daemon (photo library paths, internal state)
+  "com.apple.mediaanalysisd"
+
+  # Apple Finance daemon (CloudKit account cache)
+  "com.apple.financed"
+
+  # Biome sync daemon (behavioral telemetry, CloudKit cache)
+  "com.apple.biomesyncd"
 
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
@@ -784,8 +795,8 @@ is_noisy_key() {
     # Dock preferences: Keep useful settings, filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
-        # Noisy: workspace IDs, counts, expose gestures, trash state
-        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full)
+        # Noisy: workspace IDs, counts, expose gestures, trash state, recent apps
+        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
           return 0 ;;
         # Noisy: internal tile metadata (reorder noise, not user preferences)
         GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
@@ -1686,7 +1697,7 @@ show_plist_diff() {
           fi
           # Filter noisy key paths in PlistBuddy commands
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":vendorDefaultSettings:"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${path}\""
@@ -2025,7 +2036,7 @@ show_domain_diff() {
           [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":vendorDefaultSettings:"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_pb_plist_path}\""
