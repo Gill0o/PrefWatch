@@ -356,6 +356,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Auto-wake scheduler (PIDs, alarm names, internal state)
   "com.apple.AutoWake"
 
+  # HomeKit daemon (generation counters, internal state)
+  "com.apple.homed"
+
   # Siri internals (autocomplete counters, suggestions tracking)
   "com.apple.siri.DialogEngine"
   "com.apple.siri.sirisuggestions"
@@ -1247,6 +1250,17 @@ for prefix, index, item in results:
         keys = ','.join(sorted(all_keys_recursive(item)))
         # Output metadata line (for _skip_keys in shell)
         print(f"{prefix[0]}\t{index}\t{keys}\t")
+        # Dock: emit app name comment for readability
+        if domain == "com.apple.dock" and arr_name in ("persistent-apps", "persistent-others"):
+            td = item.get("tile-data", {})
+            if isinstance(td, dict):
+                label = td.get("file-label", "")
+                bid = td.get("bundle-identifier", "")
+                if label:
+                    note = f"# Dock: {label}"
+                    if bid:
+                        note += f" ({bid})"
+                    print(f"PBCMD\t{note}")
         # Output PlistBuddy commands: first create the array entry, then sub-keys
         print(f"PBCMD\tAdd :{prefix[0]}:{index} dict")
         for pb_line in emit_plistbuddy(prefix[0], index, item):
@@ -1284,7 +1298,10 @@ _emit_contextual_note() {
           log_line "Cmd: # NOTE: Run 'killall Dock' to apply Dock changes" ;;
       esac ;;
     com.apple.print.custompresets*)
-      log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect" ;;
+      case "$array_base" in
+        com.apple.print.customPresetsInfo)
+          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect" ;;
+      esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1353,18 +1370,25 @@ for path_tuple, index, item in results:
     # Skip reorders: if array length is the same, elements just moved (not deleted)
     if array_name in prev and array_name in curr and isinstance(prev[array_name], list) and isinstance(curr[array_name], list) and len(prev[array_name]) == len(curr[array_name]):
         continue
+    # Dock: extract app name for deletion comment
+    app_label = ""
+    if domain == "com.apple.dock" and array_name in ("persistent-apps", "persistent-others"):
+        if isinstance(item, dict):
+            td = item.get("tile-data", {})
+            if isinstance(td, dict):
+                app_label = td.get("file-label", "")
     if isinstance(item, dict):
         keys = ','.join(str(k) for k in item.keys())
     else:
         keys = ""
-    print(f"{array_name}\t{index}\t{keys}")
+    print(f"{array_name}\t{index}\t{keys}\t{app_label}")
 PY
 ) || return 0
 
   [ -n "$py_output" ] || return 0
 
   typeset -A _noted_del_arrays=()
-  while IFS=$'\t' read -r base idx keylist; do
+  while IFS=$'\t' read -r base idx keylist app_label; do
     [ -n "$base" ] || continue
 
     # Skip noisy arrays
@@ -1374,6 +1398,15 @@ PY
     if [ -z "${_noted_del_arrays[$base]:-}" ]; then
       _emit_contextual_note "$dom" "$base"
       _noted_del_arrays[$base]=1
+    fi
+
+    # Dock: emit app name comment for readability
+    if [ -n "$app_label" ]; then
+      case "$kind" in
+        USER) log_user "Cmd: # Dock: removed $app_label" ;;
+        SYSTEM) log_system "Cmd: # Dock: removed $app_label" ;;
+        *) log_line "Cmd: # Dock: removed $app_label" ;;
+      esac
     fi
 
     local delete_cmd="defaults delete ${dom} \":${base}:${idx}\""
@@ -1484,6 +1517,32 @@ def emit_add_tree(base_parts, obj):
             path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
             print(f"PBCMD\tAdd :{path} {tv[0]} {tv[1]}")
 
+# Print preset: whitelist for com.apple.print.preset.settings keys
+_PRINT_PRESET_KEEP = {
+    'Duplex', 'AP_ColorMatchingMode',
+}
+_PRINT_PRESET_PREFIXES = (
+    '*PageSize', '*InputSlot', '*MediaType',
+    '*EFDuplex', '*EFColorMode', '*EFMediaType', '*EFResolution', '*EFSort', '*EFNUpOption',
+    'com.apple.print.PrintSettings.', 'com.apple.print.PageFormat.',
+    'com.apple.print.preset.displayName', 'com.apple.print.PageToPaperMapping',
+    'com.apple.print.pageRange',
+)
+
+def filter_print_preset_settings(settings_dict):
+    """Filter a print preset settings dict to keep only useful keys."""
+    if not isinstance(settings_dict, dict):
+        return settings_dict
+    filtered = {}
+    for k, v in settings_dict.items():
+        if k in _PRINT_PRESET_KEEP:
+            filtered[k] = v
+        elif any(k.startswith(p) for p in _PRINT_PRESET_PREFIXES):
+            filtered[k] = v
+    return filtered
+
+is_print_preset = domain.startswith('com.apple.print.custompresets')
+
 # Process top-level keys that are dicts
 changed_top_keys = set()
 for top_key in sorted(curr.keys()):
@@ -1498,9 +1557,16 @@ for top_key in sorted(curr.keys()):
                 for k in obj:
                     sub_keys.add(k)
                     collect_keys(obj[k], parts + [k])
-        collect_keys(curr[top_key], [top_key])
+        # Print presets: filter noisy driver defaults from settings dict
+        tree_obj = curr[top_key]
+        if is_print_preset and isinstance(tree_obj, dict):
+            settings_key = 'com.apple.print.preset.settings'
+            if settings_key in tree_obj:
+                tree_obj = dict(tree_obj)
+                tree_obj[settings_key] = filter_print_preset_settings(tree_obj[settings_key])
+        collect_keys(tree_obj, [top_key])
         print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
-        emit_add_tree([top_key], curr[top_key])
+        emit_add_tree([top_key], tree_obj)
         continue
     if not isinstance(prev[top_key], dict):
         continue
@@ -1517,6 +1583,11 @@ for top_key in sorted(curr.keys()):
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
     # Emit PlistBuddy Set commands with full paths
     for path_parts, (ptype, pvalue) in changes:
+        # Print presets: filter noisy driver keys in settings dict
+        if is_print_preset and len(path_parts) >= 3 and path_parts[1] == 'com.apple.print.preset.settings':
+            settings_key = path_parts[2]
+            if settings_key not in _PRINT_PRESET_KEEP and not any(settings_key.startswith(p) for p in _PRINT_PRESET_PREFIXES):
+                continue
         full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
@@ -1589,16 +1660,31 @@ show_plist_diff() {
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
       typeset -A _noted_arrays=()
+      # Pre-emit domain-level notes before PBCMD output
+      case "$_dom" in
+        com.apple.print.custompresets*)
+          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
+          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
+      esac
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
-          # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
+          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          if [[ "$_pb_cmd" == "#"* ]]; then
+            case "$kind" in
+              USER) log_user "Cmd: $_pb_cmd" ;;
+              SYSTEM) log_system "Cmd: $_pb_cmd" ;;
+              *) log_line "Cmd: $_pb_cmd" ;;
+            esac
+            continue
+          fi
+          # Filter noisy key paths in PlistBuddy commands
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":vendorDefaultSettings:"*) continue ;;
           esac
-          [[ "$_pb_cmd" == *"'<data:"* ]] && continue
+          [[ "$_pb_cmd" == *"<data:"* ]] && continue
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${path}\""
           case "$kind" in
             USER) log_user "Cmd: $pb_full" ;;
@@ -1914,17 +2000,28 @@ show_domain_diff() {
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       typeset -A _noted_arrays=()
+      # Pre-emit domain-level notes before PBCMD output
+      case "$dom" in
+        com.apple.print.custompresets*)
+          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
+          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
+      esac
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
-          [ -n "$_pb_plist_path" ] || continue
           local _pb_cmd="$_array_idx"
+          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          if [[ "$_pb_cmd" == "#"* ]]; then
+            log_line "Cmd: $_pb_cmd"
+            continue
+          fi
+          [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":vendorDefaultSettings:"*) continue ;;
           esac
-          [[ "$_pb_cmd" == *"'<data:"* ]] && continue
+          [[ "$_pb_cmd" == *"<data:"* ]] && continue
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_pb_plist_path}\""
           log_line "Cmd: $pb_full"
           continue

@@ -20,6 +20,16 @@
 
 ### Feature
 - Contextual `# NOTE:` for print preset changes (logout/login required to apply)
+- Dock icon add/remove: emit `# Dock: AppName (bundle-id)` comment for readability
+- Dock icon remove: emit `# Dock: removed AppName` comment
+
+### Noise
+- Exclude `com.apple.homed` (HomeKit generation counters)
+- Print presets: filter Fiery/PPD driver defaults (`*EF*` keys, `vendorDefaultSettings`, `PaperInfo` subtree) — keep only useful settings (PageSize, Duplex, ColorMode, etc.)
+- PBCMD handler: filter Dock tile internals (`GUID`, `dock-extra`, `is-beta`, `file-type`, `tile-type`, `*-mod-date`)
+- PBCMD handler: fix `<data:` filter (remove stale single-quote prefix)
+- PBCMD handler: sync both handlers (show_plist_diff + show_domain_diff)
+- Print preset `# NOTE:` emitted once before commands (was duplicated for array + dict)
 
 ## 1.0.4 — 2026-02-16
 
