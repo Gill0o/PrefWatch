@@ -20,8 +20,10 @@
 
 ### Feature
 - Contextual `# NOTE:` for print preset changes (logout/login required to apply)
+- Contextual `# NOTE:` for keyboard shortcut changes (`com.apple.symbolichotkeys`)
 - Dock icon add/remove: emit `# Dock: AppName (bundle-id)` comment for readability
 - Dock icon remove: emit `# Dock: removed AppName` comment
+- Keyboard shortcuts (`AppleSymbolicHotKeys`) now detected in ALL mode via `emit_nested_dict_changes`
 
 ### Noise
 - Exclude `com.apple.homed` (HomeKit generation counters)

@@ -1302,6 +1302,8 @@ _emit_contextual_note() {
         com.apple.print.customPresetsInfo)
           log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect" ;;
       esac ;;
+    com.apple.symbolichotkeys)
+      log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1665,6 +1667,8 @@ show_plist_diff() {
         com.apple.print.custompresets*)
           log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
           _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
+        com.apple.symbolichotkeys)
+          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
       esac
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
@@ -2005,6 +2009,8 @@ show_domain_diff() {
         com.apple.print.custompresets*)
           log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
           _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
+        com.apple.symbolichotkeys)
+          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
       esac
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
