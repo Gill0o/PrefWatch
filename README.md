@@ -53,7 +53,6 @@ PrefWatch monitors plist-based preferences, energy settings (`pmset`), and print
 ## Notes
 
 - ALL mode takes an initial baseline snapshot before monitoring. Wait for "you can now make your changes" before modifying settings.
-- Initial snapshot is parallelized (up to 16 concurrent) for fast startup.
 
 ## License
 
