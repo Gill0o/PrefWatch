@@ -12,6 +12,14 @@
 
 ### Fix
 - Dock icon add/remove: `bundle-identifier`, `_CFURLString`, `file-label` no longer filtered in PlistBuddy commands — app name and path now visible in output
+- Print presets: detect new top-level dict settings and emit full PlistBuddy `Add` tree — reproduces complete preset via terminal
+- Print presets: emit `Add :array_name array` when array is new (e.g. `customPresetsInfo`)
+- PlistBuddy `pb_type_value()`: use `true/false` for bools (was `YES/NO` — invalid for PlistBuddy)
+- Parallel snapshot: fix invalid `shift _snap_pids` zsh syntax — use array slice instead
+- Poll watch: remove dead `_poll_first` flag and stale `$now` variable reference
+
+### Feature
+- Contextual `# NOTE:` for print preset changes (logout/login required to apply)
 
 ## 1.0.4 — 2026-02-16
 
