@@ -52,8 +52,8 @@ PrefWatch monitors plist-based preferences, energy settings (`pmset`), and print
 
 ## Notes
 
-- ALL mode takes an initial baseline snapshot before monitoring. This can take a minute or more depending on the number of installed apps. Wait for "you can now make your changes" before modifying settings.
-- Keyboard shortcuts require domain mode: `./prefwatch.sh com.apple.symbolichotkeys`
+- ALL mode takes an initial baseline snapshot before monitoring. Wait for "you can now make your changes" before modifying settings.
+- There may be a delay between a preference change and its appearance in the console, depending on when `cfprefsd` flushes to disk.
 
 ## License
 

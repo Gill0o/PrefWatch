@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.0.4
+# Version: 1.1.0
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -340,10 +340,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # AirPlay/Handoff proximity daemon (pruning timestamps, internal state)
   "com.apple.rapport"
 
-  # iMessage internals (Spotlight indexing, identity services, agent state)
+  # iMessage internals (Spotlight indexing, identity services, agent state, sync errors)
   "com.apple.IMCoreSpotlight"
   "com.apple.identityservicesd"
   "com.apple.imagent"
+  "com.apple.madrid"
   "com.apple.SafariCloudHistoryPushAgent"
 
   # Books data store (migration state, cache tasks)
@@ -355,6 +356,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Auto-wake scheduler (PIDs, alarm names, internal state)
   "com.apple.AutoWake"
+
+  # HomeKit daemon (generation counters, internal state)
+  "com.apple.homed"
 
   # Siri internals (autocomplete counters, suggestions tracking)
   "com.apple.siri.DialogEngine"
@@ -373,6 +377,16 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # MDM & Jamf internals (if using Jamf Pro)
   "com.jamf*"
   "com.jamfsoftware*"
+  "com.apple.classroom"
+
+  # Media analysis daemon (photo library paths, internal state)
+  "com.apple.mediaanalysisd"
+
+  # Apple Finance daemon (CloudKit account cache)
+  "com.apple.financed"
+
+  # Biome sync daemon (behavioral telemetry, CloudKit cache)
+  "com.apple.biomesyncd"
 
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
@@ -584,14 +598,22 @@ domain_from_plist_path() {
   printf '%s\n' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//' || printf '%s\n' "$dom"
 }
 
-# Hash a path for cache file naming
+# Hash a path for cache file naming (cached to avoid repeated md5 forks)
+typeset -gA _HASH_CACHE=()
 hash_path() {
   local p="$1"
-  if command -v /sbin/md5 >/dev/null 2>&1; then
-    /sbin/md5 -qs "$p" 2>/dev/null || echo "$p" | /usr/bin/cksum | awk '{print $1}'
-  else
-    echo "$p" | /usr/bin/cksum | awk '{print $1}'
+  if [ -n "${_HASH_CACHE[$p]+isset}" ]; then
+    printf '%s\n' "${_HASH_CACHE[$p]}"
+    return
   fi
+  local h
+  if command -v /sbin/md5 >/dev/null 2>&1; then
+    h=$(/sbin/md5 -qs "$p" 2>/dev/null) || h=$(printf '%s' "$p" | /usr/bin/cksum | /usr/bin/awk '{print $1}')
+  else
+    h=$(printf '%s' "$p" | /usr/bin/cksum | /usr/bin/awk '{print $1}')
+  fi
+  _HASH_CACHE[$p]="$h"
+  printf '%s\n' "$h"
 }
 
 # Initialize cache directory
@@ -773,14 +795,14 @@ is_noisy_key() {
     # Dock preferences: Keep useful settings, filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
-        # Noisy: workspace IDs, counts, expose gestures, trash state
-        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full)
+        # Noisy: workspace IDs, counts, expose gestures, trash state, recent apps
+        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
           return 0 ;;
-        # Noisy: internal tile metadata (reorder noise, useless as flat defaults write)
-        GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|bundle-identifier|_CFURLString|file-label|file-data|tile-data)
+        # Noisy: internal tile metadata (reorder noise, not user preferences)
+        GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
           return 0 ;;
-        # Note: bundle-identifier, _CFURLString, file-label, tile-data, file-data
-        # are kept - useful in PlistBuddy output; suppressed as flat defaults write by _skip_keys
+        # Note: bundle-identifier, _CFURLString, file-label are useful in PlistBuddy output
+        # (identify the app); suppressed as flat defaults write by _skip_keys
         # Keep: orientation, autohide, tilesize, magnification, persistent-apps, etc.
       esac
       ;;
@@ -884,9 +906,6 @@ is_noisy_key() {
       esac
       ;;
 
-    # NOTE: FaceTime, Bluetooth, VoiceTrigger, and third-party app state filters
-    # have been moved to GLOBAL PATTERNS above for universal coverage.
-    # This keeps the script maintainable and works with any app.
   esac
 
   return 1
@@ -1124,7 +1143,7 @@ parse_array_index_key() {
     local inner="${raw#:}"
     local base="${inner%%:*}"
     local idx="${inner##*:}"
-    if [[ -n "$base" && "$idx" == <-> ]]; then
+    if [[ -n "$base" && "$idx" =~ ^[0-9]+$ ]]; then
       printf '%s %s\n' "$base" "$idx"
       return 0
     fi
@@ -1194,7 +1213,7 @@ def all_keys_recursive(obj):
 def pb_type_value(val):
     """Return (type, value) for PlistBuddy Add command"""
     if isinstance(val, bool):
-        return ("bool", "YES" if val else "NO")
+        return ("bool", "true" if val else "false")
     if isinstance(val, int):
         return ("integer", str(val))
     if isinstance(val, float):
@@ -1226,6 +1245,7 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
 
 diff(prev, curr, [])
 
+emitted_arrays = set()
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
@@ -1233,10 +1253,25 @@ for prefix, index, item in results:
     arr_name = prefix[0]
     if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
         continue
+    # Emit array creation if the array is new (didn't exist in prev)
+    if arr_name not in emitted_arrays and arr_name not in prev:
+        print(f"PBCMD\tAdd :{arr_name} array")
+        emitted_arrays.add(arr_name)
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
         # Output metadata line (for _skip_keys in shell)
         print(f"{prefix[0]}\t{index}\t{keys}\t")
+        # Dock: emit app name comment for readability
+        if domain == "com.apple.dock" and arr_name in ("persistent-apps", "persistent-others"):
+            td = item.get("tile-data", {})
+            if isinstance(td, dict):
+                label = td.get("file-label", "")
+                bid = td.get("bundle-identifier", "")
+                if label:
+                    note = f"# Dock: {label}"
+                    if bid:
+                        note += f" ({bid})"
+                    print(f"PBCMD\t{note}")
         # Output PlistBuddy commands: first create the array entry, then sub-keys
         print(f"PBCMD\tAdd :{prefix[0]}:{index} dict")
         for pb_line in emit_plistbuddy(prefix[0], index, item):
@@ -1273,6 +1308,13 @@ _emit_contextual_note() {
         persistent-apps|persistent-others)
           log_line "Cmd: # NOTE: Run 'killall Dock' to apply Dock changes" ;;
       esac ;;
+    com.apple.print.custompresets*)
+      case "$array_base" in
+        com.apple.print.customPresetsInfo)
+          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect" ;;
+      esac ;;
+    com.apple.symbolichotkeys)
+      log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1341,18 +1383,25 @@ for path_tuple, index, item in results:
     # Skip reorders: if array length is the same, elements just moved (not deleted)
     if array_name in prev and array_name in curr and isinstance(prev[array_name], list) and isinstance(curr[array_name], list) and len(prev[array_name]) == len(curr[array_name]):
         continue
+    # Dock: extract app name for deletion comment
+    app_label = ""
+    if domain == "com.apple.dock" and array_name in ("persistent-apps", "persistent-others"):
+        if isinstance(item, dict):
+            td = item.get("tile-data", {})
+            if isinstance(td, dict):
+                app_label = td.get("file-label", "")
     if isinstance(item, dict):
         keys = ','.join(str(k) for k in item.keys())
     else:
         keys = ""
-    print(f"{array_name}\t{index}\t{keys}")
+    print(f"{array_name}\t{index}\t{keys}\t{app_label}")
 PY
 ) || return 0
 
   [ -n "$py_output" ] || return 0
 
   typeset -A _noted_del_arrays=()
-  while IFS=$'\t' read -r base idx keylist; do
+  while IFS=$'\t' read -r base idx keylist app_label; do
     [ -n "$base" ] || continue
 
     # Skip noisy arrays
@@ -1362,6 +1411,15 @@ PY
     if [ -z "${_noted_del_arrays[$base]:-}" ]; then
       _emit_contextual_note "$dom" "$base"
       _noted_del_arrays[$base]=1
+    fi
+
+    # Dock: emit app name comment for readability
+    if [ -n "$app_label" ]; then
+      case "$kind" in
+        USER) log_user "Cmd: # Dock: removed $app_label" ;;
+        SYSTEM) log_system "Cmd: # Dock: removed $app_label" ;;
+        *) log_line "Cmd: # Dock: removed $app_label" ;;
+      esac
     fi
 
     local delete_cmd="defaults delete ${dom} \":${base}:${idx}\""
@@ -1454,12 +1512,76 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
             changes.append((path_parts, tv))
     return changes
 
-# Only process top-level keys that are dicts (not arrays, not scalars)
+# Recursively emit PlistBuddy Add commands for an entire dict/value tree
+def emit_add_tree(base_parts, obj):
+    if isinstance(obj, dict):
+        path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
+        print(f"PBCMD\tAdd :{path} dict")
+        for k in sorted(obj.keys()):
+            emit_add_tree(base_parts + [str(k)], obj[k])
+    elif isinstance(obj, list):
+        path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
+        print(f"PBCMD\tAdd :{path} array")
+        for i, item in enumerate(obj):
+            emit_add_tree(base_parts + [str(i)], item)
+    else:
+        tv = pb_type_value(obj)
+        if tv:
+            path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
+            print(f"PBCMD\tAdd :{path} {tv[0]} {tv[1]}")
+
+# Print preset: whitelist for com.apple.print.preset.settings keys
+_PRINT_PRESET_KEEP = {
+    'Duplex', 'AP_ColorMatchingMode',
+}
+_PRINT_PRESET_PREFIXES = (
+    '*PageSize', '*InputSlot', '*MediaType',
+    '*EFDuplex', '*EFColorMode', '*EFMediaType', '*EFResolution', '*EFSort', '*EFNUpOption',
+    'com.apple.print.PrintSettings.', 'com.apple.print.PageFormat.',
+    'com.apple.print.preset.displayName', 'com.apple.print.PageToPaperMapping',
+    'com.apple.print.pageRange',
+)
+
+def filter_print_preset_settings(settings_dict):
+    """Filter a print preset settings dict to keep only useful keys."""
+    if not isinstance(settings_dict, dict):
+        return settings_dict
+    filtered = {}
+    for k, v in settings_dict.items():
+        if k in _PRINT_PRESET_KEEP:
+            filtered[k] = v
+        elif any(k.startswith(p) for p in _PRINT_PRESET_PREFIXES):
+            filtered[k] = v
+    return filtered
+
+is_print_preset = domain.startswith('com.apple.print.custompresets')
+
+# Process top-level keys that are dicts
 changed_top_keys = set()
 for top_key in sorted(curr.keys()):
-    if top_key not in prev:
+    if not isinstance(curr[top_key], dict):
         continue
-    if not isinstance(prev[top_key], dict) or not isinstance(curr[top_key], dict):
+    if top_key not in prev:
+        # New top-level dict: emit Add commands for entire tree
+        changed_top_keys.add(top_key)
+        sub_keys = set()
+        def collect_keys(obj, parts):
+            if isinstance(obj, dict):
+                for k in obj:
+                    sub_keys.add(k)
+                    collect_keys(obj[k], parts + [k])
+        # Print presets: filter noisy driver defaults from settings dict
+        tree_obj = curr[top_key]
+        if is_print_preset and isinstance(tree_obj, dict):
+            settings_key = 'com.apple.print.preset.settings'
+            if settings_key in tree_obj:
+                tree_obj = dict(tree_obj)
+                tree_obj[settings_key] = filter_print_preset_settings(tree_obj[settings_key])
+        collect_keys(tree_obj, [top_key])
+        print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
+        emit_add_tree([top_key], tree_obj)
+        continue
+    if not isinstance(prev[top_key], dict):
         continue
     changes = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
     if not changes:
@@ -1474,6 +1596,11 @@ for top_key in sorted(curr.keys()):
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
     # Emit PlistBuddy Set commands with full paths
     for path_parts, (ptype, pvalue) in changes:
+        # Print presets: filter noisy driver keys in settings dict
+        if is_print_preset and len(path_parts) >= 3 and path_parts[1] == 'com.apple.print.preset.settings':
+            settings_key = path_parts[2]
+            if settings_key not in _PRINT_PRESET_KEEP and not any(settings_key.startswith(p) for p in _PRINT_PRESET_PREFIXES):
+                continue
         full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
@@ -1511,8 +1638,13 @@ show_plist_diff() {
     return 0
   fi
 
-  dump_plist "$path" "$curr"
-  dump_plist_json "$path" "$curr_json"
+  if [ "$silent" != "true" ]; then
+    dump_plist "$path" "$curr" &
+    dump_plist_json "$path" "$curr_json" &
+    wait
+  else
+    dump_plist "$path" "$curr"
+  fi
 
   # Dedup: skip if no change since last processing
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
@@ -1541,20 +1673,33 @@ show_plist_diff() {
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
       typeset -A _noted_arrays=()
+      # Pre-emit domain-level notes before PBCMD output
+      case "$_dom" in
+        com.apple.print.custompresets*)
+          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
+          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
+        com.apple.symbolichotkeys)
+          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
+      esac
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
-          # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
+          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          if [[ "$_pb_cmd" == "#"* ]]; then
+            case "$kind" in
+              USER) log_user "Cmd: $_pb_cmd" ;;
+              SYSTEM) log_system "Cmd: $_pb_cmd" ;;
+              *) log_line "Cmd: $_pb_cmd" ;;
+            esac
+            continue
+          fi
+          # Filter noisy key paths in PlistBuddy commands
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
           esac
-          local _pb_path="${_pb_cmd#* :}"
-          _pb_path="${_pb_path%% *}"
-          local _pb_leaf="${_pb_path##*:}"
-          is_noisy_key "$_dom" "$_pb_leaf" && continue
-          [[ "$_pb_cmd" == *"'<data:"* ]] && continue
+          [[ "$_pb_cmd" == *"<data:"* ]] && continue
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${path}\""
           case "$kind" in
             USER) log_user "Cmd: $pb_full" ;;
@@ -1660,8 +1805,7 @@ show_plist_diff() {
             if [ -n "$array_name" ]; then
               continue
             fi
-            # Skip nested keys — only top-level keys (indent ≤ 2 spaces in plutil -p)
-            # produce valid defaults write commands; deeper keys are sub-dict values
+            # Skip nested keys (indent ≥ 4 spaces in diff = sub-dict values)
             if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
               continue
             fi
@@ -1814,7 +1958,7 @@ show_plist_diff() {
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
-  /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
+  [ -f "$curr_json" ] && { /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || : ; }
   /bin/rmdir "$lockdir" 2>/dev/null || true
 }
 
@@ -1871,21 +2015,30 @@ show_domain_diff() {
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       typeset -A _noted_arrays=()
+      # Pre-emit domain-level notes before PBCMD output
+      case "$dom" in
+        com.apple.print.custompresets*)
+          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
+          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
+        com.apple.symbolichotkeys)
+          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
+      esac
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
-          [ -n "$_pb_plist_path" ] || continue
           local _pb_cmd="$_array_idx"
+          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          if [[ "$_pb_cmd" == "#"* ]]; then
+            log_line "Cmd: $_pb_cmd"
+            continue
+          fi
+          [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
           esac
-          local _pb_path="${_pb_cmd#* :}"
-          _pb_path="${_pb_path%% *}"
-          local _pb_leaf="${_pb_path##*:}"
-          is_noisy_key "$dom" "$_pb_leaf" && continue
-          [[ "$_pb_cmd" == *"'<data:"* ]] && continue
+          [[ "$_pb_cmd" == *"<data:"* ]] && continue
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_pb_plist_path}\""
           log_line "Cmd: $pb_full"
           continue
@@ -1976,7 +2129,7 @@ show_domain_diff() {
             if [ -n "$array_name" ]; then
               continue
             fi
-            # Skip nested keys — only top-level keys produce valid defaults write
+            # Skip nested keys (indent ≥ 4 spaces in diff = sub-dict values)
             if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
               continue
             fi
@@ -2230,14 +2383,35 @@ start_watch_all() {
     prefs_user="$HOME/Library/Preferences"
   fi
 
+  # Snapshot a single plist (for parallel execution in subshell)
+  _snapshot_one_plist() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    init_cache
+    local key
+    key=$(hash_path "$path")
+    local prev="$CACHE_DIR/${key}.prev"
+    local curr="$CACHE_DIR/${key}.curr"
+    local prev_json="$CACHE_DIR/${key}.prev.json"
+    local curr_json="$CACHE_DIR/${key}.curr.json"
+    dump_plist "$path" "$curr" &
+    dump_plist_json "$path" "$curr_json" &
+    wait
+    /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
+    /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
+  }
+
   # Initial snapshot
   snapshot_notice "Taking initial baseline — please wait before making changes"
   local _snap_spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local _snap_count=0 _snap_idx=0
+  local -a _snap_pids=()
+  local _max_parallel=16
 
   if [ -d "$prefs_user" ]; then
     snapshot_notice "User snapshot: scanning..."
     _snap_count=0
+    _snap_pids=()
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       local dom=""
@@ -2249,8 +2423,14 @@ start_watch_all() {
       _snap_idx=$(( _snap_count % ${#_snap_spinner[@]} ))
       printf "\r  ${_snap_spinner[$_snap_idx+1]} User snapshot: %d domains scanned..." "$_snap_count"
       snapshot_notice "USER: ${dom:-$f}" true
-      show_plist_diff USER "$f" silent
+      _snapshot_one_plist "$f" &
+      _snap_pids+=($!)
+      if (( ${#_snap_pids[@]} >= _max_parallel )); then
+        wait "${_snap_pids[1]}" 2>/dev/null || true
+        _snap_pids=("${_snap_pids[@]:1}")
+      fi
     done < <(/usr/bin/find "$prefs_user" -type f -name "*.plist" 2>/dev/null)
+    for _pid in "${_snap_pids[@]}"; do wait "$_pid" 2>/dev/null || true; done
     printf "\r  ✓ User snapshot: %d domains scanned    \n" "$_snap_count"
     snapshot_notice "User snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
@@ -2259,6 +2439,7 @@ start_watch_all() {
   if [ "$INCLUDE_SYSTEM" = "true" ] && [ -d "$prefs_system" ]; then
     snapshot_notice "System snapshot: scanning..."
     _snap_count=0
+    _snap_pids=()
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       local dom=""
@@ -2270,8 +2451,14 @@ start_watch_all() {
       _snap_idx=$(( _snap_count % ${#_snap_spinner[@]} ))
       printf "\r  ${_snap_spinner[$_snap_idx+1]} System snapshot: %d domains scanned..." "$_snap_count"
       snapshot_notice "SYSTEM: ${dom:-$f}" true
-      show_plist_diff SYSTEM "$f" silent
+      _snapshot_one_plist "$f" &
+      _snap_pids+=($!)
+      if (( ${#_snap_pids[@]} >= _max_parallel )); then
+        wait "${_snap_pids[1]}" 2>/dev/null || true
+        _snap_pids=("${_snap_pids[@]:1}")
+      fi
     done < <(/usr/bin/find "$prefs_system" -type f -name "*.plist" 2>/dev/null)
+    for _pid in "${_snap_pids[@]}"; do wait "$_pid" 2>/dev/null || true; done
     printf "\r  ✓ System snapshot: %d domains scanned    \n" "$_snap_count"
     snapshot_notice "System snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
@@ -2313,11 +2500,11 @@ start_watch_all() {
     local marker_user marker_sys
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
-    /usr/bin/touch -t 200001010000 "$marker_user" "$marker_sys" 2>/dev/null || true
+    # Only create markers if not pre-initialized (avoids rescanning all plists after initial snapshot)
+    [ -f "$marker_user" ] || /usr/bin/touch "$marker_user" 2>/dev/null || true
+    [ -f "$marker_sys" ]  || /usr/bin/touch "$marker_sys" 2>/dev/null || true
 
     while true; do
-      local now
-      now="$PREFWATCH_TMPDIR/poll.now"
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -2338,9 +2525,9 @@ start_watch_all() {
           log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
-      /bin/mv -f "$now" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
+      /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
-      /bin/sleep 2
+      /bin/sleep 1
     done
   }
 
@@ -2476,6 +2663,10 @@ start_watch_all() {
       /bin/cp -f "$pmset_current" "$pmset_snapshot" 2>/dev/null || true
     done
   }
+
+  # Pre-initialize poll markers so first iteration only sees post-snapshot changes
+  /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
+  /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
 
   # Start all mechanisms
   local FS_PID=""

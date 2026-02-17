@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.1.0 — 2026-02-17
+
+### Performance
+- Eliminate double-scan: pre-initialize poll markers after snapshot — prevents `poll_watch` from rescanning all plists on first iteration
+- Parallel initial snapshot: up to 16 concurrent plist snapshots (text + JSON) instead of sequential processing
+- Parallel `dump_plist` + `dump_plist_json` on change detection — both plutil calls run concurrently
+- Cache `hash_path()` results in associative array — avoids repeated `/sbin/md5` forks for the same path
+- Reduce polling interval from 2s to 1s — halves worst-case change detection latency
+- Immediate first poll cycle after snapshot — no initial sleep delay
+
+### Fix
+- Dock icon add/remove: `bundle-identifier`, `_CFURLString`, `file-label` no longer filtered in PlistBuddy commands — app name and path now visible in output
+- Print presets: detect new top-level dict settings and emit full PlistBuddy `Add` tree — reproduces complete preset via terminal
+- Print presets: emit `Add :array_name array` when array is new (e.g. `customPresetsInfo`)
+- PlistBuddy `pb_type_value()`: use `true/false` for bools (was `YES/NO` — invalid for PlistBuddy)
+- Parallel snapshot: fix invalid `shift _snap_pids` zsh syntax — use array slice instead
+- Poll watch: remove dead `_poll_first` flag and stale `$now` variable reference
+
+### Feature
+- Contextual `# NOTE:` for print preset changes (logout/login required to apply)
+- Contextual `# NOTE:` for keyboard shortcut changes (`com.apple.symbolichotkeys`)
+- Dock icon add/remove: emit `# Dock: AppName (bundle-id)` comment for readability
+- Dock icon remove: emit `# Dock: removed AppName` comment
+- Keyboard shortcuts (`AppleSymbolicHotKeys`) now detected in ALL mode via `emit_nested_dict_changes`
+
+### Noise
+- Exclude `com.apple.homed` (HomeKit generation counters)
+- Exclude `com.apple.classroom`, `com.apple.mediaanalysisd`, `com.apple.financed`, `com.apple.biomesyncd`, `com.apple.madrid`
+- Dock: filter `recent-apps` in both `is_noisy_key` and PBCMD handler
+- Print presets: filter Fiery/PPD driver defaults (`*EF*` keys, `vendorDefaultSettings`, `PaperInfo` subtree) — keep only useful settings (PageSize, Duplex, ColorMode, etc.)
+- PBCMD handler: filter Dock tile internals (`GUID`, `dock-extra`, `is-beta`, `file-type`, `tile-type`, `*-mod-date`)
+- PBCMD handler: fix `<data:` filter (remove stale single-quote prefix)
+- PBCMD handler: sync both handlers (show_plist_diff + show_domain_diff)
+- Print preset `# NOTE:` emitted once before commands (was duplicated for array + dict)
+
 ## 1.0.4 — 2026-02-16
 
 ### Fix
