@@ -9,6 +9,7 @@
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
+- Detect nested array length changes: emit Add for new trailing elements, Delete for removed trailing elements
 
 ### UX
 - Add post-snapshot notice about cfprefsd cache stabilization delay

@@ -1524,7 +1524,12 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
             changes.extend(c)
             additions.extend(a)
             deletions.extend(d)
-        # Length changes handled by emit_array_additions/deletions
+        # Nested array grew: emit Add for new trailing elements
+        for i in range(len(prev_obj), len(curr_obj)):
+            additions.append((path_parts + [str(i)], curr_obj[i]))
+        # Nested array shrunk: emit Delete for removed trailing elements (highest index first)
+        for i in range(len(prev_obj) - 1, len(curr_obj) - 1, -1):
+            deletions.append((path_parts + [str(i)],))
     else:
         # Leaf value changed (or type changed)
         tv = pb_type_value(curr_obj)
