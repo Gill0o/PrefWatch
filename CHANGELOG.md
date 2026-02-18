@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 — unreleased
+
+### Noise
+- Exclude `com.apple.protectedcloudstorage*` (CloudKit keychain sync)
+- Exclude `com.apple.DataDeliveryServices` (metadata sync timestamps)
+- Exclude `com.apple.ReportCrash` (crash reporter TrialCache timestamps)
+
+### UX
+- Add post-snapshot notice about cfprefsd cache stabilization delay
 ## 1.1.0 — 2026-02-17
 
 ### Performance
