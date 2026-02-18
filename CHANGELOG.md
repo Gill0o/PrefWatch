@@ -6,10 +6,13 @@
 - Exclude `com.apple.protectedcloudstorage*` (CloudKit keychain sync)
 - Exclude `com.apple.DataDeliveryServices` (metadata sync timestamps)
 - Exclude `com.apple.ReportCrash` (crash reporter TrialCache timestamps)
+- Exclude `com.apple.homeenergyd` (HomeKit CloudKit sync cache)
+- Filter `WebKitUseSystemAppearance` (Settings panel WebKit artifact)
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
-- Detect nested array length changes: emit Add for new trailing elements, Delete for removed trailing elements
+- Replace entire array on change within nested dicts (Delete + Add from scratch) — MDM-deployable, no index dependency
+- Deduplicate contextual `# NOTE:` across handlers (was emitted twice in ALL mode)
 
 ### UX
 - Add post-snapshot notice about cfprefsd cache stabilization delay

@@ -397,6 +397,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Crash Reporter (TrialCache timestamps)
   "com.apple.ReportCrash"
 
+  # Home energy daemon (CloudKit sync cache)
+  "com.apple.homeenergyd"
+
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
 
@@ -607,6 +610,9 @@ domain_from_plist_path() {
   printf '%s\n' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//' || printf '%s\n' "$dom"
 }
 
+# Dedup domain-level notes across handlers (show_plist_diff + show_domain_diff)
+typeset -gA _NOTED_DOMAIN=()
+
 # Hash a path for cache file naming (cached to avoid repeated md5 forks)
 typeset -gA _HASH_CACHE=()
 hash_path() {
@@ -759,6 +765,10 @@ is_noisy_key() {
 
     # Migration flags (one-time internal state, not user preferences)
     *DidMigrate*|*didMigrate*)
+      return 0 ;;
+
+    # WebKit internal state (set when opening Settings panels that use WebKit views)
+    WebKitUseSystemAppearance)
       return 0 ;;
 
     # Cache & temporary data
@@ -1305,31 +1315,37 @@ PY
 # Emit contextual notes for domains that need extra steps
 # Called once per domain after array metadata processing
 _emit_contextual_note() {
-  local dom="$1" array_base="$2"
+  local dom="$1" array_base="$2" _note=""
   case "$dom" in
     com.apple.HIToolbox)
       case "$array_base" in
         AppleEnabledInputSources|AppleSelectedInputSources|AppleInputSourceHistory)
-          log_line "Cmd: # NOTE: Keyboard layout changes require logout/login to take effect" ;;
+          _note="Keyboard layout changes require logout/login to take effect" ;;
       esac ;;
     com.apple.dock)
       case "$array_base" in
         persistent-apps|persistent-others)
-          log_line "Cmd: # NOTE: Run 'killall Dock' to apply Dock changes" ;;
+          _note="Run 'killall Dock' to apply Dock changes" ;;
       esac ;;
     com.apple.print.custompresets*)
       case "$array_base" in
         com.apple.print.customPresetsInfo)
-          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect" ;;
+          _note="Print preset changes require logout/login to take effect" ;;
       esac ;;
     com.apple.symbolichotkeys)
-      log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
+      _note="Keyboard shortcut changes require logout/login to take effect" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
     com.apple.ColorSync.Devices)
-      log_line "Cmd: # NOTE: Color profile changes require logout/login to take effect" ;;
+      _note="Color profile changes require logout/login to take effect" ;;
   esac
+  [ -n "$_note" ] || return 0
+  # Dedup: emit each note only once per session
+  local _note_key="${dom}:${_note}"
+  [[ -z "${_NOTED_DOMAIN[$_note_key]+isset}" ]] || return 0
+  _NOTED_DOMAIN[$_note_key]=1
+  log_line "Cmd: # NOTE: $_note"
 }
 
 # Detect and emit commands for array deletions
@@ -1518,18 +1534,9 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
             elif key in prev_obj:
                 deletions.append((path_parts + [str(key)],))
     elif isinstance(prev_obj, list) and isinstance(curr_obj, list):
-        # Compare array elements by index (positional)
-        for i in range(min(len(prev_obj), len(curr_obj))):
-            c, a, d = find_leaf_changes(prev_obj[i], curr_obj[i], path_parts + [str(i)])
-            changes.extend(c)
-            additions.extend(a)
-            deletions.extend(d)
-        # Nested array grew: emit Add for new trailing elements
-        for i in range(len(prev_obj), len(curr_obj)):
-            additions.append((path_parts + [str(i)], curr_obj[i]))
-        # Nested array shrunk: emit Delete for removed trailing elements (highest index first)
-        for i in range(len(prev_obj) - 1, len(curr_obj) - 1, -1):
-            deletions.append((path_parts + [str(i)],))
+        # Full array replacement: Delete old + Add new from scratch (MDM-deployable)
+        deletions.append((path_parts,))
+        additions.append((path_parts, curr_obj))
     else:
         # Leaf value changed (or type changed)
         tv = pb_type_value(curr_obj)
@@ -1625,6 +1632,13 @@ for top_key in sorted(curr.keys()):
             sub_keys.add(part)
     # Emit metadata line (same format as array additions)
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
+    # Emit PlistBuddy Delete commands first (must precede Add for array replacements)
+    for (path_parts,) in deletions:
+        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
+        print(f"PBCMD\tDelete :{full_path}")
+    # Emit PlistBuddy Add commands for new sub-keys and replaced arrays
+    for path_parts, obj in additions:
+        emit_add_tree(path_parts, obj)
     # Emit PlistBuddy Set commands for changed values
     for path_parts, (ptype, pvalue) in changes:
         # Print presets: filter noisy driver keys in settings dict
@@ -1634,13 +1648,6 @@ for top_key in sorted(curr.keys()):
                 continue
         full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
-    # Emit PlistBuddy Add commands for new sub-keys
-    for path_parts, obj in additions:
-        emit_add_tree(path_parts, obj)
-    # Emit PlistBuddy Delete commands for removed sub-keys
-    for (path_parts,) in deletions:
-        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
-        print(f"PBCMD\tDelete :{full_path}")
 PY
 ) || return 0
 
@@ -1711,14 +1718,8 @@ show_plist_diff() {
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
       typeset -A _noted_arrays=()
-      # Pre-emit domain-level notes before PBCMD output
-      case "$_dom" in
-        com.apple.print.custompresets*)
-          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
-          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
-        com.apple.symbolichotkeys)
-          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
-      esac
+      # Pre-emit domain-level notes before PBCMD output (dedup via _emit_contextual_note)
+      _emit_contextual_note "$_dom" ""
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
@@ -2053,14 +2054,8 @@ show_domain_diff() {
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       typeset -A _noted_arrays=()
-      # Pre-emit domain-level notes before PBCMD output
-      case "$dom" in
-        com.apple.print.custompresets*)
-          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
-          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
-        com.apple.symbolichotkeys)
-          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
-      esac
+      # Pre-emit domain-level notes before PBCMD output (dedup via _emit_contextual_note)
+      _emit_contextual_note "$dom" ""
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
