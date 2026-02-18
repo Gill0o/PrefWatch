@@ -13,7 +13,7 @@
 #
 #   Arguments:
 #     [domain]              Preference domain (default: "ALL")
-#                           Examples: com.apple.dock, com.apple.finder, ALL
+#                           Examples: NSGlobalDomain, com.apple.finder, ALL
 #
 #   Options:
 #     -l, --log <path>      Custom log file path (default: auto-generated)
@@ -28,7 +28,7 @@
 #     ./prefwatch.sh                    # Monitor ALL (default)
 #     ./prefwatch.sh -v                 # Monitor ALL verbose
 #     ./prefwatch.sh --log /tmp/all.log # Monitor ALL with custom log
-#     ./prefwatch.sh com.apple.dock     # Monitor specific domain
+#     ./prefwatch.sh NSGlobalDomain     # Monitor specific domain
 #     ./prefwatch.sh com.apple.finder -v # Specific domain verbose
 #
 # Jamf Pro Mode (automatic detection):
@@ -36,7 +36,7 @@
 #   $1-$3 are Jamf reserved (mount_point, computer_name, username)
 #
 #   Jamf Parameters:
-#     $4 = Domain (e.g., com.apple.finder, ALL or *)
+#     $4 = Domain (e.g., NSGlobalDomain, ALL or *)
 #     $5 = Log path (optional). Default:
 #          - ALL: /var/log/preferences.watch.log
 #          - Domain: /var/log/<domain>.prefs.log
@@ -64,7 +64,7 @@ Monitor and log changes to macOS preference domains in real-time.
 
 Arguments:
   [domain]              Preference domain to monitor (default: "ALL")
-                        Examples: com.apple.dock, com.apple.finder, ALL
+                        Examples: NSGlobalDomain, com.apple.finder, ALL
 
 Options:
   -l, --log <path>      Custom log file path (default: auto-generated)
@@ -82,7 +82,7 @@ Examples:
   ./prefwatch.sh --log /tmp/all-prefs.log
 
   # Monitor a specific domain
-  ./prefwatch.sh com.apple.dock
+  ./prefwatch.sh NSGlobalDomain
   ./prefwatch.sh com.apple.finder -v
 
   # Monitor with exclusions
@@ -1499,27 +1499,38 @@ def pb_type_value(val):
     return None
 
 def find_leaf_changes(prev_obj, curr_obj, path_parts):
-    """Recursively find changed leaf values inside nested dicts."""
+    """Recursively find changed leaf values, added sub-keys, and deleted sub-keys."""
     if prev_obj == curr_obj:
-        return []
+        return [], [], []
     changes = []
+    additions = []
+    deletions = []
     if isinstance(prev_obj, dict) and isinstance(curr_obj, dict):
         all_keys = sorted(set(list(prev_obj.keys()) + list(curr_obj.keys())))
         for key in all_keys:
             if key in prev_obj and key in curr_obj:
-                changes.extend(find_leaf_changes(prev_obj[key], curr_obj[key], path_parts + [str(key)]))
-            # Skip add/delete of entire sub-keys (too complex to serialize generically)
+                c, a, d = find_leaf_changes(prev_obj[key], curr_obj[key], path_parts + [str(key)])
+                changes.extend(c)
+                additions.extend(a)
+                deletions.extend(d)
+            elif key in curr_obj:
+                additions.append((path_parts + [str(key)], curr_obj[key]))
+            elif key in prev_obj:
+                deletions.append((path_parts + [str(key)],))
     elif isinstance(prev_obj, list) and isinstance(curr_obj, list):
         # Compare array elements by index (positional)
         for i in range(min(len(prev_obj), len(curr_obj))):
-            changes.extend(find_leaf_changes(prev_obj[i], curr_obj[i], path_parts + [str(i)]))
+            c, a, d = find_leaf_changes(prev_obj[i], curr_obj[i], path_parts + [str(i)])
+            changes.extend(c)
+            additions.extend(a)
+            deletions.extend(d)
         # Length changes handled by emit_array_additions/deletions
     else:
         # Leaf value changed (or type changed)
         tv = pb_type_value(curr_obj)
         if tv:
             changes.append((path_parts, tv))
-    return changes
+    return changes, additions, deletions
 
 # Recursively emit PlistBuddy Add commands for an entire dict/value tree
 def emit_add_tree(base_parts, obj):
@@ -1592,8 +1603,8 @@ for top_key in sorted(curr.keys()):
         continue
     if not isinstance(prev[top_key], dict):
         continue
-    changes = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
-    if not changes:
+    changes, additions, deletions = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
+    if not changes and not additions and not deletions:
         continue
     changed_top_keys.add(top_key)
     # Collect all sub-keys touched for _skip_keys metadata
@@ -1601,9 +1612,15 @@ for top_key in sorted(curr.keys()):
     for path_parts, tv in changes:
         for part in path_parts:
             sub_keys.add(part)
+    for path_parts, obj in additions:
+        for part in path_parts:
+            sub_keys.add(part)
+    for tup in deletions:
+        for part in tup[0]:
+            sub_keys.add(part)
     # Emit metadata line (same format as array additions)
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
-    # Emit PlistBuddy Set commands with full paths
+    # Emit PlistBuddy Set commands for changed values
     for path_parts, (ptype, pvalue) in changes:
         # Print presets: filter noisy driver keys in settings dict
         if is_print_preset and len(path_parts) >= 3 and path_parts[1] == 'com.apple.print.preset.settings':
@@ -1612,6 +1629,13 @@ for top_key in sorted(curr.keys()):
                 continue
         full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
+    # Emit PlistBuddy Add commands for new sub-keys
+    for path_parts, obj in additions:
+        emit_add_tree(path_parts, obj)
+    # Emit PlistBuddy Delete commands for removed sub-keys
+    for (path_parts,) in deletions:
+        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
+        print(f"PBCMD\tDelete :{full_path}")
 PY
 ) || return 0
 

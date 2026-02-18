@@ -7,6 +7,9 @@
 - Exclude `com.apple.DataDeliveryServices` (metadata sync timestamps)
 - Exclude `com.apple.ReportCrash` (crash reporter TrialCache timestamps)
 
+### Fix
+- Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
+
 ### UX
 - Add post-snapshot notice about cfprefsd cache stabilization delay
 ## 1.1.0 — 2026-02-17
