@@ -11,7 +11,6 @@
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
-- Replace entire array on change within nested dicts (Delete + Add from scratch) — MDM-deployable, no index dependency
 - Deduplicate contextual `# NOTE:` across handlers (was emitted twice in ALL mode)
 
 ### UX

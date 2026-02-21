@@ -1534,9 +1534,18 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
             elif key in prev_obj:
                 deletions.append((path_parts + [str(key)],))
     elif isinstance(prev_obj, list) and isinstance(curr_obj, list):
-        # Full array replacement: Delete old + Add new from scratch (MDM-deployable)
-        deletions.append((path_parts,))
-        additions.append((path_parts, curr_obj))
+        # Compare array elements by index (positional)
+        for i in range(min(len(prev_obj), len(curr_obj))):
+            c, a, d = find_leaf_changes(prev_obj[i], curr_obj[i], path_parts + [str(i)])
+            changes.extend(c)
+            additions.extend(a)
+            deletions.extend(d)
+        # Added elements (array grew)
+        for i in range(len(prev_obj), len(curr_obj)):
+            additions.append((path_parts + [str(i)], curr_obj[i]))
+        # Removed elements (array shrank) — delete highest index first
+        for i in reversed(range(len(curr_obj), len(prev_obj))):
+            deletions.append((path_parts + [str(i)],))
     else:
         # Leaf value changed (or type changed)
         tv = pb_type_value(curr_obj)
