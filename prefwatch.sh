@@ -426,6 +426,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Secure Element daemon (Apple Pay/NFC session counters)
   "com.apple.seserviced"
 
+  # VirtualBuddy (VM app window state, UI settings)
+  "codes.rambo.VirtualBuddy"
+
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
 
@@ -1298,6 +1301,9 @@ for prefix, index, item in results:
     arr_name = prefix[0]
     if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
         continue
+    # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
+    if arr_name not in prev:
+        continue
     # Emit array creation if the array is new (didn't exist in prev)
     if arr_name not in emitted_arrays and arr_name not in prev:
         print(f"PBCMD\tAdd :{arr_name} array")
@@ -1769,8 +1775,7 @@ show_plist_diff() {
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
       typeset -A _noted_arrays=()
-      # Pre-emit domain-level notes before PBCMD output (dedup via _emit_contextual_note)
-      _emit_contextual_note "$_dom" ""
+      local _domain_note_emitted=false
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
@@ -1778,6 +1783,10 @@ show_plist_diff() {
           local _pb_cmd="$_array_idx"
           # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
           if [[ "$_pb_cmd" == "#"* ]]; then
+            if [ "$_domain_note_emitted" = "false" ]; then
+              _emit_contextual_note "$_dom" ""
+              _domain_note_emitted=true
+            fi
             case "$kind" in
               USER) log_user "Cmd: $_pb_cmd" ;;
               SYSTEM) log_system "Cmd: $_pb_cmd" ;;
@@ -1787,9 +1796,14 @@ show_plist_diff() {
           fi
           # Filter noisy key paths in PlistBuddy commands
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
+          # Emit domain-level note before first non-filtered command
+          if [ "$_domain_note_emitted" = "false" ]; then
+            _emit_contextual_note "$_dom" ""
+            _domain_note_emitted=true
+          fi
           local _mdm_path=$(mdm_plist_path "$path")
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           case "$kind" in
@@ -2106,8 +2120,7 @@ show_domain_diff() {
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       typeset -A _noted_arrays=()
-      # Pre-emit domain-level notes before PBCMD output (dedup via _emit_contextual_note)
-      _emit_contextual_note "$dom" ""
+      local _domain_note_emitted=false
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
@@ -2115,15 +2128,24 @@ show_domain_diff() {
           local _pb_cmd="$_array_idx"
           # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
           if [[ "$_pb_cmd" == "#"* ]]; then
+            if [ "$_domain_note_emitted" = "false" ]; then
+              _emit_contextual_note "$dom" ""
+              _domain_note_emitted=true
+            fi
             log_line "Cmd: $_pb_cmd"
             continue
           fi
           [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
+          # Emit domain-level note before first non-filtered command
+          if [ "$_domain_note_emitted" = "false" ]; then
+            _emit_contextual_note "$dom" ""
+            _domain_note_emitted=true
+          fi
           local _mdm_path=$(mdm_plist_path "$_pb_plist_path")
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           log_line "Cmd: $pb_full"
@@ -2552,7 +2574,7 @@ start_watch_all() {
 
   if [ "${SNAPSHOT_READY:-false}" = "true" ]; then
     snapshot_notice "Initial snapshots processed — you can now make your changes"
-    snapshot_notice "Changes are detected by polling — wait a few seconds between actions for reliable capture"
+    log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
   # fs_usage monitoring function

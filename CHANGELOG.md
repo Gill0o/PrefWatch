@@ -17,6 +17,8 @@
 - Filter `CloudKitAccountInfoCache` in PBCMD handler (CloudKit sync cache)
 - Filter `*WindowOriginFrame*` (Zoom window position state)
 - Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
+- Filter `window-file:` in PBCMD handler (VirtualBuddy window position state)
+- Exclude `codes.rambo.VirtualBuddy` (VM app window state, UI settings)
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
@@ -25,6 +27,8 @@
 - Deduplicate contextual `# NOTE:` across handlers (was emitted twice in ALL mode)
 - Fix PBCMD filter for keys with escaped spaces (e.g. `TB\ Default\ Item`)
 - Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
+- Fix orphan contextual note when all PBCMD commands are filtered (lazy emit after filter)
+- Fix duplicate commands for new top-level arrays (skip in `emit_array_additions` when handled by `emit_nested_dict_changes`)
 
 ### UX
 - Add contextual note `killall Finder` + `.DS_Store` per-window overrides for Finder domain

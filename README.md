@@ -4,7 +4,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Full command coverage** — `defaults write`, `PlistBuddy`, `pmset`, `lpadmin` depending on what changed
+- **Full command coverage** — `defaults`, `PlistBuddy`, `pmset`, `lpadmin` depending on what changed
 - **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
