@@ -1364,14 +1364,7 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      case "$array_base" in
-        NSToolbar*)
-          _note="Run 'killall Finder' to apply toolbar changes" ;;
-      esac ;;
-    com.apple.Spotlight)
-      case "$array_base" in
-        orderedItems) _note="First Spotlight change creates the full orderedItems array — subsequent changes only modify individual entries" ;;
-      esac ;;
+      _note="Run 'killall Finder' to apply — some settings also write per-window overrides in .DS_Store" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1637,11 +1630,15 @@ is_print_preset = domain.startswith('com.apple.print.custompresets')
 
 # Process top-level keys that are dicts or lists
 changed_top_keys = set()
+_first_create_noted = False
 for top_key in sorted(curr.keys()):
     if not isinstance(curr[top_key], (dict, list)):
         continue
     if top_key not in prev:
         # New top-level dict/list: emit Add commands for entire tree
+        if not _first_create_noted:
+            print("PBCMD\t# NOTE: First change creates the full structure — subsequent changes only modify individual entries")
+            _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
         def collect_keys(obj, parts):

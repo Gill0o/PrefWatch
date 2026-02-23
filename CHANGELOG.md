@@ -27,8 +27,8 @@
 - Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
 
 ### UX
-- Add contextual note `killall Finder` for toolbar changes
-- Add contextual note for Spotlight `orderedItems` first-change behavior
+- Add contextual note `killall Finder` + `.DS_Store` per-window overrides for Finder domain
+- Add generic first-create note when any top-level dict/array is created for the first time (replaces Spotlight-specific note)
 - Add contextual note for symbolic hotkeys parameter rewrite on toggle
 - Add post-snapshot polling delay notice
 ## 1.1.0 — 2026-02-17
