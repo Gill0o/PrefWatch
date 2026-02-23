@@ -423,6 +423,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Home energy daemon (CloudKit sync cache)
   "com.apple.homeenergyd"
 
+  # Secure Element daemon (Apple Pay/NFC session counters)
+  "com.apple.seserviced"
+
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
 
@@ -758,8 +761,8 @@ is_noisy_key() {
     closeViewZoom*FocusFollowMode*)
       return 0 ;;
 
-    # Metadata counters (change constantly, not user preferences)
-    *ChangeCount*|*MetaDataChange*|*ChangeToken*)
+    # Metadata/sync counters (change constantly, not user preferences)
+    *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
       return 0 ;;
 
     # File metadata (changes on every file operation)
@@ -1356,11 +1359,18 @@ _emit_contextual_note() {
           _note="Print preset changes require logout/login to take effect" ;;
       esac ;;
     com.apple.symbolichotkeys)
-      _note="Keyboard shortcut changes require logout/login to take effect" ;;
+      _note="Keyboard shortcut changes require logout/login to take effect"
+      case "$array_base" in
+        AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
+      esac ;;
     com.apple.finder)
       case "$array_base" in
         NSToolbar*)
           _note="Run 'killall Finder' to apply toolbar changes" ;;
+      esac ;;
+    com.apple.Spotlight)
+      case "$array_base" in
+        orderedItems) _note="First Spotlight change creates the full orderedItems array — subsequent changes only modify individual entries" ;;
       esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
@@ -1625,13 +1635,13 @@ def filter_print_preset_settings(settings_dict):
 
 is_print_preset = domain.startswith('com.apple.print.custompresets')
 
-# Process top-level keys that are dicts
+# Process top-level keys that are dicts or lists
 changed_top_keys = set()
 for top_key in sorted(curr.keys()):
-    if not isinstance(curr[top_key], dict):
+    if not isinstance(curr[top_key], (dict, list)):
         continue
     if top_key not in prev:
-        # New top-level dict: emit Add commands for entire tree
+        # New top-level dict/list: emit Add commands for entire tree
         changed_top_keys.add(top_key)
         sub_keys = set()
         def collect_keys(obj, parts):
@@ -1650,9 +1660,16 @@ for top_key in sorted(curr.keys()):
         print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
         emit_add_tree([top_key], tree_obj)
         continue
-    if not isinstance(prev[top_key], dict):
+    if not isinstance(prev[top_key], (dict, list)):
         continue
     changes, additions, deletions = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
+    # Top-level arrays: Add/Delete handled by emit_array_additions/deletions
+    # Set only valid when array length is unchanged (no index shift)
+    if isinstance(curr[top_key], list):
+        additions = []
+        deletions = []
+        if len(prev[top_key]) != len(curr[top_key]):
+            changes = []
     if not changes and not additions and not deletions:
         continue
     changed_top_keys.add(top_key)
@@ -2538,6 +2555,7 @@ start_watch_all() {
 
   if [ "${SNAPSHOT_READY:-false}" = "true" ]; then
     snapshot_notice "Initial snapshots processed — you can now make your changes"
+    snapshot_notice "Changes are detected by polling — wait a few seconds between actions for reliable capture"
   fi
 
   # fs_usage monitoring function
