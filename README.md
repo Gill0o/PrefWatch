@@ -36,10 +36,11 @@ sudo ./prefwatch.sh -v
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
 | `--only-cmds` | `-q` | Show only executable commands | On |
+| `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
 
-Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions). Launches Console.app for live viewing, logs to stdout + file + syslog.
+Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output). Launches Console.app for live viewing, logs to stdout + file + syslog.
 
 ## Scope
 
