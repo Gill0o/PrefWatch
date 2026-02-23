@@ -429,6 +429,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # VirtualBuddy (VM app window state, UI settings)
   "codes.rambo.VirtualBuddy"
 
+  # Spotlight knowledge daemon (internal sync counters, timestamps)
+  "com.apple.spotlightknowledged.pipeline"
+
+  # Media sharing daemon (internal playlist/sharing state)
+  "com.apple.amp.mediasharingd"
+
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
 
@@ -859,7 +865,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -892,6 +898,13 @@ is_noisy_key() {
         AppleSavedCurrentInputSource|InputSourceKind|KeyboardLayout\ ID|KeyboardLayout\ Name)
           return 0 ;;
         # Keep: AppleEnabledInputSources (adding/removing keyboard layouts)
+      esac
+      ;;
+
+    # Universal Access: Filter internal change history, keep accessibility settings
+    com.apple.universalaccess)
+      case "$keyname" in
+        History) return 0 ;;
       esac
       ;;
 
@@ -1796,7 +1809,7 @@ show_plist_diff() {
           fi
           # Filter noisy key paths in PlistBuddy commands
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*|*":SearchRecentsViewSettings"*|*":FXDesktopVolumePositions"*|*":History:"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
           # Emit domain-level note before first non-filtered command
@@ -2138,7 +2151,7 @@ show_domain_diff() {
           [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*|*":SearchRecentsViewSettings"*|*":FXDesktopVolumePositions"*|*":History:"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
           # Emit domain-level note before first non-filtered command

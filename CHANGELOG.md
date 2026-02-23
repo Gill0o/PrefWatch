@@ -19,6 +19,11 @@
 - Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
 - Filter `window-file:` in PBCMD handler (VirtualBuddy window position state)
 - Exclude `codes.rambo.VirtualBuddy` (VM app window state, UI settings)
+- Exclude `com.apple.spotlightknowledged.pipeline` (Spotlight knowledge daemon sync)
+- Exclude `com.apple.amp.mediasharingd` (media sharing daemon internal state)
+- Filter `SearchRecentsViewSettings` in PBCMD handler (Finder search history state)
+- Filter `FXDesktopVolumePositions` in PBCMD handler (desktop icon positions)
+- Filter `History` for `com.apple.universalaccess` (internal change history log)
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
