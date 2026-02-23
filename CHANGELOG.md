@@ -2,19 +2,28 @@
 
 ## 1.1.1 — unreleased
 
+### Feature
+- New `--mdm` CLI option (Jamf `$9 = MDM_OUTPUT`): replace user home path with `$loggedInUser` variable in PlistBuddy commands for MDM deployment scripts
+
 ### Noise
 - Exclude `com.apple.protectedcloudstorage*` (CloudKit keychain sync)
 - Exclude `com.apple.DataDeliveryServices` (metadata sync timestamps)
 - Exclude `com.apple.ReportCrash` (crash reporter TrialCache timestamps)
 - Exclude `com.apple.homeenergyd` (HomeKit CloudKit sync cache)
 - Filter `WebKitUseSystemAppearance` (Settings panel WebKit artifact)
+- Filter `TB Default Item Identifiers` in PBCMD handler (system-managed toolbar defaults)
+- Filter `AppleSavedCurrentInputSource` in PBCMD handler (transient input source state)
+- Filter `CloudKitAccountInfoCache` in PBCMD handler (CloudKit sync cache)
+- Filter `*WindowOriginFrame*` (Zoom window position state)
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
 - Deduplicate contextual `# NOTE:` across handlers (was emitted twice in ALL mode)
+- Fix PBCMD filter for keys with escaped spaces (e.g. `TB\ Default\ Item`)
+- Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
 
 ### UX
-- Add post-snapshot notice about cfprefsd cache stabilization delay
+- Add contextual note `killall Finder` for toolbar changes
 ## 1.1.0 — 2026-02-17
 
 ### Performance

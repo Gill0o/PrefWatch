@@ -23,6 +23,8 @@
 #     -q, --only-cmds       Show only executable commands (default)
 #     -e, --exclude <glob>  Comma-separated glob patterns to exclude
 #     -h, --help            Show this help message
+#     --mdm                 MDM deployment mode: replace user home path with
+#                           $loggedInUser variable in PlistBuddy commands
 #
 #   Examples:
 #     ./prefwatch.sh                    # Monitor ALL (default)
@@ -38,12 +40,14 @@
 #   Jamf Parameters:
 #     $4 = Domain (e.g., NSGlobalDomain, ALL or *)
 #     $5 = Log path (optional). Default:
-#          - ALL: /var/log/preferences.watch.log
-#          - Domain: /var/log/<domain>.prefs.log
+#          - ALL: /var/log/prefwatch-v<version>.log
+#          - Domain: /var/log/prefwatch-v<version>-<domain>.log
 #     $6 = INCLUDE_SYSTEM (true/false) — include system preferences (default: true)
 #     $7 = ONLY_CMDS (true/false) — show only commands without debug (default: true)
 #     $8 = EXCLUDE_DOMAINS — comma-separated glob patterns to exclude
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
+#     $9 = MDM_OUTPUT (true/false) — replace user home path with $loggedInUser
+#          variable in PlistBuddy commands for MDM deployment (default: false)
 # ============================================================================
 
 # ============================================================================
@@ -74,6 +78,8 @@ Options:
   -q, --only-cmds       Show only executable commands (default)
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   -h, --help            Show this help message
+  --mdm                 MDM deployment mode: replace user home path with
+                        \$loggedInUser variable in PlistBuddy commands
 
 Examples:
   # Monitor all domains (default behavior)
@@ -98,6 +104,7 @@ Jamf Pro Mode:
     $6 = INCLUDE_SYSTEM (true/false)
     $7 = ONLY_CMDS (true/false)
     $8 = EXCLUDE_DOMAINS
+    $9 = MDM_OUTPUT (true/false)
 
 EOF
   exit 0
@@ -116,6 +123,7 @@ parse_cli_args() {
   INCLUDE_SYSTEM_RAW="true"
   ONLY_CMDS_RAW="true"
   EXCLUDE_DOMAINS=""
+  MDM_OUTPUT_RAW="false"
 
   # If first arg doesn't start with -, it's the domain
   if [[ -n "${1:-}" && "${1}" != -* ]]; then
@@ -158,6 +166,10 @@ parse_cli_args() {
         EXCLUDE_DOMAINS="${2}"
         shift 2
         ;;
+      --mdm)
+        MDM_OUTPUT_RAW="true"
+        shift
+        ;;
       -h|--help)
         show_help
         ;;
@@ -187,6 +199,7 @@ if [ "$JAMF_MODE" = "true" ]; then
   INCLUDE_SYSTEM_RAW="${6:-true}"
   ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
   EXCLUDE_DOMAINS="${8:-}"
+  MDM_OUTPUT_RAW="${9:-false}"
 else
   # CLI mode: use flag-based parsing
   parse_cli_args "$@"
@@ -201,6 +214,16 @@ to_bool() {
 }
 ONLY_CMDS=$(to_bool "$ONLY_CMDS_RAW")
 INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
+MDM_OUTPUT=$(to_bool "$MDM_OUTPUT_RAW")
+
+# Replace user home path with $loggedInUser variable for MDM deployment scripts
+mdm_plist_path() {
+  if [ "$MDM_OUTPUT" = "true" ] && [[ "$1" == "$HOME"* ]]; then
+    printf '%s' "/Users/\$loggedInUser${1#$HOME}"
+  else
+    printf '%s' "$1"
+  fi
+}
 
 # Always disable xtrace to prevent noisy variable assignments (kv=, keyname=, etc.)
 # This prevents debug output from appearing even with -v/--verbose flag
@@ -690,7 +713,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
@@ -1334,6 +1357,11 @@ _emit_contextual_note() {
       esac ;;
     com.apple.symbolichotkeys)
       _note="Keyboard shortcut changes require logout/login to take effect" ;;
+    com.apple.finder)
+      case "$array_base" in
+        NSToolbar*)
+          _note="Run 'killall Finder' to apply toolbar changes" ;;
+      esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1745,10 +1773,11 @@ show_plist_diff() {
           fi
           # Filter noisy key paths in PlistBuddy commands
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${path}\""
+          local _mdm_path=$(mdm_plist_path "$path")
+          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           case "$kind" in
             USER) log_user "Cmd: $pb_full" ;;
             SYSTEM) log_system "Cmd: $pb_full" ;;
@@ -2078,10 +2107,11 @@ show_domain_diff() {
           [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
           case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
+            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*) continue ;;
           esac
           [[ "$_pb_cmd" == *"<data:"* ]] && continue
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_pb_plist_path}\""
+          local _mdm_path=$(mdm_plist_path "$_pb_plist_path")
+          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           log_line "Cmd: $pb_full"
           continue
         fi
@@ -2508,7 +2538,6 @@ start_watch_all() {
 
   if [ "${SNAPSHOT_READY:-false}" = "true" ]; then
     snapshot_notice "Initial snapshots processed — you can now make your changes"
-    snapshot_notice "Note: first detection may be slower while the system preference cache (cfprefsd) stabilizes"
   fi
 
   # fs_usage monitoring function
