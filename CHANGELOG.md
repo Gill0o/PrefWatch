@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 — unreleased
+
+### Fix
+- Apply `--mdm` path substitution to PlistBuddy `Delete` commands (was only applied to `Add`/`Set`)
+
 ## 1.1.1 — 2026-02-24
 
 ### Feature

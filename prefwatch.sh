@@ -1241,7 +1241,8 @@ convert_delete_to_plistbuddy() {
     printf '# WARNING: Array deletion - indexes change after each deletion\n'
     printf '# For multiple deletions: execute from HIGHEST index to LOWEST\n'
   fi
-  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$plist_path"
+  local _mdm_path=$(mdm_plist_path "$plist_path")
+  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$_mdm_path"
   return 0
 }
 
