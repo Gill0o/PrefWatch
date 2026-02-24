@@ -136,7 +136,9 @@ NEXT_VER="${MAJOR}.${MINOR}.$((PATCH + 1))"
 echo "Bumping dev to v$NEXT_VER..."
 /usr/bin/sed -i '' "s/^# Version:.*$/# Version: $NEXT_VER/" prefwatch.sh
 
-# Add new CHANGELOG section
+# Update released version date and add new CHANGELOG section on dev
+TODAY=$(/bin/date +%Y-%m-%d)
+/usr/bin/sed -i '' "s/## $CURRENT_VER — unreleased/## $CURRENT_VER — $TODAY/" CHANGELOG.md
 /usr/bin/sed -i '' "1a\\
 \\
 ## $NEXT_VER — unreleased\\
