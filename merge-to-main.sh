@@ -96,6 +96,13 @@ for f in "${DEV_ONLY_FILES[@]}"; do
   fi
 done
 
+# Replace "unreleased" with today's date in CHANGELOG
+if [ -f "CHANGELOG.md" ]; then
+  TODAY=$(/bin/date +%Y-%m-%d)
+  /usr/bin/sed -i '' "s/— unreleased/— $TODAY/" CHANGELOG.md
+  git add CHANGELOG.md
+fi
+
 echo "Committing..."
 git commit -m "$MSG" || { echo "ERROR: commit failed"; exit 1; }
 
@@ -111,5 +118,10 @@ echo "Creating tag $TAG..."
 git tag -a "$TAG" -m "PrefWatch $TAG"
 git push origin "$TAG" || { echo "ERROR: tag push failed"; exit 1; }
 
+# Create GitHub release with CHANGELOG notes for this version
+echo "Creating GitHub release..."
+RELEASE_NOTES=$(/usr/bin/awk '/^## /{if(n++)exit}n' CHANGELOG.md)
+gh release create "$TAG" --title "PrefWatch $TAG" --notes "$RELEASE_NOTES" || echo "WARNING: gh release failed (install gh CLI or create manually)"
+
 echo ""
-echo "Done — merged, pushed, and tagged $TAG."
+echo "Done — merged, pushed, tagged $TAG, and published release."
