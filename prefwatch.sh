@@ -259,6 +259,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
   "com.apple.appleaccountd"
+  "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
   "com.apple.CacheDelete"
@@ -930,6 +931,20 @@ is_noisy_key() {
         NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
           return 0 ;;
         # Keep: DisabledUTTypes, EnabledPreferenceRules, orderedItems, etc.
+      esac
+      ;;
+
+    # Zoom: Filter per-user session state (tab selection, XMPP identifiers)
+    us.zoom.xos)
+      case "$keyname" in
+        *@xmpp.zoom.us*) return 0 ;;
+      esac
+      ;;
+
+    # iPod/iPhone sync: Filter connection timestamps and counters
+    com.apple.iPod)
+      case "$keyname" in
+        Connected|Use\ Count) return 0 ;;
       esac
       ;;
 

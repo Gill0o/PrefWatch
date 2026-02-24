@@ -20,6 +20,9 @@
 - Filter `History` for `com.apple.universalaccess` (internal change history log)
 - Filter `KB_SpellingLanguage*` in `.GlobalPreferences` (Keyboard panel first-open artifact)
 - Filter `com.apple.custommenu.apps` for `com.apple.universalaccess` (Keyboard Shortcuts panel artifact)
+- Exclude `com.apple.remindd.babysitter` (Reminders CloudKit sync daemon)
+- Filter `Connected` and `Use Count` for `com.apple.iPod` (sync timestamps and counters)
+- Filter `*@xmpp.zoom.us*` for `us.zoom.xos` (Zoom per-user session state)
 
 ### Refactor
 - Unify PBCMD filtering: new `is_noisy_pbcmd()` function extracts top-level key and delegates to `is_noisy_key()`, eliminating duplicated 27-pattern case statement — all key-level filters now automatically apply to both `defaults` and PlistBuddy output
