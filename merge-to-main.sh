@@ -123,5 +123,28 @@ echo "Creating GitHub release..."
 RELEASE_NOTES=$(/usr/bin/awk '/^## /{if(n++)exit}n' CHANGELOG.md)
 gh release create "$TAG" --title "PrefWatch $TAG" --notes "$RELEASE_NOTES" || echo "WARNING: gh release failed (install gh CLI or create manually)"
 
+# Return to dev and bump patch version for next development cycle
+git checkout dev
+
+CURRENT_VER="${TAG#v}"
+MAJOR="${CURRENT_VER%%.*}"
+REST="${CURRENT_VER#*.}"
+MINOR="${REST%%.*}"
+PATCH="${REST#*.}"
+NEXT_VER="${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+echo "Bumping dev to v$NEXT_VER..."
+/usr/bin/sed -i '' "s/^# Version:.*$/# Version: $NEXT_VER/" prefwatch.sh
+
+# Add new CHANGELOG section
+/usr/bin/sed -i '' "1a\\
+\\
+## $NEXT_VER — unreleased\\
+" CHANGELOG.md
+
+git add prefwatch.sh CHANGELOG.md
+git commit -m "bump: start v$NEXT_VER development"
+git push origin dev
+
 echo ""
-echo "Done — merged, pushed, tagged $TAG, and published release."
+echo "Done — released $TAG on main, dev bumped to v$NEXT_VER."
