@@ -245,7 +245,6 @@ unsetopt verbose 2>/dev/null || true
 typeset -a DEFAULT_EXCLUSIONS=(
   # Background daemons & agents (very noisy, no user-configurable preferences)
   "com.apple.cfprefsd*"
-  "com.apple.notificationcenterui*"
   "com.apple.ncplugin*"
   "com.apple.knowledge-agent"
   "com.apple.DuetExpertCenter*"
@@ -906,6 +905,14 @@ is_noisy_key() {
     com.apple.universalaccess)
       case "$keyname" in
         History) return 0 ;;
+      esac
+      ;;
+
+    # Notification Center / Widgets: Filter analytics, keep widget configuration
+    com.apple.notificationcenterui)
+      case "$keyname" in
+        last-analytics-stamp|WidgetMigrationState) return 0 ;;
+        # Keep: widgets (desktop/notification center widget configuration)
       esac
       ;;
 

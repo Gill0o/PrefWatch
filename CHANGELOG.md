@@ -18,6 +18,7 @@
 - Filter `*WindowOriginFrame*` (Zoom window position state)
 - Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
 - Filter `History` for `com.apple.universalaccess` (internal change history log)
+- Un-exclude `com.apple.notificationcenterui` to detect widget add/remove; filter `last-analytics-stamp` and `WidgetMigrationState` as noise
 
 ### Refactor
 - Unify PBCMD filtering: new `is_noisy_pbcmd()` function extracts top-level key and delegates to `is_noisy_key()`, eliminating duplicated 27-pattern case statement — all key-level filters now automatically apply to both `defaults` and PlistBuddy output
