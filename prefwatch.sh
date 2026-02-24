@@ -908,6 +908,14 @@ is_noisy_key() {
       esac
       ;;
 
+    # GlobalPreferences: Filter Keyboard panel first-open artifacts
+    .GlobalPreferences)
+      case "$keyname" in
+        KB_SpellingLanguage|KB_SpellingLanguageIsAutomatic) return 0 ;;
+        # Keep: KB_DoubleQuoteOption, KB_SingleQuoteOption, NSUserQuotesArray (quote style)
+      esac
+      ;;
+
     # Notification Center / Widgets: Filter analytics, keep widget configuration
     com.apple.notificationcenterui)
       case "$keyname" in
