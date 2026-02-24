@@ -18,8 +18,8 @@
 - Filter `*WindowOriginFrame*` (Zoom window position state)
 - Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
 - Filter `History` for `com.apple.universalaccess` (internal change history log)
-- Un-exclude `com.apple.notificationcenterui` to detect widget add/remove; filter `last-analytics-stamp` and `WidgetMigrationState` as noise
 - Filter `KB_SpellingLanguage*` in `.GlobalPreferences` (Keyboard panel first-open artifact)
+- Filter `com.apple.custommenu.apps` for `com.apple.universalaccess` (Keyboard Shortcuts panel artifact)
 
 ### Refactor
 - Unify PBCMD filtering: new `is_noisy_pbcmd()` function extracts top-level key and delegates to `is_noisy_key()`, eliminating duplicated 27-pattern case statement — all key-level filters now automatically apply to both `defaults` and PlistBuddy output
@@ -27,11 +27,15 @@
 - Remove dead code in `is_noisy_command()` (patterns redundant with `is_noisy_key()`)
 - Consolidate script sections: merge Plist & PlistBuddy, add Domain Diff banner, relocate caches next to consumers
 - Soften Finder domain note: not all changes require `killall Finder`
+- Drop redundant `# Complex type` comment for dict/array keys — PlistBuddy commands already show the full structure
+- Add `book` (macOS bookmark data) to volatile keys for array fingerprinting — prevents phantom add/delete on Dock reorder
+- Defer all contextual output (domain notes, PBCMD comments, labels) until a real command passes noise filtering — prevents orphaned notes
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
 - Detect value changes within existing top-level arrays (e.g. Spotlight `orderedItems` enable/disable)
 - Prevent false `Set` commands when array elements shift after insertion/deletion (e.g. Dock reorder)
+- Retry plist read after 0.5s when file appears unchanged — fixes missed first Dock action caused by cfprefsd async disk writes
 - Fix orphan contextual note when all PBCMD commands are filtered (lazy emit after filter)
 - Fix duplicate commands for new top-level arrays (dedup between `emit_array_additions` and `emit_nested_dict_changes`)
 - Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference: show/hide tab bar)
@@ -42,6 +46,7 @@
 - Add generic first-create note when any top-level dict/array is created for the first time (replaces Spotlight-specific note)
 - Add contextual note for symbolic hotkeys parameter rewrite on toggle
 - Add post-snapshot polling delay notice
+- Add contextual note for `com.apple.WindowManager` (Desktop & Dock first-open writes all defaults)
 
 ## 1.1.0 — 2026-02-17
 

@@ -245,6 +245,7 @@ unsetopt verbose 2>/dev/null || true
 typeset -a DEFAULT_EXCLUSIONS=(
   # Background daemons & agents (very noisy, no user-configurable preferences)
   "com.apple.cfprefsd*"
+  "com.apple.notificationcenterui*"
   "com.apple.ncplugin*"
   "com.apple.knowledge-agent"
   "com.apple.DuetExpertCenter*"
@@ -904,7 +905,7 @@ is_noisy_key() {
     # Universal Access: Filter internal change history, keep accessibility settings
     com.apple.universalaccess)
       case "$keyname" in
-        History) return 0 ;;
+        History|com.apple.custommenu.apps) return 0 ;;
       esac
       ;;
 
@@ -913,14 +914,6 @@ is_noisy_key() {
       case "$keyname" in
         KB_SpellingLanguage|KB_SpellingLanguageIsAutomatic) return 0 ;;
         # Keep: KB_DoubleQuoteOption, KB_SingleQuoteOption, NSUserQuotesArray (quote style)
-      esac
-      ;;
-
-    # Notification Center / Widgets: Filter analytics, keep widget configuration
-    com.apple.notificationcenterui)
-      case "$keyname" in
-        last-analytics-stamp|WidgetMigrationState) return 0 ;;
-        # Keep: widgets (desktop/notification center widget configuration)
       esac
       ;;
 
@@ -1286,7 +1279,7 @@ results = []
 # Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
 # Must be stripped before comparing array elements to avoid phantom add/delete
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
-                  'is-beta', 'tile-type', 'GUID'}
+                  'is-beta', 'tile-type', 'GUID', 'book'}
 
 def strip_volatile(obj):
     """Strip volatile metadata keys for stable array element matching"""
@@ -1445,6 +1438,8 @@ _emit_contextual_note() {
       esac ;;
     com.apple.finder)
       _note="Some changes require 'killall Finder' to apply — view settings may also be overridden per-folder in .DS_Store" ;;
+    com.apple.WindowManager)
+      _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1488,7 +1483,7 @@ results = []
 
 # Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
-                  'is-beta', 'tile-type', 'GUID'}
+                  'is-beta', 'tile-type', 'GUID', 'book'}
 
 def strip_volatile(obj):
     """Strip volatile metadata keys for stable array element matching"""
@@ -1629,7 +1624,7 @@ curr = load(curr_path)
 
 # Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
-                  'is-beta', 'tile-type', 'GUID'}
+                  'is-beta', 'tile-type', 'GUID', 'book'}
 
 def strip_volatile(obj):
     """Strip volatile metadata keys for stable array element matching"""
@@ -1860,10 +1855,22 @@ show_plist_diff() {
   fi
 
   # Dedup: skip if no change since last processing
+  # Retry once after short delay — cfprefsd writes to disk asynchronously,
+  # so the file may still contain stale data when fs_usage fires
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
-    /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
-    /bin/rmdir "$lockdir" 2>/dev/null || true
-    return 0
+    /bin/sleep 0.5
+    if [ "$silent" != "true" ]; then
+      dump_plist "$path" "$curr" &
+      dump_plist_json "$path" "$curr_json" &
+      wait
+    else
+      dump_plist "$path" "$curr"
+    fi
+    if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
+      /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
+      /bin/rmdir "$lockdir" 2>/dev/null || true
+      return 0
+    fi
   fi
 
   typeset -A _skip_keys
@@ -1887,30 +1894,35 @@ show_plist_diff() {
       _has_array_additions=true
       typeset -A _noted_arrays=()
       local _domain_note_emitted=false
+      local -a _pending_comments=()
+      local _last_array_base=""
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
           if [[ "$_pb_cmd" == "#"* ]]; then
-            if [ "$_domain_note_emitted" = "false" ]; then
-              _emit_contextual_note "$_dom" ""
-              _domain_note_emitted=true
-            fi
-            case "$kind" in
-              USER) log_user "Cmd: $_pb_cmd" ;;
-              SYSTEM) log_system "Cmd: $_pb_cmd" ;;
-              *) log_line "Cmd: $_pb_cmd" ;;
-            esac
+            _pending_comments+=("$_pb_cmd")
             continue
           fi
           # Filter noisy key paths in PlistBuddy commands
           is_noisy_pbcmd "$_dom" "$_pb_cmd" && continue
-          # Emit domain-level note before first non-filtered command
+          # Emit domain-level note before first non-filtered command (using tracked array_base)
           if [ "$_domain_note_emitted" = "false" ]; then
-            _emit_contextual_note "$_dom" ""
+            _emit_contextual_note "$_dom" "$_last_array_base"
             _domain_note_emitted=true
+          fi
+          # Flush buffered comments now that we have a real command
+          if (( ${#_pending_comments[@]} > 0 )); then
+            for _pc in "${_pending_comments[@]}"; do
+              case "$kind" in
+                USER) log_user "Cmd: $_pc" ;;
+                SYSTEM) log_system "Cmd: $_pc" ;;
+                *) log_line "Cmd: $_pc" ;;
+              esac
+            done
+            _pending_comments=()
           fi
           local _mdm_path=$(mdm_plist_path "$path")
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
@@ -1921,7 +1933,8 @@ show_plist_diff() {
           esac
           continue
         fi
-        # Metadata line: populate _skip_keys
+        # Metadata line: populate _skip_keys and track array_base for deferred note
+        _last_array_base="$_array_base"
         _skip_keys["$_array_base"]=1
         if [ -n "$_array_idx" ]; then
           _skip_keys[":${_array_base}:${_array_idx}"]=1
@@ -1941,11 +1954,6 @@ show_plist_diff() {
               _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
             fi
           done
-        fi
-        # Emit contextual note once per array
-        if [ -z "${_noted_arrays[$_array_base]:-}" ]; then
-          _emit_contextual_note "$_dom" "$_array_base"
-          _noted_arrays[$_array_base]=1
         fi
       done <<< "$_array_meta_raw"
     fi
@@ -2068,7 +2076,7 @@ show_plist_diff() {
                   bool) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
                   int) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
                   float) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
-                  array|dict) cmd="# Complex type ($plutil_type): defaults write ${dom} \"${keyname}\" - see plist" ;;
+                  array|dict) cmd="" ;;
                   *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
                 esac
               else
@@ -2076,21 +2084,23 @@ show_plist_diff() {
               fi
             fi
 
-            local _cmd_dom
-            _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-            if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-              :
-            elif is_noisy_command "$cmd"; then
-              :
-            else
-              if [ -z "${_noted_dom[$_dom]:-}" ]; then
-                _emit_contextual_note "$_dom" ""
-                _noted_dom[$_dom]=1
-              fi
-              if [ "$kind" = "USER" ]; then
-                log_user "Cmd: $cmd"
+            if [ -n "$cmd" ]; then
+              local _cmd_dom
+              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+                :
+              elif is_noisy_command "$cmd"; then
+                :
               else
-                log_system "Cmd: $cmd"
+                if [ -z "${_noted_dom[$_dom]:-}" ]; then
+                  _emit_contextual_note "$_dom" ""
+                  _noted_dom[$_dom]=1
+                fi
+                if [ "$kind" = "USER" ]; then
+                  log_user "Cmd: $cmd"
+                else
+                  log_system "Cmd: $cmd"
+                fi
               fi
             fi
             ;;
@@ -2232,34 +2242,40 @@ show_domain_diff() {
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       typeset -A _noted_arrays=()
       local _domain_note_emitted=false
+      local -a _pending_comments=()
+      local _last_array_base=""
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
           if [[ "$_pb_cmd" == "#"* ]]; then
-            if [ "$_domain_note_emitted" = "false" ]; then
-              _emit_contextual_note "$dom" ""
-              _domain_note_emitted=true
-            fi
-            log_line "Cmd: $_pb_cmd"
+            _pending_comments+=("$_pb_cmd")
             continue
           fi
           [ -n "$_pb_plist_path" ] || continue
           # Filter noisy key paths in PlistBuddy commands
           is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
-          # Emit domain-level note before first non-filtered command
+          # Emit domain-level note before first non-filtered command (using tracked array_base)
           if [ "$_domain_note_emitted" = "false" ]; then
-            _emit_contextual_note "$dom" ""
+            _emit_contextual_note "$dom" "$_last_array_base"
             _domain_note_emitted=true
+          fi
+          # Flush buffered comments now that we have a real command
+          if (( ${#_pending_comments[@]} > 0 )); then
+            for _pc in "${_pending_comments[@]}"; do
+              log_line "Cmd: $_pc"
+            done
+            _pending_comments=()
           fi
           local _mdm_path=$(mdm_plist_path "$_pb_plist_path")
           local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           log_line "Cmd: $pb_full"
           continue
         fi
-        # Metadata line: populate _skip_keys
+        # Metadata line: populate _skip_keys and track array_base for deferred note
+        _last_array_base="$_array_base"
         _skip_keys["$_array_base"]=1
         if [ -n "$_array_idx" ]; then
           _skip_keys[":${_array_base}:${_array_idx}"]=1
@@ -2279,11 +2295,6 @@ show_domain_diff() {
               _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
             fi
           done
-        fi
-        # Emit contextual note once per array
-        if [ -z "${_noted_arrays[$_array_base]:-}" ]; then
-          _emit_contextual_note "$dom" "$_array_base"
-          _noted_arrays[$_array_base]=1
         fi
       done <<< "$_array_meta_raw"
     fi
@@ -2389,7 +2400,7 @@ show_domain_diff() {
                   bool) cmd="defaults write ${dom} \"${keyname}\" -bool ${plutil_value}" ;;
                   int) cmd="defaults write ${dom} \"${keyname}\" -int ${plutil_value}" ;;
                   float) cmd="defaults write ${dom} \"${keyname}\" -float ${plutil_value}" ;;
-                  array|dict) cmd="# Complex type ($plutil_type): defaults write ${dom} \"${keyname}\" - see plist" ;;
+                  array|dict) cmd="" ;;
                   *) cmd="defaults write ${dom} \"${keyname}\" <type> <value>" ;;
                 esac
               else
@@ -2397,21 +2408,23 @@ show_domain_diff() {
               fi
             fi
 
-            local _cmd_dom
-            _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-            if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-              :
-            elif is_noisy_command "$cmd"; then
-              :
-            else
-              if [ -z "${_noted_dom[$dom]:-}" ]; then
-                _emit_contextual_note "$dom" ""
-                _noted_dom[$dom]=1
-              fi
-              if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+            if [ -n "$cmd" ]; then
+              local _cmd_dom
+              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+                :
+              elif is_noisy_command "$cmd"; then
                 :
               else
-                log_line "Cmd: $cmd"
+                if [ -z "${_noted_dom[$dom]:-}" ]; then
+                  _emit_contextual_note "$dom" ""
+                  _noted_dom[$dom]=1
+                fi
+                if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+                  :
+                else
+                  log_line "Cmd: $cmd"
+                fi
               fi
             fi
             ;;
