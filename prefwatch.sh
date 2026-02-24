@@ -1455,6 +1455,8 @@ _emit_contextual_note() {
       _note="Some changes require 'killall Finder' to apply — view settings may also be overridden per-folder in .DS_Store" ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+    com.apple.universalaccess)
+      _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1870,17 +1872,21 @@ show_plist_diff() {
   fi
 
   # Dedup: skip if no change since last processing
-  # Retry once after short delay — cfprefsd writes to disk asynchronously,
-  # so the file may still contain stale data when fs_usage fires
+  # Retry with increasing delays — cfprefsd writes to disk asynchronously,
+  # so the file may still contain stale data when fs_usage fires (0.5s + 1.5s = 2s max)
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
-    /bin/sleep 0.5
-    if [ "$silent" != "true" ]; then
-      dump_plist "$path" "$curr" &
-      dump_plist_json "$path" "$curr_json" &
-      wait
-    else
-      dump_plist "$path" "$curr"
-    fi
+    local _retry_delay
+    for _retry_delay in 0.5 1.5; do
+      /bin/sleep "$_retry_delay"
+      if [ "$silent" != "true" ]; then
+        dump_plist "$path" "$curr" &
+        dump_plist_json "$path" "$curr_json" &
+        wait
+      else
+        dump_plist "$path" "$curr"
+      fi
+      /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null || break
+    done
     if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
       /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
       /bin/rmdir "$lockdir" 2>/dev/null || true

@@ -38,7 +38,7 @@
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
 - Detect value changes within existing top-level arrays (e.g. Spotlight `orderedItems` enable/disable)
 - Prevent false `Set` commands when array elements shift after insertion/deletion (e.g. Dock reorder)
-- Retry plist read after 0.5s when file appears unchanged — fixes missed first Dock action caused by cfprefsd async disk writes
+- Retry plist read with increasing delays (0.5s + 1.5s) when file appears unchanged — fixes missed Dock actions caused by cfprefsd async disk writes
 - Fix orphan contextual note when all PBCMD commands are filtered (lazy emit after filter)
 - Fix duplicate commands for new top-level arrays (dedup between `emit_array_additions` and `emit_nested_dict_changes`)
 - Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference: show/hide tab bar)
@@ -50,6 +50,7 @@
 - Add contextual note for symbolic hotkeys parameter rewrite on toggle
 - Add post-snapshot polling delay notice
 - Add contextual note for `com.apple.WindowManager` (Desktop & Dock first-open writes all defaults)
+- Add contextual note for `com.apple.universalaccess` (Accessibility first-open writes all defaults)
 
 ## 1.1.0 — 2026-02-17
 
