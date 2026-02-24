@@ -259,6 +259,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
   "com.apple.appleaccountd"
+  "com.apple.appleaccount"
+  "com.apple.shazamd"
+  "com.apple.wallpaper.aerial"
   "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
@@ -752,7 +755,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters (not user preferences)
-    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*)
+    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)

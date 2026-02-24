@@ -5,6 +5,12 @@
 ### Fix
 - Apply `--mdm` path substitution to PlistBuddy `Delete` commands (was only applied to `Add`/`Set`)
 
+### Noise
+- Filter `*SKPurchaseIntent*` (StoreKit license check timestamps)
+- Exclude `com.apple.appleaccount` (boot session IDs)
+- Exclude `com.apple.shazamd` (Shazam daemon CloudKit per-boot tasks)
+- Exclude `com.apple.wallpaper.aerial` (Aerial wallpaper remote asset URLs)
+
 ## 1.1.1 — 2026-02-24
 
 ### Feature
