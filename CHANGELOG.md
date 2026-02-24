@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.1.1 — unreleased
+
+### Feature
+- New `--mdm` CLI option (Jamf `$9 = MDM_OUTPUT`): replace user home path with `$loggedInUser` variable in PlistBuddy commands for MDM deployment scripts
+
+### Fix
+- Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization)
+- Detect value changes within existing top-level arrays (e.g. Spotlight `orderedItems` enable/disable)
+- Prevent false `Set` commands when array elements shift after insertion/deletion (e.g. Dock reorder)
+- Strip volatile plist metadata (`book`, `GUID`, etc.) before array matching — prevents phantom add/delete
+- Retry plist read with increasing delays (0.5s + 1.5s) when cfprefsd hasn't flushed to disk
+- Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference)
+- Unified PBCMD filtering: key-level filters now apply to both `defaults` and PlistBuddy output
+
+### Noise
+- Exclude 9 domains: `protectedcloudstorage`, `DataDeliveryServices`, `ReportCrash`, `homeenergyd`, `seserviced`, `spotlightknowledged`, `mediasharingd`, `remindd.babysitter`, `VirtualBuddy`
+- Filter Settings panel artifacts: `WebKitUseSystemAppearance`, `KB_SpellingLanguage*`, `com.apple.custommenu.apps`, `History`
+- Filter Zoom session state (`*WindowOriginFrame*`, `*@xmpp.zoom.us*`)
+- Filter iPod/Siri counters (`Connected`, `Use Count`, `*DataSequenceKey*`)
+
+### UX
+- Contextual notes for Finder (`killall Finder` + `.DS_Store`), Desktop & Dock, Accessibility, symbolic hotkeys
+- First-open warnings for Settings panels that write all defaults on first access
+- Generic first-create note when any top-level dict/array is created for the first time
+
 ## 1.1.0 — 2026-02-17
 
 ### Performance

@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.0
+# Version: 1.1.1
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -13,7 +13,7 @@
 #
 #   Arguments:
 #     [domain]              Preference domain (default: "ALL")
-#                           Examples: com.apple.dock, com.apple.finder, ALL
+#                           Examples: NSGlobalDomain, com.apple.finder, ALL
 #
 #   Options:
 #     -l, --log <path>      Custom log file path (default: auto-generated)
@@ -23,12 +23,14 @@
 #     -q, --only-cmds       Show only executable commands (default)
 #     -e, --exclude <glob>  Comma-separated glob patterns to exclude
 #     -h, --help            Show this help message
+#     --mdm                 MDM deployment mode: replace user home path with
+#                           $loggedInUser variable in PlistBuddy commands
 #
 #   Examples:
 #     ./prefwatch.sh                    # Monitor ALL (default)
 #     ./prefwatch.sh -v                 # Monitor ALL verbose
 #     ./prefwatch.sh --log /tmp/all.log # Monitor ALL with custom log
-#     ./prefwatch.sh com.apple.dock     # Monitor specific domain
+#     ./prefwatch.sh NSGlobalDomain     # Monitor specific domain
 #     ./prefwatch.sh com.apple.finder -v # Specific domain verbose
 #
 # Jamf Pro Mode (automatic detection):
@@ -36,14 +38,16 @@
 #   $1-$3 are Jamf reserved (mount_point, computer_name, username)
 #
 #   Jamf Parameters:
-#     $4 = Domain (e.g., com.apple.finder, ALL or *)
+#     $4 = Domain (e.g., NSGlobalDomain, ALL or *)
 #     $5 = Log path (optional). Default:
-#          - ALL: /var/log/preferences.watch.log
-#          - Domain: /var/log/<domain>.prefs.log
+#          - ALL: /var/log/prefwatch-v<version>.log
+#          - Domain: /var/log/prefwatch-v<version>-<domain>.log
 #     $6 = INCLUDE_SYSTEM (true/false) — include system preferences (default: true)
 #     $7 = ONLY_CMDS (true/false) — show only commands without debug (default: true)
 #     $8 = EXCLUDE_DOMAINS — comma-separated glob patterns to exclude
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
+#     $9 = MDM_OUTPUT (true/false) — replace user home path with $loggedInUser
+#          variable in PlistBuddy commands for MDM deployment (default: false)
 # ============================================================================
 
 # ============================================================================
@@ -64,7 +68,7 @@ Monitor and log changes to macOS preference domains in real-time.
 
 Arguments:
   [domain]              Preference domain to monitor (default: "ALL")
-                        Examples: com.apple.dock, com.apple.finder, ALL
+                        Examples: NSGlobalDomain, com.apple.finder, ALL
 
 Options:
   -l, --log <path>      Custom log file path (default: auto-generated)
@@ -74,6 +78,8 @@ Options:
   -q, --only-cmds       Show only executable commands (default)
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   -h, --help            Show this help message
+  --mdm                 MDM deployment mode: replace user home path with
+                        \$loggedInUser variable in PlistBuddy commands
 
 Examples:
   # Monitor all domains (default behavior)
@@ -82,7 +88,7 @@ Examples:
   ./prefwatch.sh --log /tmp/all-prefs.log
 
   # Monitor a specific domain
-  ./prefwatch.sh com.apple.dock
+  ./prefwatch.sh NSGlobalDomain
   ./prefwatch.sh com.apple.finder -v
 
   # Monitor with exclusions
@@ -98,6 +104,7 @@ Jamf Pro Mode:
     $6 = INCLUDE_SYSTEM (true/false)
     $7 = ONLY_CMDS (true/false)
     $8 = EXCLUDE_DOMAINS
+    $9 = MDM_OUTPUT (true/false)
 
 EOF
   exit 0
@@ -116,6 +123,7 @@ parse_cli_args() {
   INCLUDE_SYSTEM_RAW="true"
   ONLY_CMDS_RAW="true"
   EXCLUDE_DOMAINS=""
+  MDM_OUTPUT_RAW="false"
 
   # If first arg doesn't start with -, it's the domain
   if [[ -n "${1:-}" && "${1}" != -* ]]; then
@@ -158,6 +166,10 @@ parse_cli_args() {
         EXCLUDE_DOMAINS="${2}"
         shift 2
         ;;
+      --mdm)
+        MDM_OUTPUT_RAW="true"
+        shift
+        ;;
       -h|--help)
         show_help
         ;;
@@ -187,6 +199,7 @@ if [ "$JAMF_MODE" = "true" ]; then
   INCLUDE_SYSTEM_RAW="${6:-true}"
   ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
   EXCLUDE_DOMAINS="${8:-}"
+  MDM_OUTPUT_RAW="${9:-false}"
 else
   # CLI mode: use flag-based parsing
   parse_cli_args "$@"
@@ -201,6 +214,16 @@ to_bool() {
 }
 ONLY_CMDS=$(to_bool "$ONLY_CMDS_RAW")
 INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
+MDM_OUTPUT=$(to_bool "$MDM_OUTPUT_RAW")
+
+# Replace user home path with $loggedInUser variable for MDM deployment scripts
+mdm_plist_path() {
+  if [ "$MDM_OUTPUT" = "true" ] && [[ "$1" == "$HOME"* ]]; then
+    printf '%s' "/Users/\$loggedInUser${1#$HOME}"
+  else
+    printf '%s' "$1"
+  fi
+}
 
 # Always disable xtrace to prevent noisy variable assignments (kv=, keyname=, etc.)
 # This prevents debug output from appearing even with -v/--verbose flag
@@ -218,7 +241,7 @@ unsetopt verbose 2>/dev/null || true
 
 # Default exclusion patterns for noisy/irrelevant domains
 # These domains change frequently but are rarely useful for preference monitoring
-# User can override with --exclude flag or $8 parameter in Jamf mode
+# You can override with --exclude flag or $8 parameter in Jamf mode
 typeset -a DEFAULT_EXCLUSIONS=(
   # Background daemons & agents (very noisy, no user-configurable preferences)
   "com.apple.cfprefsd*"
@@ -236,6 +259,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
   "com.apple.appleaccountd"
+  "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
   "com.apple.CacheDelete"
@@ -387,6 +411,30 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Biome sync daemon (behavioral telemetry, CloudKit cache)
   "com.apple.biomesyncd"
+
+  # Protected CloudKit keychain sync (CloudKit account cache)
+  "com.apple.protectedcloudstorage*"
+
+  # Data Delivery Services (metadata sync timestamps)
+  "com.apple.DataDeliveryServices"
+
+  # Crash Reporter (TrialCache timestamps)
+  "com.apple.ReportCrash"
+
+  # Home energy daemon (CloudKit sync cache)
+  "com.apple.homeenergyd"
+
+  # Secure Element daemon (Apple Pay/NFC session counters)
+  "com.apple.seserviced"
+
+  # VirtualBuddy (VM app window state, UI settings)
+  "codes.rambo.VirtualBuddy"
+
+  # Spotlight knowledge daemon (internal sync counters, timestamps)
+  "com.apple.spotlightknowledged.pipeline"
+
+  # Media sharing daemon (internal playlist/sharing state)
+  "com.apple.amp.mediasharingd"
 
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
@@ -639,6 +687,10 @@ prepare_logfile() {
 
 # ---------------------------------------
 # Filtering
+#
+# To exclude a noisy domain:  add its name to DEFAULT_EXCLUSIONS (glob patterns supported)
+# To filter a noisy key:      add a pattern to is_noisy_key() — automatically applies
+#                              to both 'defaults' and PlistBuddy output
 # ---------------------------------------
 
 # Check if a domain is excluded (with cache)
@@ -675,7 +727,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
@@ -720,8 +772,8 @@ is_noisy_key() {
     closeViewZoom*FocusFollowMode*)
       return 0 ;;
 
-    # Metadata counters (change constantly, not user preferences)
-    *ChangeCount*|*MetaDataChange*|*ChangeToken*)
+    # Metadata/sync counters (change constantly, not user preferences)
+    *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
       return 0 ;;
 
     # File metadata (changes on every file operation)
@@ -750,6 +802,10 @@ is_noisy_key() {
 
     # Migration flags (one-time internal state, not user preferences)
     *DidMigrate*|*didMigrate*)
+      return 0 ;;
+
+    # WebKit internal state (set when opening Settings panels that use WebKit views)
+    WebKitUseSystemAppearance)
       return 0 ;;
 
     # Cache & temporary data
@@ -811,7 +867,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -847,6 +903,21 @@ is_noisy_key() {
       esac
       ;;
 
+    # Universal Access: Filter internal change history, keep accessibility settings
+    com.apple.universalaccess)
+      case "$keyname" in
+        History|com.apple.custommenu.apps) return 0 ;;
+      esac
+      ;;
+
+    # GlobalPreferences: Filter Keyboard panel first-open artifacts
+    .GlobalPreferences)
+      case "$keyname" in
+        KB_SpellingLanguage|KB_SpellingLanguageIsAutomatic) return 0 ;;
+        # Keep: KB_DoubleQuoteOption, KB_SingleQuoteOption, NSUserQuotesArray (quote style)
+      esac
+      ;;
+
     # Spotlight: Filter UI state and counters, keep preference settings
     com.apple.Spotlight)
       case "$keyname" in
@@ -860,6 +931,20 @@ is_noisy_key() {
         NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
           return 0 ;;
         # Keep: DisabledUTTypes, EnabledPreferenceRules, orderedItems, etc.
+      esac
+      ;;
+
+    # Zoom: Filter per-user session state (tab selection, XMPP identifiers)
+    us.zoom.xos)
+      case "$keyname" in
+        *@xmpp.zoom.us*) return 0 ;;
+      esac
+      ;;
+
+    # iPod/iPhone sync: Filter connection timestamps and counters
+    com.apple.iPod)
+      case "$keyname" in
+        Connected|Use\ Count) return 0 ;;
       esac
       ;;
 
@@ -911,7 +996,8 @@ is_noisy_key() {
   return 1
 }
 
-# Filter non-useful defaults commands
+# Edge-case safety net for defaults commands that bypass key-level filtering
+# (invalid plutil output artifacts and float-encoded window positions)
 is_noisy_command() {
   local cmd="$1"
 
@@ -920,19 +1006,50 @@ is_noisy_command() {
     return 0
   fi
 
-  # Filter specific float commands that are noisy (not ALL floats!)
-  # Only filter window positions, scroll positions, and known noisy float keys
+  # Filter float window/scroll positions that slip through key-level filtering
   case "$cmd" in
     *"-float"*NSWindow*|*"-float"*Scroll*|*"-float"*Position*)
       return 0
       ;;
   esac
 
-  # Filter known keys that change frequently
-  case "$cmd" in
-    *"NSWindow Frame"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
-      return 0
-      ;;
+  return 1
+}
+
+# Filter noisy key paths in PlistBuddy commands
+# Extracts top-level key and delegates to is_noisy_key(), then checks sub-key patterns
+# Args: $1 = domain, $2 = PlistBuddy command (e.g., "Add :persistent-apps:0:tile-data dict")
+is_noisy_pbcmd() {
+  local domain="$1" pb_cmd="$2"
+
+  # Binary data is never useful
+  [[ "$pb_cmd" == *"<data:"* ]] && return 0
+
+  # Extract top-level key from PBCMD path
+  # Format: "Add :TopKey:SubKey type value" or "Set :TopKey value" or "Delete :TopKey"
+  # Spaces in key names are escaped as '\ ' by Python
+  local _raw="${pb_cmd#* :}"                    # strip verb + ":"
+  local _safe="${_raw//\\ /__PBSP__}"           # protect escaped spaces
+  local _top="${_safe%%:*}"                      # first segment (before next ":")
+  _top="${_top%% *}"                             # strip trailing type/value if no sub-key
+  # Handle top-level-only: "Add :key dict" → _top may end with placeholder+type
+  local _t
+  for _t in dict array string integer real bool; do
+    [[ "$_top" == *"__PBSP__${_t}" ]] && _top="${_top%__PBSP__${_t}}"
+  done
+  _top="${_top//__PBSP__/ }"                    # restore spaces
+
+  # Delegate to is_noisy_key for top-level key filtering
+  [ -n "$_top" ] && is_noisy_key "$domain" "$_top" && return 0
+
+  # Sub-key patterns (nested paths, not checkable via is_noisy_key)
+  case "$pb_cmd" in
+    *":dock-extra "*|*":is-beta "*|*":tile-type "*|*":recent-apps:"*|\
+    *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
+    *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
+    *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
+    *":com.apple.finder.SyncExtensions"*)
+      return 0 ;;
   esac
 
   return 1
@@ -1012,7 +1129,7 @@ snapshot_notice() {
 }
 
 # ---------------------------------------
-# Plist
+# Plist & PlistBuddy
 # ---------------------------------------
 
 # Stable text output of a plist
@@ -1097,10 +1214,6 @@ extract_type_value_with_plutil() {
   return 0
 }
 
-# ---------------------------------------
-# PlistBuddy
-# ---------------------------------------
-
 # Convert a defaults delete command to PlistBuddy
 convert_delete_to_plistbuddy() {
   # Disable xtrace to prevent debug output leaking
@@ -1178,6 +1291,19 @@ curr = load(curr_path)
 
 results = []
 
+# Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
+# Must be stripped before comparing array elements to avoid phantom add/delete
+_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
+                  'is-beta', 'tile-type', 'GUID', 'book'}
+
+def strip_volatile(obj):
+    """Strip volatile metadata keys for stable array element matching"""
+    if isinstance(obj, dict):
+        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
+    if isinstance(obj, list):
+        return [strip_volatile(e) for e in obj]
+    return obj
+
 def diff(prev_obj, curr_obj, path):
     if isinstance(curr_obj, dict):
         prev_dict = prev_obj if isinstance(prev_obj, dict) else {}
@@ -1185,15 +1311,16 @@ def diff(prev_obj, curr_obj, path):
             diff(prev_dict.get(key), value, path + [key])
     elif isinstance(curr_obj, list):
         prev_list = prev_obj if isinstance(prev_obj, list) else []
-        used = [False] * len(prev_list)
+        # Pre-compute stable fingerprints (ignoring volatile metadata)
+        prev_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in prev_list]
+        prev_avail = {}
+        for i, fp in enumerate(prev_fps):
+            prev_avail.setdefault(fp, []).append(i)
         for idx, item in enumerate(curr_obj):
-            matched = False
-            for prev_idx, prev_item in enumerate(prev_list):
-                if not used[prev_idx] and prev_item == item:
-                    used[prev_idx] = True
-                    matched = True
-                    break
-            if not matched:
+            fp = json.dumps(strip_volatile(item), sort_keys=True)
+            if fp in prev_avail and prev_avail[fp]:
+                prev_avail[fp].pop(0)
+            else:
                 results.append((tuple(path), idx, item))
     else:
         return
@@ -1253,6 +1380,9 @@ for prefix, index, item in results:
     arr_name = prefix[0]
     if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
         continue
+    # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
+    if arr_name not in prev:
+        continue
     # Emit array creation if the array is new (didn't exist in prev)
     if arr_name not in emitted_arrays and arr_name not in prev:
         print(f"PBCMD\tAdd :{arr_name} array")
@@ -1293,34 +1423,52 @@ PY
   printf '%s\n' "$py_output"
 }
 
+# Dedup domain-level notes across handlers (show_plist_diff + show_domain_diff)
+typeset -gA _NOTED_DOMAIN=()
+
 # Emit contextual notes for domains that need extra steps
 # Called once per domain after array metadata processing
 _emit_contextual_note() {
-  local dom="$1" array_base="$2"
+  local dom="$1" array_base="$2" _note=""
   case "$dom" in
     com.apple.HIToolbox)
       case "$array_base" in
         AppleEnabledInputSources|AppleSelectedInputSources|AppleInputSourceHistory)
-          log_line "Cmd: # NOTE: Keyboard layout changes require logout/login to take effect" ;;
+          _note="Keyboard layout changes require logout/login to take effect" ;;
       esac ;;
     com.apple.dock)
       case "$array_base" in
         persistent-apps|persistent-others)
-          log_line "Cmd: # NOTE: Run 'killall Dock' to apply Dock changes" ;;
+          _note="Run 'killall Dock' to apply Dock changes" ;;
       esac ;;
     com.apple.print.custompresets*)
       case "$array_base" in
         com.apple.print.customPresetsInfo)
-          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect" ;;
+          _note="Print preset changes require logout/login to take effect" ;;
       esac ;;
     com.apple.symbolichotkeys)
-      log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
+      _note="Keyboard shortcut changes require logout/login to take effect"
+      case "$array_base" in
+        AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
+      esac ;;
+    com.apple.finder)
+      _note="Some changes require 'killall Finder' to apply — view settings may also be overridden per-folder in .DS_Store" ;;
+    com.apple.WindowManager)
+      _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+    com.apple.universalaccess)
+      _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
     com.apple.ColorSync.Devices)
-      log_line "Cmd: # NOTE: Color profile changes require logout/login to take effect" ;;
+      _note="Color profile changes require logout/login to take effect" ;;
   esac
+  [ -n "$_note" ] || return 0
+  # Dedup: emit each note only once per session
+  local _note_key="${dom}:${_note}"
+  [[ -z "${_NOTED_DOMAIN[$_note_key]+isset}" ]] || return 0
+  _NOTED_DOMAIN[$_note_key]=1
+  log_line "Cmd: # NOTE: $_note"
 }
 
 # Detect and emit commands for array deletions
@@ -1350,6 +1498,18 @@ curr = load(curr_path)
 
 results = []
 
+# Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
+_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
+                  'is-beta', 'tile-type', 'GUID', 'book'}
+
+def strip_volatile(obj):
+    """Strip volatile metadata keys for stable array element matching"""
+    if isinstance(obj, dict):
+        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
+    if isinstance(obj, list):
+        return [strip_volatile(e) for e in obj]
+    return obj
+
 def diff_deletions(prev_obj, curr_obj, path):
     """Find deleted elements by comparing prev with curr"""
     if isinstance(prev_obj, dict):
@@ -1358,15 +1518,16 @@ def diff_deletions(prev_obj, curr_obj, path):
             diff_deletions(value, curr_dict.get(key), path + [key])
     elif isinstance(prev_obj, list):
         curr_list = curr_obj if isinstance(curr_obj, list) else []
-        used = [False] * len(curr_list)
+        # Pre-compute stable fingerprints (ignoring volatile metadata)
+        curr_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in curr_list]
+        curr_avail = {}
+        for i, fp in enumerate(curr_fps):
+            curr_avail.setdefault(fp, []).append(i)
         for prev_idx, prev_item in enumerate(prev_obj):
-            matched = False
-            for curr_idx, curr_item in enumerate(curr_list):
-                if not used[curr_idx] and prev_item == curr_item:
-                    used[curr_idx] = True
-                    matched = True
-                    break
-            if not matched:
+            fp = json.dumps(strip_volatile(prev_item), sort_keys=True)
+            if fp in curr_avail and curr_avail[fp]:
+                curr_avail[fp].pop(0)
+            else:
                 results.append((tuple(path), prev_idx, prev_item))
     else:
         return
@@ -1478,6 +1639,18 @@ def load(path):
 prev = load(prev_path)
 curr = load(curr_path)
 
+# Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
+_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
+                  'is-beta', 'tile-type', 'GUID', 'book'}
+
+def strip_volatile(obj):
+    """Strip volatile metadata keys for stable array element matching"""
+    if isinstance(obj, dict):
+        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
+    if isinstance(obj, list):
+        return [strip_volatile(e) for e in obj]
+    return obj
+
 def pb_type_value(val):
     if isinstance(val, bool):
         return ("bool", "true" if val else "false")
@@ -1490,27 +1663,43 @@ def pb_type_value(val):
     return None
 
 def find_leaf_changes(prev_obj, curr_obj, path_parts):
-    """Recursively find changed leaf values inside nested dicts."""
+    """Recursively find changed leaf values, added sub-keys, and deleted sub-keys."""
     if prev_obj == curr_obj:
-        return []
+        return [], [], []
     changes = []
+    additions = []
+    deletions = []
     if isinstance(prev_obj, dict) and isinstance(curr_obj, dict):
         all_keys = sorted(set(list(prev_obj.keys()) + list(curr_obj.keys())))
         for key in all_keys:
             if key in prev_obj and key in curr_obj:
-                changes.extend(find_leaf_changes(prev_obj[key], curr_obj[key], path_parts + [str(key)]))
-            # Skip add/delete of entire sub-keys (too complex to serialize generically)
+                c, a, d = find_leaf_changes(prev_obj[key], curr_obj[key], path_parts + [str(key)])
+                changes.extend(c)
+                additions.extend(a)
+                deletions.extend(d)
+            elif key in curr_obj:
+                additions.append((path_parts + [str(key)], curr_obj[key]))
+            elif key in prev_obj:
+                deletions.append((path_parts + [str(key)],))
     elif isinstance(prev_obj, list) and isinstance(curr_obj, list):
         # Compare array elements by index (positional)
         for i in range(min(len(prev_obj), len(curr_obj))):
-            changes.extend(find_leaf_changes(prev_obj[i], curr_obj[i], path_parts + [str(i)]))
-        # Length changes handled by emit_array_additions/deletions
+            c, a, d = find_leaf_changes(prev_obj[i], curr_obj[i], path_parts + [str(i)])
+            changes.extend(c)
+            additions.extend(a)
+            deletions.extend(d)
+        # Added elements (array grew)
+        for i in range(len(prev_obj), len(curr_obj)):
+            additions.append((path_parts + [str(i)], curr_obj[i]))
+        # Removed elements (array shrank) — delete highest index first
+        for i in reversed(range(len(curr_obj), len(prev_obj))):
+            deletions.append((path_parts + [str(i)],))
     else:
         # Leaf value changed (or type changed)
         tv = pb_type_value(curr_obj)
         if tv:
             changes.append((path_parts, tv))
-    return changes
+    return changes, additions, deletions
 
 # Recursively emit PlistBuddy Add commands for an entire dict/value tree
 def emit_add_tree(base_parts, obj):
@@ -1556,13 +1745,17 @@ def filter_print_preset_settings(settings_dict):
 
 is_print_preset = domain.startswith('com.apple.print.custompresets')
 
-# Process top-level keys that are dicts
+# Process top-level keys that are dicts or lists
 changed_top_keys = set()
+_first_create_noted = False
 for top_key in sorted(curr.keys()):
-    if not isinstance(curr[top_key], dict):
+    if not isinstance(curr[top_key], (dict, list)):
         continue
     if top_key not in prev:
-        # New top-level dict: emit Add commands for entire tree
+        # New top-level dict/list: emit Add commands for entire tree
+        if not _first_create_noted:
+            print("PBCMD\t# NOTE: First change creates the full structure — subsequent changes only modify individual entries")
+            _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
         def collect_keys(obj, parts):
@@ -1581,10 +1774,29 @@ for top_key in sorted(curr.keys()):
         print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
         emit_add_tree([top_key], tree_obj)
         continue
-    if not isinstance(prev[top_key], dict):
+    if not isinstance(prev[top_key], (dict, list)):
         continue
-    changes = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
-    if not changes:
+    changes, additions, deletions = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
+    # Top-level arrays: Add/Delete handled by emit_array_additions/deletions
+    # Set only valid for in-place changes (not index shifts from insert/delete)
+    if isinstance(curr[top_key], list):
+        additions = []
+        deletions = []
+        if len(prev[top_key]) != len(curr[top_key]):
+            changes = []
+        elif changes:
+            # Same-length array: detect moved elements (same content, different index)
+            # Uses strip_volatile to ignore metadata that changes on every plist rewrite
+            prev_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in prev[top_key]]
+            prev_fp_set = set(prev_fps)
+            moved = set()
+            for i, elem in enumerate(curr[top_key]):
+                fp = json.dumps(strip_volatile(elem), sort_keys=True)
+                if fp != prev_fps[i] and fp in prev_fp_set:
+                    moved.add(str(i))
+            if moved:
+                changes = [(pp, tv) for pp, tv in changes if len(pp) < 2 or pp[1] not in moved]
+    if not changes and not additions and not deletions:
         continue
     changed_top_keys.add(top_key)
     # Collect all sub-keys touched for _skip_keys metadata
@@ -1592,9 +1804,22 @@ for top_key in sorted(curr.keys()):
     for path_parts, tv in changes:
         for part in path_parts:
             sub_keys.add(part)
+    for path_parts, obj in additions:
+        for part in path_parts:
+            sub_keys.add(part)
+    for tup in deletions:
+        for part in tup[0]:
+            sub_keys.add(part)
     # Emit metadata line (same format as array additions)
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
-    # Emit PlistBuddy Set commands with full paths
+    # Emit PlistBuddy Delete commands first (must precede Add for array replacements)
+    for (path_parts,) in deletions:
+        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
+        print(f"PBCMD\tDelete :{full_path}")
+    # Emit PlistBuddy Add commands for new sub-keys and replaced arrays
+    for path_parts, obj in additions:
+        emit_add_tree(path_parts, obj)
+    # Emit PlistBuddy Set commands for changed values
     for path_parts, (ptype, pvalue) in changes:
         # Print presets: filter noisy driver keys in settings dict
         if is_print_preset and len(path_parts) >= 3 and path_parts[1] == 'com.apple.print.preset.settings':
@@ -1647,10 +1872,26 @@ show_plist_diff() {
   fi
 
   # Dedup: skip if no change since last processing
+  # Retry with increasing delays — cfprefsd writes to disk asynchronously,
+  # so the file may still contain stale data when fs_usage fires (0.5s + 1.5s = 2s max)
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
-    /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
-    /bin/rmdir "$lockdir" 2>/dev/null || true
-    return 0
+    local _retry_delay
+    for _retry_delay in 0.5 1.5; do
+      /bin/sleep "$_retry_delay"
+      if [ "$silent" != "true" ]; then
+        dump_plist "$path" "$curr" &
+        dump_plist_json "$path" "$curr_json" &
+        wait
+      else
+        dump_plist "$path" "$curr"
+      fi
+      /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null || break
+    done
+    if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
+      /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
+      /bin/rmdir "$lockdir" 2>/dev/null || true
+      return 0
+    fi
   fi
 
   typeset -A _skip_keys
@@ -1673,34 +1914,39 @@ show_plist_diff() {
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
       typeset -A _noted_arrays=()
-      # Pre-emit domain-level notes before PBCMD output
-      case "$_dom" in
-        com.apple.print.custompresets*)
-          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
-          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
-        com.apple.symbolichotkeys)
-          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
-      esac
+      local _domain_note_emitted=false
+      local -a _pending_comments=()
+      local _last_array_base=""
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
           if [[ "$_pb_cmd" == "#"* ]]; then
-            case "$kind" in
-              USER) log_user "Cmd: $_pb_cmd" ;;
-              SYSTEM) log_system "Cmd: $_pb_cmd" ;;
-              *) log_line "Cmd: $_pb_cmd" ;;
-            esac
+            _pending_comments+=("$_pb_cmd")
             continue
           fi
           # Filter noisy key paths in PlistBuddy commands
-          case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
-          esac
-          [[ "$_pb_cmd" == *"<data:"* ]] && continue
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${path}\""
+          is_noisy_pbcmd "$_dom" "$_pb_cmd" && continue
+          # Emit domain-level note before first non-filtered command (using tracked array_base)
+          if [ "$_domain_note_emitted" = "false" ]; then
+            _emit_contextual_note "$_dom" "$_last_array_base"
+            _domain_note_emitted=true
+          fi
+          # Flush buffered comments now that we have a real command
+          if (( ${#_pending_comments[@]} > 0 )); then
+            for _pc in "${_pending_comments[@]}"; do
+              case "$kind" in
+                USER) log_user "Cmd: $_pc" ;;
+                SYSTEM) log_system "Cmd: $_pc" ;;
+                *) log_line "Cmd: $_pc" ;;
+              esac
+            done
+            _pending_comments=()
+          fi
+          local _mdm_path=$(mdm_plist_path "$path")
+          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           case "$kind" in
             USER) log_user "Cmd: $pb_full" ;;
             SYSTEM) log_system "Cmd: $pb_full" ;;
@@ -1708,7 +1954,8 @@ show_plist_diff() {
           esac
           continue
         fi
-        # Metadata line: populate _skip_keys
+        # Metadata line: populate _skip_keys and track array_base for deferred note
+        _last_array_base="$_array_base"
         _skip_keys["$_array_base"]=1
         if [ -n "$_array_idx" ]; then
           _skip_keys[":${_array_base}:${_array_idx}"]=1
@@ -1728,11 +1975,6 @@ show_plist_diff() {
               _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
             fi
           done
-        fi
-        # Emit contextual note once per array
-        if [ -z "${_noted_arrays[$_array_base]:-}" ]; then
-          _emit_contextual_note "$_dom" "$_array_base"
-          _noted_arrays[$_array_base]=1
         fi
       done <<< "$_array_meta_raw"
     fi
@@ -1855,7 +2097,7 @@ show_plist_diff() {
                   bool) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
                   int) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
                   float) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
-                  array|dict) cmd="# Complex type ($plutil_type): defaults write ${dom} \"${keyname}\" - see plist" ;;
+                  array|dict) cmd="" ;;
                   *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
                 esac
               else
@@ -1863,21 +2105,23 @@ show_plist_diff() {
               fi
             fi
 
-            local _cmd_dom
-            _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-            if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-              :
-            elif is_noisy_command "$cmd"; then
-              :
-            else
-              if [ -z "${_noted_dom[$_dom]:-}" ]; then
-                _emit_contextual_note "$_dom" ""
-                _noted_dom[$_dom]=1
-              fi
-              if [ "$kind" = "USER" ]; then
-                log_user "Cmd: $cmd"
+            if [ -n "$cmd" ]; then
+              local _cmd_dom
+              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+                :
+              elif is_noisy_command "$cmd"; then
+                :
               else
-                log_system "Cmd: $cmd"
+                if [ -z "${_noted_dom[$_dom]:-}" ]; then
+                  _emit_contextual_note "$_dom" ""
+                  _noted_dom[$_dom]=1
+                fi
+                if [ "$kind" = "USER" ]; then
+                  log_user "Cmd: $cmd"
+                else
+                  log_system "Cmd: $cmd"
+                fi
               fi
             fi
             ;;
@@ -1962,7 +2206,10 @@ show_plist_diff() {
   /bin/rmdir "$lockdir" 2>/dev/null || true
 }
 
-# Domain diff (text export)
+# ---------------------------------------
+# Domain Diff (defaults export)
+# ---------------------------------------
+
 show_domain_diff() {
   local dom="$1"
   local skip_arrays="${2:-false}"
@@ -2015,35 +2262,41 @@ show_domain_diff() {
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       typeset -A _noted_arrays=()
-      # Pre-emit domain-level notes before PBCMD output
-      case "$dom" in
-        com.apple.print.custompresets*)
-          log_line "Cmd: # NOTE: Print preset changes require logout/login to take effect"
-          _noted_arrays[com.apple.print.customPresetsInfo]=1 ;;
-        com.apple.symbolichotkeys)
-          log_line "Cmd: # NOTE: Keyboard shortcut changes require logout/login to take effect" ;;
-      esac
+      local _domain_note_emitted=false
+      local -a _pending_comments=()
+      local _last_array_base=""
       while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
         [ -n "$_array_base" ] || continue
         # Handle PBCMD lines (PlistBuddy commands from Python)
         if [ "$_array_base" = "PBCMD" ]; then
           local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName) — emit as plain comment
+          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
           if [[ "$_pb_cmd" == "#"* ]]; then
-            log_line "Cmd: $_pb_cmd"
+            _pending_comments+=("$_pb_cmd")
             continue
           fi
           [ -n "$_pb_plist_path" ] || continue
-          # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
-          case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*) continue ;;
-          esac
-          [[ "$_pb_cmd" == *"<data:"* ]] && continue
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_pb_plist_path}\""
+          # Filter noisy key paths in PlistBuddy commands
+          is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
+          # Emit domain-level note before first non-filtered command (using tracked array_base)
+          if [ "$_domain_note_emitted" = "false" ]; then
+            _emit_contextual_note "$dom" "$_last_array_base"
+            _domain_note_emitted=true
+          fi
+          # Flush buffered comments now that we have a real command
+          if (( ${#_pending_comments[@]} > 0 )); then
+            for _pc in "${_pending_comments[@]}"; do
+              log_line "Cmd: $_pc"
+            done
+            _pending_comments=()
+          fi
+          local _mdm_path=$(mdm_plist_path "$_pb_plist_path")
+          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
           log_line "Cmd: $pb_full"
           continue
         fi
-        # Metadata line: populate _skip_keys
+        # Metadata line: populate _skip_keys and track array_base for deferred note
+        _last_array_base="$_array_base"
         _skip_keys["$_array_base"]=1
         if [ -n "$_array_idx" ]; then
           _skip_keys[":${_array_base}:${_array_idx}"]=1
@@ -2063,11 +2316,6 @@ show_domain_diff() {
               _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
             fi
           done
-        fi
-        # Emit contextual note once per array
-        if [ -z "${_noted_arrays[$_array_base]:-}" ]; then
-          _emit_contextual_note "$dom" "$_array_base"
-          _noted_arrays[$_array_base]=1
         fi
       done <<< "$_array_meta_raw"
     fi
@@ -2173,7 +2421,7 @@ show_domain_diff() {
                   bool) cmd="defaults write ${dom} \"${keyname}\" -bool ${plutil_value}" ;;
                   int) cmd="defaults write ${dom} \"${keyname}\" -int ${plutil_value}" ;;
                   float) cmd="defaults write ${dom} \"${keyname}\" -float ${plutil_value}" ;;
-                  array|dict) cmd="# Complex type ($plutil_type): defaults write ${dom} \"${keyname}\" - see plist" ;;
+                  array|dict) cmd="" ;;
                   *) cmd="defaults write ${dom} \"${keyname}\" <type> <value>" ;;
                 esac
               else
@@ -2181,21 +2429,23 @@ show_domain_diff() {
               fi
             fi
 
-            local _cmd_dom
-            _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-            if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-              :
-            elif is_noisy_command "$cmd"; then
-              :
-            else
-              if [ -z "${_noted_dom[$dom]:-}" ]; then
-                _emit_contextual_note "$dom" ""
-                _noted_dom[$dom]=1
-              fi
-              if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+            if [ -n "$cmd" ]; then
+              local _cmd_dom
+              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+                :
+              elif is_noisy_command "$cmd"; then
                 :
               else
-                log_line "Cmd: $cmd"
+                if [ -z "${_noted_dom[$dom]:-}" ]; then
+                  _emit_contextual_note "$dom" ""
+                  _noted_dom[$dom]=1
+                fi
+                if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+                  :
+                else
+                  log_line "Cmd: $cmd"
+                fi
               fi
             fi
             ;;
@@ -2466,6 +2716,7 @@ start_watch_all() {
 
   if [ "${SNAPSHOT_READY:-false}" = "true" ]; then
     snapshot_notice "Initial snapshots processed — you can now make your changes"
+    log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
   # fs_usage monitoring function
