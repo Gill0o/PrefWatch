@@ -262,6 +262,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.appleaccount"
   "com.apple.shazamd"
   "com.apple.wallpaper.aerial"
+  "com.apple.osprey"
   "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)

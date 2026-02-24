@@ -10,6 +10,7 @@
 - Exclude `com.apple.appleaccount` (boot session IDs)
 - Exclude `com.apple.shazamd` (Shazam daemon CloudKit per-boot tasks)
 - Exclude `com.apple.wallpaper.aerial` (Aerial wallpaper remote asset URLs)
+- Exclude `com.apple.osprey` (device attestation expiration timestamps)
 
 ## 1.1.1 — 2026-02-24
 
