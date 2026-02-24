@@ -5,52 +5,25 @@
 ### Feature
 - New `--mdm` CLI option (Jamf `$9 = MDM_OUTPUT`): replace user home path with `$loggedInUser` variable in PlistBuddy commands for MDM deployment scripts
 
-### Noise
-- Exclude `com.apple.protectedcloudstorage*` (CloudKit keychain sync)
-- Exclude `com.apple.DataDeliveryServices` (metadata sync timestamps)
-- Exclude `com.apple.ReportCrash` (crash reporter TrialCache timestamps)
-- Exclude `com.apple.homeenergyd` (HomeKit CloudKit sync cache)
-- Exclude `com.apple.seserviced` (Secure Element session counters)
-- Exclude `codes.rambo.VirtualBuddy` (VM app window state, UI settings)
-- Exclude `com.apple.spotlightknowledged.pipeline` (Spotlight knowledge daemon sync)
-- Exclude `com.apple.amp.mediasharingd` (media sharing daemon internal state)
-- Filter `WebKitUseSystemAppearance` (Settings panel WebKit artifact)
-- Filter `*WindowOriginFrame*` (Zoom window position state)
-- Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
-- Filter `History` for `com.apple.universalaccess` (internal change history log)
-- Filter `KB_SpellingLanguage*` in `.GlobalPreferences` (Keyboard panel first-open artifact)
-- Filter `com.apple.custommenu.apps` for `com.apple.universalaccess` (Keyboard Shortcuts panel artifact)
-- Exclude `com.apple.remindd.babysitter` (Reminders CloudKit sync daemon)
-- Filter `Connected` and `Use Count` for `com.apple.iPod` (sync timestamps and counters)
-- Filter `*@xmpp.zoom.us*` for `us.zoom.xos` (Zoom per-user session state)
-
-### Refactor
-- Unify PBCMD filtering: new `is_noisy_pbcmd()` function extracts top-level key and delegates to `is_noisy_key()`, eliminating duplicated 27-pattern case statement — all key-level filters now automatically apply to both `defaults` and PlistBuddy output
-- Strip volatile plist metadata (`parent-mod-date`, `file-mod-date`, `file-type`, `GUID`, etc.) before array element matching — prevents phantom add/delete when macOS rewrites metadata on save
-- Remove dead code in `is_noisy_command()` (patterns redundant with `is_noisy_key()`)
-- Consolidate script sections: merge Plist & PlistBuddy, add Domain Diff banner, relocate caches next to consumers
-- Soften Finder domain note: not all changes require `killall Finder`
-- Drop redundant `# Complex type` comment for dict/array keys — PlistBuddy commands already show the full structure
-- Add `book` (macOS bookmark data) to volatile keys for array fingerprinting — prevents phantom add/delete on Dock reorder
-- Defer all contextual output (domain notes, PBCMD comments, labels) until a real command passes noise filtering — prevents orphaned notes
-
 ### Fix
-- Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
+- Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization)
 - Detect value changes within existing top-level arrays (e.g. Spotlight `orderedItems` enable/disable)
 - Prevent false `Set` commands when array elements shift after insertion/deletion (e.g. Dock reorder)
-- Retry plist read with increasing delays (0.5s + 1.5s) when file appears unchanged — fixes missed Dock actions caused by cfprefsd async disk writes
-- Fix orphan contextual note when all PBCMD commands are filtered (lazy emit after filter)
-- Fix duplicate commands for new top-level arrays (dedup between `emit_array_additions` and `emit_nested_dict_changes`)
-- Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference: show/hide tab bar)
-- Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
+- Strip volatile plist metadata (`book`, `GUID`, etc.) before array matching — prevents phantom add/delete
+- Retry plist read with increasing delays (0.5s + 1.5s) when cfprefsd hasn't flushed to disk
+- Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference)
+- Unified PBCMD filtering: key-level filters now apply to both `defaults` and PlistBuddy output
+
+### Noise
+- Exclude 9 domains: `protectedcloudstorage`, `DataDeliveryServices`, `ReportCrash`, `homeenergyd`, `seserviced`, `spotlightknowledged`, `mediasharingd`, `remindd.babysitter`, `VirtualBuddy`
+- Filter Settings panel artifacts: `WebKitUseSystemAppearance`, `KB_SpellingLanguage*`, `com.apple.custommenu.apps`, `History`
+- Filter Zoom session state (`*WindowOriginFrame*`, `*@xmpp.zoom.us*`)
+- Filter iPod/Siri counters (`Connected`, `Use Count`, `*DataSequenceKey*`)
 
 ### UX
-- Add contextual note `killall Finder` + `.DS_Store` per-window overrides for Finder domain
-- Add generic first-create note when any top-level dict/array is created for the first time (replaces Spotlight-specific note)
-- Add contextual note for symbolic hotkeys parameter rewrite on toggle
-- Add post-snapshot polling delay notice
-- Add contextual note for `com.apple.WindowManager` (Desktop & Dock first-open writes all defaults)
-- Add contextual note for `com.apple.universalaccess` (Accessibility first-open writes all defaults)
+- Contextual notes for Finder (`killall Finder` + `.DS_Store`), Desktop & Dock, Accessibility, symbolic hotkeys
+- First-open warnings for Settings panels that write all defaults on first access
+- Generic first-create note when any top-level dict/array is created for the first time
 
 ## 1.1.0 — 2026-02-17
 

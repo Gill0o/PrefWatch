@@ -96,16 +96,6 @@ for f in "${DEV_ONLY_FILES[@]}"; do
   fi
 done
 
-# Clean up CHANGELOG for release (remove dev-only details, keep user-facing diff)
-if [ -f "CHANGELOG.md" ]; then
-  echo ""
-  echo "Clean up CHANGELOG.md for release — remove dev-only details, keep user-facing changes."
-  echo "Save and close the editor to continue."
-  echo ""
-  ${EDITOR:-vim} CHANGELOG.md
-  git add CHANGELOG.md
-fi
-
 echo "Committing..."
 git commit -m "$MSG" || { echo "ERROR: commit failed"; exit 1; }
 
