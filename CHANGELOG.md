@@ -11,35 +11,36 @@
 - Exclude `com.apple.ReportCrash` (crash reporter TrialCache timestamps)
 - Exclude `com.apple.homeenergyd` (HomeKit CloudKit sync cache)
 - Exclude `com.apple.seserviced` (Secure Element session counters)
-- Filter `WebKitUseSystemAppearance` (Settings panel WebKit artifact)
-- Filter `TB Default Item Identifiers` in PBCMD handler (system-managed toolbar defaults)
-- Filter `AppleSavedCurrentInputSource` in PBCMD handler (transient input source state)
-- Filter `CloudKitAccountInfoCache` in PBCMD handler (CloudKit sync cache)
-- Filter `*WindowOriginFrame*` (Zoom window position state)
-- Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
-- Filter `window-file:` in PBCMD handler (VirtualBuddy window position state)
 - Exclude `codes.rambo.VirtualBuddy` (VM app window state, UI settings)
 - Exclude `com.apple.spotlightknowledged.pipeline` (Spotlight knowledge daemon sync)
 - Exclude `com.apple.amp.mediasharingd` (media sharing daemon internal state)
-- Filter `SearchRecentsViewSettings` in PBCMD handler (Finder search history state)
-- Filter `FXDesktopVolumePositions` in PBCMD handler (desktop icon positions)
+- Filter `WebKitUseSystemAppearance` (Settings panel WebKit artifact)
+- Filter `*WindowOriginFrame*` (Zoom window position state)
+- Filter `*DataSequenceKey*` (Siri/Shortcuts sync counters)
 - Filter `History` for `com.apple.universalaccess` (internal change history log)
+
+### Refactor
+- Unify PBCMD filtering: new `is_noisy_pbcmd()` function extracts top-level key and delegates to `is_noisy_key()`, eliminating duplicated 27-pattern case statement — all key-level filters now automatically apply to both `defaults` and PlistBuddy output
+- Strip volatile plist metadata (`parent-mod-date`, `file-mod-date`, `file-type`, `GUID`, etc.) before array element matching — prevents phantom add/delete when macOS rewrites metadata on save
+- Remove dead code in `is_noisy_command()` (patterns redundant with `is_noisy_key()`)
+- Consolidate script sections: merge Plist & PlistBuddy, add Domain Diff banner, relocate caches next to consumers
+- Soften Finder domain note: not all changes require `killall Finder`
 
 ### Fix
 - Detect sub-key additions and deletions in nested dicts (e.g. Finder toolbar customization `NSToolbar Configuration`)
 - Detect value changes within existing top-level arrays (e.g. Spotlight `orderedItems` enable/disable)
-- Prevent false `Set` commands when array elements shift after insertion/deletion (e.g. Dock)
-- Deduplicate contextual `# NOTE:` across handlers (was emitted twice in ALL mode)
-- Fix PBCMD filter for keys with escaped spaces (e.g. `TB\ Default\ Item`)
-- Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
+- Prevent false `Set` commands when array elements shift after insertion/deletion (e.g. Dock reorder)
 - Fix orphan contextual note when all PBCMD commands are filtered (lazy emit after filter)
-- Fix duplicate commands for new top-level arrays (skip in `emit_array_additions` when handled by `emit_nested_dict_changes`)
+- Fix duplicate commands for new top-level arrays (dedup between `emit_array_additions` and `emit_nested_dict_changes`)
+- Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference: show/hide tab bar)
+- Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
 
 ### UX
 - Add contextual note `killall Finder` + `.DS_Store` per-window overrides for Finder domain
 - Add generic first-create note when any top-level dict/array is created for the first time (replaces Spotlight-specific note)
 - Add contextual note for symbolic hotkeys parameter rewrite on toggle
 - Add post-snapshot polling delay notice
+
 ## 1.1.0 — 2026-02-17
 
 ### Performance

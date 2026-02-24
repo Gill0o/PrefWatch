@@ -241,7 +241,7 @@ unsetopt verbose 2>/dev/null || true
 
 # Default exclusion patterns for noisy/irrelevant domains
 # These domains change frequently but are rarely useful for preference monitoring
-# User can override with --exclude flag or $8 parameter in Jamf mode
+# You can override with --exclude flag or $8 parameter in Jamf mode
 typeset -a DEFAULT_EXCLUSIONS=(
   # Background daemons & agents (very noisy, no user-configurable preferences)
   "com.apple.cfprefsd*"
@@ -645,9 +645,6 @@ domain_from_plist_path() {
   printf '%s\n' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//' || printf '%s\n' "$dom"
 }
 
-# Dedup domain-level notes across handlers (show_plist_diff + show_domain_diff)
-typeset -gA _NOTED_DOMAIN=()
-
 # Hash a path for cache file naming (cached to avoid repeated md5 forks)
 typeset -gA _HASH_CACHE=()
 hash_path() {
@@ -689,6 +686,10 @@ prepare_logfile() {
 
 # ---------------------------------------
 # Filtering
+#
+# To exclude a noisy domain:  add its name to DEFAULT_EXCLUSIONS (glob patterns supported)
+# To filter a noisy key:      add a pattern to is_noisy_key() — automatically applies
+#                              to both 'defaults' and PlistBuddy output
 # ---------------------------------------
 
 # Check if a domain is excluded (with cache)
@@ -972,7 +973,8 @@ is_noisy_key() {
   return 1
 }
 
-# Filter non-useful defaults commands
+# Edge-case safety net for defaults commands that bypass key-level filtering
+# (invalid plutil output artifacts and float-encoded window positions)
 is_noisy_command() {
   local cmd="$1"
 
@@ -981,19 +983,50 @@ is_noisy_command() {
     return 0
   fi
 
-  # Filter specific float commands that are noisy (not ALL floats!)
-  # Only filter window positions, scroll positions, and known noisy float keys
+  # Filter float window/scroll positions that slip through key-level filtering
   case "$cmd" in
     *"-float"*NSWindow*|*"-float"*Scroll*|*"-float"*Position*)
       return 0
       ;;
   esac
 
-  # Filter known keys that change frequently
-  case "$cmd" in
-    *"NSWindow Frame"*|*"NSNavPanel"*|*"NSSplitView"*|*WindowBounds*|*WindowState*)
-      return 0
-      ;;
+  return 1
+}
+
+# Filter noisy key paths in PlistBuddy commands
+# Extracts top-level key and delegates to is_noisy_key(), then checks sub-key patterns
+# Args: $1 = domain, $2 = PlistBuddy command (e.g., "Add :persistent-apps:0:tile-data dict")
+is_noisy_pbcmd() {
+  local domain="$1" pb_cmd="$2"
+
+  # Binary data is never useful
+  [[ "$pb_cmd" == *"<data:"* ]] && return 0
+
+  # Extract top-level key from PBCMD path
+  # Format: "Add :TopKey:SubKey type value" or "Set :TopKey value" or "Delete :TopKey"
+  # Spaces in key names are escaped as '\ ' by Python
+  local _raw="${pb_cmd#* :}"                    # strip verb + ":"
+  local _safe="${_raw//\\ /__PBSP__}"           # protect escaped spaces
+  local _top="${_safe%%:*}"                      # first segment (before next ":")
+  _top="${_top%% *}"                             # strip trailing type/value if no sub-key
+  # Handle top-level-only: "Add :key dict" → _top may end with placeholder+type
+  local _t
+  for _t in dict array string integer real bool; do
+    [[ "$_top" == *"__PBSP__${_t}" ]] && _top="${_top%__PBSP__${_t}}"
+  done
+  _top="${_top//__PBSP__/ }"                    # restore spaces
+
+  # Delegate to is_noisy_key for top-level key filtering
+  [ -n "$_top" ] && is_noisy_key "$domain" "$_top" && return 0
+
+  # Sub-key patterns (nested paths, not checkable via is_noisy_key)
+  case "$pb_cmd" in
+    *":dock-extra "*|*":is-beta "*|*":tile-type "*|*":recent-apps:"*|\
+    *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
+    *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
+    *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
+    *":com.apple.finder.SyncExtensions"*)
+      return 0 ;;
   esac
 
   return 1
@@ -1073,7 +1106,7 @@ snapshot_notice() {
 }
 
 # ---------------------------------------
-# Plist
+# Plist & PlistBuddy
 # ---------------------------------------
 
 # Stable text output of a plist
@@ -1158,10 +1191,6 @@ extract_type_value_with_plutil() {
   return 0
 }
 
-# ---------------------------------------
-# PlistBuddy
-# ---------------------------------------
-
 # Convert a defaults delete command to PlistBuddy
 convert_delete_to_plistbuddy() {
   # Disable xtrace to prevent debug output leaking
@@ -1239,6 +1268,19 @@ curr = load(curr_path)
 
 results = []
 
+# Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
+# Must be stripped before comparing array elements to avoid phantom add/delete
+_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
+                  'is-beta', 'tile-type', 'GUID'}
+
+def strip_volatile(obj):
+    """Strip volatile metadata keys for stable array element matching"""
+    if isinstance(obj, dict):
+        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
+    if isinstance(obj, list):
+        return [strip_volatile(e) for e in obj]
+    return obj
+
 def diff(prev_obj, curr_obj, path):
     if isinstance(curr_obj, dict):
         prev_dict = prev_obj if isinstance(prev_obj, dict) else {}
@@ -1246,15 +1288,16 @@ def diff(prev_obj, curr_obj, path):
             diff(prev_dict.get(key), value, path + [key])
     elif isinstance(curr_obj, list):
         prev_list = prev_obj if isinstance(prev_obj, list) else []
-        used = [False] * len(prev_list)
+        # Pre-compute stable fingerprints (ignoring volatile metadata)
+        prev_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in prev_list]
+        prev_avail = {}
+        for i, fp in enumerate(prev_fps):
+            prev_avail.setdefault(fp, []).append(i)
         for idx, item in enumerate(curr_obj):
-            matched = False
-            for prev_idx, prev_item in enumerate(prev_list):
-                if not used[prev_idx] and prev_item == item:
-                    used[prev_idx] = True
-                    matched = True
-                    break
-            if not matched:
+            fp = json.dumps(strip_volatile(item), sort_keys=True)
+            if fp in prev_avail and prev_avail[fp]:
+                prev_avail[fp].pop(0)
+            else:
                 results.append((tuple(path), idx, item))
     else:
         return
@@ -1357,6 +1400,9 @@ PY
   printf '%s\n' "$py_output"
 }
 
+# Dedup domain-level notes across handlers (show_plist_diff + show_domain_diff)
+typeset -gA _NOTED_DOMAIN=()
+
 # Emit contextual notes for domains that need extra steps
 # Called once per domain after array metadata processing
 _emit_contextual_note() {
@@ -1383,7 +1429,7 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Run 'killall Finder' to apply — some settings also write per-window overrides in .DS_Store" ;;
+      _note="Some changes require 'killall Finder' to apply — view settings may also be overridden per-folder in .DS_Store" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -1425,6 +1471,18 @@ curr = load(curr_path)
 
 results = []
 
+# Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
+_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
+                  'is-beta', 'tile-type', 'GUID'}
+
+def strip_volatile(obj):
+    """Strip volatile metadata keys for stable array element matching"""
+    if isinstance(obj, dict):
+        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
+    if isinstance(obj, list):
+        return [strip_volatile(e) for e in obj]
+    return obj
+
 def diff_deletions(prev_obj, curr_obj, path):
     """Find deleted elements by comparing prev with curr"""
     if isinstance(prev_obj, dict):
@@ -1433,15 +1491,16 @@ def diff_deletions(prev_obj, curr_obj, path):
             diff_deletions(value, curr_dict.get(key), path + [key])
     elif isinstance(prev_obj, list):
         curr_list = curr_obj if isinstance(curr_obj, list) else []
-        used = [False] * len(curr_list)
+        # Pre-compute stable fingerprints (ignoring volatile metadata)
+        curr_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in curr_list]
+        curr_avail = {}
+        for i, fp in enumerate(curr_fps):
+            curr_avail.setdefault(fp, []).append(i)
         for prev_idx, prev_item in enumerate(prev_obj):
-            matched = False
-            for curr_idx, curr_item in enumerate(curr_list):
-                if not used[curr_idx] and prev_item == curr_item:
-                    used[curr_idx] = True
-                    matched = True
-                    break
-            if not matched:
+            fp = json.dumps(strip_volatile(prev_item), sort_keys=True)
+            if fp in curr_avail and curr_avail[fp]:
+                curr_avail[fp].pop(0)
+            else:
                 results.append((tuple(path), prev_idx, prev_item))
     else:
         return
@@ -1552,6 +1611,18 @@ def load(path):
 
 prev = load(prev_path)
 curr = load(curr_path)
+
+# Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
+_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
+                  'is-beta', 'tile-type', 'GUID'}
+
+def strip_volatile(obj):
+    """Strip volatile metadata keys for stable array element matching"""
+    if isinstance(obj, dict):
+        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
+    if isinstance(obj, list):
+        return [strip_volatile(e) for e in obj]
+    return obj
 
 def pb_type_value(val):
     if isinstance(val, bool):
@@ -1680,12 +1751,24 @@ for top_key in sorted(curr.keys()):
         continue
     changes, additions, deletions = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
     # Top-level arrays: Add/Delete handled by emit_array_additions/deletions
-    # Set only valid when array length is unchanged (no index shift)
+    # Set only valid for in-place changes (not index shifts from insert/delete)
     if isinstance(curr[top_key], list):
         additions = []
         deletions = []
         if len(prev[top_key]) != len(curr[top_key]):
             changes = []
+        elif changes:
+            # Same-length array: detect moved elements (same content, different index)
+            # Uses strip_volatile to ignore metadata that changes on every plist rewrite
+            prev_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in prev[top_key]]
+            prev_fp_set = set(prev_fps)
+            moved = set()
+            for i, elem in enumerate(curr[top_key]):
+                fp = json.dumps(strip_volatile(elem), sort_keys=True)
+                if fp != prev_fps[i] and fp in prev_fp_set:
+                    moved.add(str(i))
+            if moved:
+                changes = [(pp, tv) for pp, tv in changes if len(pp) < 2 or pp[1] not in moved]
     if not changes and not additions and not deletions:
         continue
     changed_top_keys.add(top_key)
@@ -1808,10 +1891,7 @@ show_plist_diff() {
             continue
           fi
           # Filter noisy key paths in PlistBuddy commands
-          case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*|*":SearchRecentsViewSettings"*|*":FXDesktopVolumePositions"*|*":History:"*) continue ;;
-          esac
-          [[ "$_pb_cmd" == *"<data:"* ]] && continue
+          is_noisy_pbcmd "$_dom" "$_pb_cmd" && continue
           # Emit domain-level note before first non-filtered command
           if [ "$_domain_note_emitted" = "false" ]; then
             _emit_contextual_note "$_dom" ""
@@ -2080,7 +2160,10 @@ show_plist_diff() {
   /bin/rmdir "$lockdir" 2>/dev/null || true
 }
 
-# Domain diff (text export)
+# ---------------------------------------
+# Domain Diff (defaults export)
+# ---------------------------------------
+
 show_domain_diff() {
   local dom="$1"
   local skip_arrays="${2:-false}"
@@ -2149,11 +2232,8 @@ show_domain_diff() {
             continue
           fi
           [ -n "$_pb_plist_path" ] || continue
-          # Filter noisy key paths in PlistBuddy commands (handles keys with spaces)
-          case "$_pb_cmd" in
-            *":NSWindow Frame"*|*":NSNavPanel"*|*":NSSplitView"*|*":NSTableView"*|*":NSStatusItem"*|*":FXRecentFolders"*|*"NSWindowTabbingShoudShowTabBarKey"*|*"ViewSettings"*|*":FXSync"*|*":MRSActivityScheduler"*|*":com.apple.finder.SyncExtensions"*|*":GUID "*|*":dock-extra "*|*":is-beta "*|*":file-type "*|*":parent-mod-date "*|*":file-mod-date "*|*":tile-type "*|*":recent-apps:"*|*":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|*":AppleSavedCurrentInputSource"*|*":CloudKitAccountInfoCache"*|*":window-file:"*|*":SearchRecentsViewSettings"*|*":FXDesktopVolumePositions"*|*":History:"*) continue ;;
-          esac
-          [[ "$_pb_cmd" == *"<data:"* ]] && continue
+          # Filter noisy key paths in PlistBuddy commands
+          is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
           # Emit domain-level note before first non-filtered command
           if [ "$_domain_note_emitted" = "false" ]; then
             _emit_contextual_note "$dom" ""
