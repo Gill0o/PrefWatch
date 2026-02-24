@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.1
+# Version: 1.1.2
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -259,6 +259,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
   "com.apple.appleaccountd"
+  "com.apple.appleaccount"
+  "com.apple.shazamd"
+  "com.apple.wallpaper.aerial"
+  "com.apple.osprey"
   "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
@@ -752,7 +756,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters (not user preferences)
-    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*)
+    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
@@ -1241,7 +1245,8 @@ convert_delete_to_plistbuddy() {
     printf '# WARNING: Array deletion - indexes change after each deletion\n'
     printf '# For multiple deletions: execute from HIGHEST index to LOWEST\n'
   fi
-  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$plist_path"
+  local _mdm_path=$(mdm_plist_path "$plist_path")
+  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$_mdm_path"
   return 0
 }
 
