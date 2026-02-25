@@ -266,6 +266,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.AudioAccessory"
   "com.apple.systemsettings.extensions*"
   "com.apple.networkserviceproxy"
+  "journal"
   "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
@@ -771,14 +772,16 @@ is_noisy_key() {
     uuid|UUID|flags|*UUID|*uuid)
       return 0 ;;
 
+    # VoiceOver internal state (Braille defaults, display text timestamps)
+    SCRC*|SCRDisplay*)
+      return 0 ;;
+
     # Feature flags (internal state, not user preferences)
     # Exception: com.apple.universalaccess feature.* are real accessibility settings
     feature.*)
       [ "$domain" = "com.apple.universalaccess" ] || return 0 ;;
 
-    # Zoom focus tracking state (transient during zoom operations)
-    closeViewZoom*FocusFollowMode*)
-      return 0 ;;
+
 
     # Metadata/sync counters (change constantly, not user preferences)
     *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
@@ -914,7 +917,7 @@ is_noisy_key() {
     # Universal Access: Filter internal change history, keep accessibility settings
     com.apple.universalaccess)
       case "$keyname" in
-        History|com.apple.custommenu.apps) return 0 ;;
+        History|com.apple.custommenu.apps|displaysLastCursorLocation) return 0 ;;
       esac
       ;;
 

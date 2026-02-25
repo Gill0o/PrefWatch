@@ -7,9 +7,13 @@
 - Exclude `com.apple.systemsettings.extensions*` (Settings panel extension internal state)
 - Exclude `com.apple.networkserviceproxy` (network geolocation hashes)
 - Filter `kIM_LastOpenedSession` for `us.zoom.xos` (Zoom last opened chat session)
+- Exclude `journal` domain (VoiceOver internal Braille timestamps)
+- Filter `SCRC*` and `SCRDisplay*` keys (VoiceOver internal Braille/display state)
 
 ### Fix
 - Stop filtering `feature.*` keys in `com.apple.universalaccess` — VoiceOver, Zoom, StickyKeys etc. are real accessibility settings, not internal feature flags
+- Stop filtering `closeViewZoomFocusFollowModeKey` — zoom focus follow mode is a real user preference (detach zoom from pointer), not transient state
+- Filter `displaysLastCursorLocation` for `com.apple.universalaccess` (transient cursor position)
 
 ## 1.1.2 — 2026-02-24
 
