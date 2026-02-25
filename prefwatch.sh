@@ -263,6 +263,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.shazamd"
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
+  "com.apple.AudioAccessory"
+  "com.apple.systemsettings.extensions*"
+  "com.apple.networkserviceproxy"
   "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
@@ -941,7 +944,7 @@ is_noisy_key() {
     # Zoom: Filter per-user session state (tab selection, XMPP identifiers)
     us.zoom.xos)
       case "$keyname" in
-        *@xmpp.zoom.us*) return 0 ;;
+        *@xmpp.zoom.us*|kIM_LastOpenedSession) return 0 ;;
       esac
       ;;
 

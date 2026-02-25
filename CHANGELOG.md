@@ -2,6 +2,11 @@
 
 ## 1.1.3 — unreleased
 
+### Noise
+- Exclude `com.apple.AudioAccessory` (Bluetooth accessory battery state and timestamps)
+- Exclude `com.apple.systemsettings.extensions*` (Settings panel extension internal state)
+- Exclude `com.apple.networkserviceproxy` (network geolocation hashes)
+- Filter `kIM_LastOpenedSession` for `us.zoom.xos` (Zoom last opened chat session)
 
 ## 1.1.2 — 2026-02-24
 
