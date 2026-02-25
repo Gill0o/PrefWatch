@@ -772,8 +772,9 @@ is_noisy_key() {
       return 0 ;;
 
     # Feature flags (internal state, not user preferences)
+    # Exception: com.apple.universalaccess feature.* are real accessibility settings
     feature.*)
-      return 0 ;;
+      [ "$domain" = "com.apple.universalaccess" ] || return 0 ;;
 
     # Zoom focus tracking state (transient during zoom operations)
     closeViewZoom*FocusFollowMode*)

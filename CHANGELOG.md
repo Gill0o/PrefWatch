@@ -8,6 +8,9 @@
 - Exclude `com.apple.networkserviceproxy` (network geolocation hashes)
 - Filter `kIM_LastOpenedSession` for `us.zoom.xos` (Zoom last opened chat session)
 
+### Fix
+- Stop filtering `feature.*` keys in `com.apple.universalaccess` — VoiceOver, Zoom, StickyKeys etc. are real accessibility settings, not internal feature flags
+
 ## 1.1.2 — 2026-02-24
 
 ### Fix
