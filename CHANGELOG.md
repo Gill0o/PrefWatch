@@ -12,6 +12,10 @@
 - Filter `SessionId`, `SessionVersion`, `SessionLongBuildNumber`, `CampaignManagerVersionKey` (app session/version metadata)
 - Filter `SUUpdateRelaunchingMarker` (Sparkle update framework marker)
 - Filter `last-selection` for `com.apple.screencapture` (screenshot selection area coordinates)
+- Filter `timerEndInterval`, `comfortSoundsEnabled_UpdateInfo` for `com.apple.ComfortSounds` (timer timestamp, setting change audit log)
+- Filter `currentEnrollmentProgress` for `com.apple.PersonalAudio` (audio enrollment transient state)
+- Filter `DictationIMTargetApplications`, `CACPersistentSleepState` for `com.apple.speech.recognition.AppleSpeechRecognition.prefs` (auto-generated app inventory, Voice Control sleep state)
+- Filter `PanelFrame`, `SCLaunchedAsSlave` for `com.apple.AssistiveControl.virtualKeyboard` (window position, internal launch state)
 
 ### Fix
 - Stop filtering `feature.*` keys in `com.apple.universalaccess` — VoiceOver, Zoom, StickyKeys etc. are real accessibility settings, not internal feature flags

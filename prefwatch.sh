@@ -863,6 +863,14 @@ is_noisy_key() {
   # ========================================================================
 
   case "$domain" in
+    # Accessibility Keyboard: Filter window position, keep panel settings
+    com.apple.AssistiveControl.virtualKeyboard)
+      case "$keyname" in
+        PanelFrame|SCLaunchedAsSlave) return 0 ;;
+        # Keep: DesiredPanelWindowPosition, etc.
+      esac
+      ;;
+
     # Dock preferences: Keep useful settings, filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
@@ -977,6 +985,28 @@ is_noisy_key() {
         SafeBrowsing*|History*|LastSession*)
           return 0 ;;
         # Keep: HomePage, SearchEngine, AutoFillPasswords, etc.
+      esac
+      ;;
+
+    # ComfortSounds (Focus/Timer): Filter timer timestamps
+    com.apple.ComfortSounds)
+      case "$keyname" in
+        timerEndInterval|comfortSoundsEnabled_UpdateInfo) return 0 ;;
+      esac
+      ;;
+
+    # PersonalAudio: Filter enrollment progress state
+    com.apple.PersonalAudio)
+      case "$keyname" in
+        currentEnrollmentProgress) return 0 ;;
+      esac
+      ;;
+
+    # Speech Recognition: Filter auto-generated app inventory on Voice Control activation
+    com.apple.speech.recognition.AppleSpeechRecognition.prefs)
+      case "$keyname" in
+        DictationIMTargetApplications|CACPersistentSleepState) return 0 ;;
+        # Keep: DictationIMUseOnlyOfflineDictation, CACUserHintsFeatures, etc.
       esac
       ;;
 
