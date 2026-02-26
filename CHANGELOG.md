@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.1.3 — unreleased
+## 1.1.4 — unreleased
+
+
+## 1.1.3 — 2026-02-26
 
 ### Noise
 - Exclude `com.apple.AudioAccessory` (Bluetooth accessory battery state and timestamps)
