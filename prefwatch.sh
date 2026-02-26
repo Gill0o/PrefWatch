@@ -739,7 +739,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
-    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion)
+    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion|SUUpdateRelaunchingMarker)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -764,7 +764,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
-    *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id)
+    *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id|SessionId|SessionVersion|SessionLongBuildNumber|CampaignManagerVersionKey)
       return 0 ;;
 
     # UUIDs and flags (transient notification/state identifiers)
@@ -789,6 +789,10 @@ is_noisy_key() {
 
     # File metadata (changes on every file operation)
     parent-mod-date|file-mod-date|mod-count|file-type)
+      return 0 ;;
+
+    # Screenshot last selection area (changes every capture)
+    last-selection)
       return 0 ;;
 
     # Recent items & history (noisy, changes constantly)

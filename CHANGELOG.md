@@ -9,6 +9,9 @@
 - Filter `kIM_LastOpenedSession` for `us.zoom.xos` (Zoom last opened chat session)
 - Exclude `journal` domain (VoiceOver internal Braille timestamps)
 - Filter `SCRC*` and `SCRDisplay*` keys (VoiceOver internal Braille/display state)
+- Filter `SessionId`, `SessionVersion`, `SessionLongBuildNumber`, `CampaignManagerVersionKey` (app session/version metadata)
+- Filter `SUUpdateRelaunchingMarker` (Sparkle update framework marker)
+- Filter `last-selection` for `com.apple.screencapture` (screenshot selection area coordinates)
 
 ### Fix
 - Stop filtering `feature.*` keys in `com.apple.universalaccess` — VoiceOver, Zoom, StickyKeys etc. are real accessibility settings, not internal feature flags
