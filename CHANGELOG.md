@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.3 — 2026-02-26
+
+### Noise
+- Exclude `com.apple.AudioAccessory` (Bluetooth accessory battery state and timestamps)
+- Exclude `com.apple.systemsettings.extensions*` (Settings panel extension internal state)
+- Exclude `com.apple.networkserviceproxy` (network geolocation hashes)
+- Filter `kIM_LastOpenedSession` for `us.zoom.xos` (Zoom last opened chat session)
+- Exclude `journal` domain (VoiceOver internal Braille timestamps)
+- Filter `SCRC*` and `SCRDisplay*` keys (VoiceOver internal Braille/display state)
+- Filter `SessionId`, `SessionVersion`, `SessionLongBuildNumber`, `CampaignManagerVersionKey` (app session/version metadata)
+- Filter `SUUpdateRelaunchingMarker` (Sparkle update framework marker)
+- Filter `last-selection` for `com.apple.screencapture` (screenshot selection area coordinates)
+- Filter `timerEndInterval`, `comfortSoundsEnabled_UpdateInfo` for `com.apple.ComfortSounds` (timer timestamp, setting change audit log)
+- Filter `currentEnrollmentProgress` for `com.apple.PersonalAudio` (audio enrollment transient state)
+- Filter `DictationIMTargetApplications`, `CACPersistentSleepState` for `com.apple.speech.recognition.AppleSpeechRecognition.prefs` (auto-generated app inventory, Voice Control sleep state)
+- Filter `PanelFrame`, `SCLaunchedAsSlave` for `com.apple.AssistiveControl.virtualKeyboard` (window position, internal launch state)
+
+### Fix
+- Stop filtering `feature.*` keys in `com.apple.universalaccess` — VoiceOver, Zoom, StickyKeys etc. are real accessibility settings, not internal feature flags
+- Stop filtering `closeViewZoomFocusFollowModeKey` — zoom focus follow mode is a real user preference (detach zoom from pointer), not transient state
+- Filter `displaysLastCursorLocation` for `com.apple.universalaccess` (transient cursor position)
+
 ## 1.1.2 — 2026-02-24
 
 ### Fix

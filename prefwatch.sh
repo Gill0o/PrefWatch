@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.2
+# Version: 1.1.3
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -263,6 +263,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.shazamd"
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
+  "com.apple.AudioAccessory"
+  "com.apple.systemsettings.extensions*"
+  "com.apple.networkserviceproxy"
+  "journal"
   "com.apple.remindd.babysitter"
 
   # System maintenance & cache (noisy, not user settings)
@@ -735,7 +739,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
-    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion)
+    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion|SUUpdateRelaunchingMarker)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
@@ -760,7 +764,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
-    *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id)
+    *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id|SessionId|SessionVersion|SessionLongBuildNumber|CampaignManagerVersionKey)
       return 0 ;;
 
     # UUIDs and flags (transient notification/state identifiers)
@@ -768,13 +772,16 @@ is_noisy_key() {
     uuid|UUID|flags|*UUID|*uuid)
       return 0 ;;
 
-    # Feature flags (internal state, not user preferences)
-    feature.*)
+    # VoiceOver internal state (Braille defaults, display text timestamps)
+    SCRC*|SCRDisplay*)
       return 0 ;;
 
-    # Zoom focus tracking state (transient during zoom operations)
-    closeViewZoom*FocusFollowMode*)
-      return 0 ;;
+    # Feature flags (internal state, not user preferences)
+    # Exception: com.apple.universalaccess feature.* are real accessibility settings
+    feature.*)
+      [ "$domain" = "com.apple.universalaccess" ] || return 0 ;;
+
+
 
     # Metadata/sync counters (change constantly, not user preferences)
     *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
@@ -782,6 +789,10 @@ is_noisy_key() {
 
     # File metadata (changes on every file operation)
     parent-mod-date|file-mod-date|mod-count|file-type)
+      return 0 ;;
+
+    # Screenshot last selection area (changes every capture)
+    last-selection)
       return 0 ;;
 
     # Recent items & history (noisy, changes constantly)
@@ -852,6 +863,14 @@ is_noisy_key() {
   # ========================================================================
 
   case "$domain" in
+    # Accessibility Keyboard: Filter window position, keep panel settings
+    com.apple.AssistiveControl.virtualKeyboard)
+      case "$keyname" in
+        PanelFrame|SCLaunchedAsSlave) return 0 ;;
+        # Keep: DesiredPanelWindowPosition, etc.
+      esac
+      ;;
+
     # Dock preferences: Keep useful settings, filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
@@ -910,7 +929,7 @@ is_noisy_key() {
     # Universal Access: Filter internal change history, keep accessibility settings
     com.apple.universalaccess)
       case "$keyname" in
-        History|com.apple.custommenu.apps) return 0 ;;
+        History|com.apple.custommenu.apps|displaysLastCursorLocation) return 0 ;;
       esac
       ;;
 
@@ -941,7 +960,7 @@ is_noisy_key() {
     # Zoom: Filter per-user session state (tab selection, XMPP identifiers)
     us.zoom.xos)
       case "$keyname" in
-        *@xmpp.zoom.us*) return 0 ;;
+        *@xmpp.zoom.us*|kIM_LastOpenedSession) return 0 ;;
       esac
       ;;
 
@@ -966,6 +985,28 @@ is_noisy_key() {
         SafeBrowsing*|History*|LastSession*)
           return 0 ;;
         # Keep: HomePage, SearchEngine, AutoFillPasswords, etc.
+      esac
+      ;;
+
+    # ComfortSounds (Focus/Timer): Filter timer timestamps
+    com.apple.ComfortSounds)
+      case "$keyname" in
+        timerEndInterval|comfortSoundsEnabled_UpdateInfo) return 0 ;;
+      esac
+      ;;
+
+    # PersonalAudio: Filter enrollment progress state
+    com.apple.PersonalAudio)
+      case "$keyname" in
+        currentEnrollmentProgress) return 0 ;;
+      esac
+      ;;
+
+    # Speech Recognition: Filter auto-generated app inventory on Voice Control activation
+    com.apple.speech.recognition.AppleSpeechRecognition.prefs)
+      case "$keyname" in
+        DictationIMTargetApplications|CACPersistentSleepState) return 0 ;;
+        # Keep: DictationIMUseOnlyOfflineDictation, CACUserHintsFeatures, etc.
       esac
       ;;
 
