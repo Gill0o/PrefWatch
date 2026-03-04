@@ -2,6 +2,8 @@
 
 ## 1.1.4 — unreleased
 
+### Noise
+- Filter `RecentMoveAndCopyDestinations` for `com.apple.finder` (recent copy/move destination history)
 
 ## 1.1.3 — 2026-02-26
 

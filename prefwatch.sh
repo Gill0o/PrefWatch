@@ -890,7 +890,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
