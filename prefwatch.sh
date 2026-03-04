@@ -1503,6 +1503,8 @@ _emit_contextual_note() {
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
       _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+    com.apple.prodisplaylibrary)
+      _note="'defaults write' alone does not apply display presets — use System Settings > Displays or third-party tool BetterDisplay ('betterdisplaycli set --xdrPreset') to activate" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in

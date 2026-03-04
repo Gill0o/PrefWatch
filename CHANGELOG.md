@@ -5,6 +5,9 @@
 ### Noise
 - Filter `RecentMoveAndCopyDestinations` for `com.apple.finder` (recent copy/move destination history)
 
+### Note
+- Add inline NOTE for `com.apple.prodisplaylibrary`: `defaults write` alone does not apply display presets — suggests System Settings or third-party BetterDisplay CLI as alternatives
+
 ## 1.1.3 — 2026-02-26
 
 ### Noise
