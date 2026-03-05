@@ -768,6 +768,10 @@ is_noisy_key() {
     *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id|SessionId|SessionVersion|SessionLongBuildNumber|CampaignManagerVersionKey)
       return 0 ;;
 
+    # System-managed localization (auto-generated from language settings)
+    preferredLocalizations)
+      return 0 ;;
+
     # UUIDs and flags (transient notification/state identifiers)
     # Matches: uuid, UUID, *UUID, *uuid (e.g., sessionUUID, updatedSinceBootUUID)
     uuid|UUID|flags|*UUID|*uuid)
@@ -783,6 +787,10 @@ is_noisy_key() {
       [ "$domain" = "com.apple.universalaccess" ] || return 0 ;;
 
 
+
+    # Dynamic system info (internal state, not user preferences)
+    SystemInfoDynamic.*)
+      return 0 ;;
 
     # Metadata/sync counters (change constantly, not user preferences)
     *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
@@ -1284,8 +1292,7 @@ convert_delete_to_plistbuddy() {
   fi
 
   if [ "$is_array_deletion" = "true" ]; then
-    printf '# WARNING: Array deletion - indexes change after each deletion\n'
-    printf '# For multiple deletions: execute from HIGHEST index to LOWEST\n'
+    printf '# WARNING: Array deletion - indexes change after each deletion. For multiple deletions: execute from HIGHEST index to LOWEST\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$_mdm_path"

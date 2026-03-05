@@ -5,6 +5,8 @@
 ### Noise
 - Exclude `com.apple.universalaccessAuthWarning` (accessibility authorization state, not user preferences)
 - Filter `RecentMoveAndCopyDestinations` for `com.apple.finder` (recent copy/move destination history)
+- Filter `preferredLocalizations` globally (system-managed localization, not user preferences)
+- Filter `SystemInfoDynamic.*` globally (internal system state, not user preferences)
 
 ### Note
 - Add inline NOTE for `com.apple.prodisplaylibrary`: `defaults write` alone does not apply display presets — alternative third-party tools exist
