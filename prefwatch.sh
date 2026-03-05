@@ -277,7 +277,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.security*"
   "com.apple.biometrickitd"
 
-  # Accessibility telemetry (hearing device state, not user preferences)
+  # Accessibility internals (auth warnings, hearing device state, not user preferences)
+  "com.apple.universalaccessAuthWarning"
   "com.apple.AccessibilityHearingNearby"
   "com.apple.SpeakSelection"
 
@@ -1504,7 +1505,7 @@ _emit_contextual_note() {
     com.apple.universalaccess)
       _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.prodisplaylibrary)
-      _note="'defaults write' alone does not apply display presets — use System Settings > Displays or third-party tool BetterDisplay ('betterdisplaycli set --xdrPreset') to activate" ;;
+      _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
