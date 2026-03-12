@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.1.4 — unreleased
+## 1.1.5 — unreleased
+
+
+## 1.1.4 — 2026-03-12
 
 ### Noise
 - Filter `CRDialogShown_*`, `lastCrash_*`, `SuppressCrash_*` for `com.adobe.crashreporter` (crash dialog state and crash metadata, not user preferences)
