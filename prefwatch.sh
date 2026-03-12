@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.3
+# Version: 1.1.4
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -267,7 +267,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.systemsettings.extensions*"
   "com.apple.networkserviceproxy"
   "journal"
-  "com.apple.remindd.babysitter"
+  "com.apple.remindd*"
 
   # System maintenance & cache (noisy, not user settings)
   "com.apple.CacheDelete"
@@ -277,7 +277,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.security*"
   "com.apple.biometrickitd"
 
-  # Accessibility telemetry (hearing device state, not user preferences)
+  # Accessibility internals (auth warnings, hearing device state, not user preferences)
+  "com.apple.universalaccessAuthWarning"
   "com.apple.AccessibilityHearingNearby"
   "com.apple.SpeakSelection"
 
@@ -738,6 +739,10 @@ is_noisy_key() {
     NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
+    # App-controlled macOS menu item overrides (set by app, not user)
+    NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
+      return 0 ;;
+
     # Sparkle updater internals (auto-update framework state)
     SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion|SUUpdateRelaunchingMarker)
       return 0 ;;
@@ -767,6 +772,10 @@ is_noisy_key() {
     *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id|SessionId|SessionVersion|SessionLongBuildNumber|CampaignManagerVersionKey)
       return 0 ;;
 
+    # System-managed localization (auto-generated from language settings)
+    preferredLocalizations)
+      return 0 ;;
+
     # UUIDs and flags (transient notification/state identifiers)
     # Matches: uuid, UUID, *UUID, *uuid (e.g., sessionUUID, updatedSinceBootUUID)
     uuid|UUID|flags|*UUID|*uuid)
@@ -782,6 +791,10 @@ is_noisy_key() {
       [ "$domain" = "com.apple.universalaccess" ] || return 0 ;;
 
 
+
+    # Dynamic system info (internal state, not user preferences)
+    SystemInfoDynamic.*)
+      return 0 ;;
 
     # Metadata/sync counters (change constantly, not user preferences)
     *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
@@ -817,6 +830,14 @@ is_noisy_key() {
 
     # Migration flags (one-time internal state, not user preferences)
     *DidMigrate*|*didMigrate*)
+      return 0 ;;
+
+    # First-launch flags (version-stamped one-time state, not user preferences)
+    FirstLaunch*|firstLaunch*)
+      return 0 ;;
+
+    # Session duration counters (telemetry, not user preferences)
+    SessionDuration)
       return 0 ;;
 
     # WebKit internal state (set when opening Settings panels that use WebKit views)
@@ -890,7 +911,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -1033,6 +1054,57 @@ is_noisy_key() {
         com.apple.print.PageFormat.PMOrientation|com.apple.print.preset.Orientation) ;;
         # Filter: everything else (Fiery defaults, PPD metadata, transient data)
         *) return 0 ;;
+      esac
+      ;;
+
+    # Adobe Crash Reporter: Filter crash state, not user preferences
+    com.adobe.crashreporter)
+      case "$keyname" in
+        # Noisy: crash dialog state and crash metadata (version-stamped keys)
+        CRDialogShown_*|lastCrash_*|SuppressCrash_*)
+          return 0 ;;
+      esac
+      ;;
+
+    # Adobe Photoshop: Filter internal app state, not user preferences
+    com.adobe.Photoshop)
+      case "$keyname" in
+        # Noisy: Adobe Butler service first-launch flag (version-stamped)
+        butler.*)
+          return 0 ;;
+        # Noisy: internal memory config and font palette state (year/version-stamped)
+        VMMemoryUsagePercent*|paletteEnhancedFontTypeKey*)
+          return 0 ;;
+      esac
+      ;;
+
+    # Adobe Bridge: Filter internal app state, keep user preferences
+    com.adobe.bridge*)
+      case "$keyname" in
+        # Noisy: "Do Not Show Again" dialog suppression flags
+        DNSA*)
+          return 0 ;;
+        # Noisy: startup script load result (internal state)
+        StartupScriptsLoadedSuccessfully)
+          return 0 ;;
+        # Noisy: feature flag expiry timestamp (version-stamped)
+        FeatureMapExpiryTime)
+          return 0 ;;
+        # Noisy: current browsed folder (session state, changes constantly)
+        target)
+          return 0 ;;
+        # Keep: LastKeyboardPreset (user keyboard shortcut preset)
+        # Keep: StartupScriptsShouldLoad (user preference to enable/disable startup scripts)
+        # Keep: QuickActionsPanelCategory (Quick Actions panel visibility)
+      esac
+      ;;
+
+    # Adobe Premiere Pro: Filter session/recovery state
+    "com.Adobe.Premiere Pro"*)
+      case "$keyname" in
+        # Noisy: crash recovery project list (session state, not user preferences)
+        RecoveryOpenProjectInfos)
+          return 0 ;;
       esac
       ;;
 
@@ -1283,8 +1355,7 @@ convert_delete_to_plistbuddy() {
   fi
 
   if [ "$is_array_deletion" = "true" ]; then
-    printf '# WARNING: Array deletion - indexes change after each deletion\n'
-    printf '# For multiple deletions: execute from HIGHEST index to LOWEST\n'
+    printf '# WARNING: Array deletion - indexes change after each deletion. For multiple deletions: execute from HIGHEST index to LOWEST\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$_mdm_path"
@@ -1503,6 +1574,8 @@ _emit_contextual_note() {
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
       _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+    com.apple.prodisplaylibrary)
+      _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -3003,19 +3076,19 @@ else
   log_line "Starting monitoring on $DOMAIN"
 fi
 
-# Python3 status — in ALL mode, require Python or prompt user
+# Python3 status — in ALL mode, prompt user (non-interactive fallback to "y" for Jamf/no-TTY)
 if [ -n "$PYTHON3_BIN" ]; then
   log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
-elif [ "$ALL_MODE" = "true" ] && [ "$JAMF_MODE" != "true" ]; then
-  printf "WARNING: Xcode Command Line Tools not installed — Python3 unavailable\n"
-  printf "Without Python3: array/dict changes and PlistBuddy commands will not be detected\n"
-  printf "For full detection, install Xcode CLT:\n"
-  printf "  xcode-select --install\n"
+elif [ "$ALL_MODE" = "true" ]; then
+  printf "WARNING: Xcode Command Line Tools not installed — Python3 unavailable\n"         | tee -a "$LOGFILE" 2>/dev/null || true
+  printf "Without Python3: array/dict changes and PlistBuddy commands will not be detected\n" | tee -a "$LOGFILE" 2>/dev/null || true
+  printf "For full detection, install Xcode CLT:\n"                                        | tee -a "$LOGFILE" 2>/dev/null || true
+  printf "  xcode-select --install\n"                                                      | tee -a "$LOGFILE" 2>/dev/null || true
   printf "\n"
   printf "Continue with limited detection? (y/n) "
   read -r _py_answer </dev/tty 2>/dev/null || _py_answer="y"
   case "$_py_answer" in
-    [Yy]*) printf "Continuing with limited detection — only simple key changes will be reported\n" ;;
+    [Yy]*) printf "Continuing with limited detection — only simple key changes will be reported\n" | tee -a "$LOGFILE" 2>/dev/null || true ;;
     *)
       printf "Install Command Line Tools first, then re-run PrefWatch:\n"
       printf "  xcode-select --install\n"
@@ -3023,8 +3096,8 @@ elif [ "$ALL_MODE" = "true" ] && [ "$JAMF_MODE" != "true" ]; then
       ;;
   esac
 else
-  log_line "WARNING: ${_py_warn:-Python3 not available}"
-  log_line "TIP: Run 'xcode-select --install' to enable array change detection"
+  log_line "Cmd: # WARNING: ${_py_warn:-Python3 not available — array change detection disabled}"
+  log_line "Cmd: # TIP: Run 'xcode-select --install' to enable array change detection"
 fi
 
 # Warn if ALL mode without root (fs_usage unavailable)

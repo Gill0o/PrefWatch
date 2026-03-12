@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.4 — 2026-03-12
+
+### Noise
+- Filter `CRDialogShown_*`, `lastCrash_*`, `SuppressCrash_*` for `com.adobe.crashreporter` (crash dialog state and crash metadata, not user preferences)
+- Filter `NSDisabledCharacterPaletteMenuItem`, `NSFullScreenMenuItemEverywhere` globally (app-controlled macOS menu item overrides, not user preferences)
+- Filter `butler.*`, `VMMemoryUsagePercent*`, `paletteEnhancedFontTypeKey*` for `com.adobe.Photoshop` (internal app state, not user preferences)
+- Filter `DNSA*`, `StartupScriptsLoadedSuccessfully`, `FeatureMapExpiryTime` for `com.adobe.bridge*` (dialog suppression state, startup load result, feature flag expiry)
+- Filter `SessionDuration` globally (session duration telemetry counter, seen in Adobe After Effects, Premiere Pro, etc.)
+- Filter `FirstLaunch*`, `firstLaunch*` globally (version-stamped first-launch flags, internal app state)
+- Filter `RecoveryOpenProjectInfos` for `com.Adobe.Premiere Pro*` (crash recovery project list, session state)
+- Exclude `com.apple.universalaccessAuthWarning` (accessibility authorization state, not user preferences)
+- Filter `RecentMoveAndCopyDestinations` for `com.apple.finder` (recent copy/move destination history)
+- Filter `preferredLocalizations` globally (system-managed localization, not user preferences)
+- Filter `SystemInfoDynamic.*` globally (internal system state, not user preferences)
+- Exclude `com.apple.remindd*` (Reminders daemon CloudKit sync state, replaces babysitter-only exclusion)
+
+### Fix
+- Python3 warning now written to log file (previously stdout only) — visible when checking `/var/log/prefwatch-*.log` directly
+- Python3 prompt unified for CLI and Jamf: same interactive prompt in both modes, auto-continues ("y") when no TTY (Jamf)
+- Python3 warning visible in Jamf output even in ONLY_CMDS mode (prefixed with `Cmd: #`)
+
+### Note
+- Add inline NOTE for `com.apple.prodisplaylibrary`: `defaults write` alone does not apply display presets — alternative third-party tools exist
+
 ## 1.1.3 — 2026-02-26
 
 ### Noise
