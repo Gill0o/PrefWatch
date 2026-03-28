@@ -255,7 +255,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Cloud sync internals (constant updates, not user preferences)
   "com.apple.CloudKit*"
-  "com.apple.bird"
+  "com.apple.bird*"
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
   "com.apple.appleaccountd"
@@ -310,6 +310,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.inputAnalytics*"
   "com.apple.appleintelligencereporting"
   "com.apple.GenerativeFunctions*"
+
+  # ML rate limiter (token bucket counters/timestamps for embedding processing)
+  "TokenBucketRateLimiter"
 
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
@@ -1167,6 +1170,17 @@ is_noisy_pbcmd() {
     *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
     *":com.apple.finder.SyncExtensions"*)
       return 0 ;;
+  esac
+
+  # Domain-specific sub-key patterns (need full path matching)
+  case "$domain" in
+    com.apple.GameController)
+      # Noisy: modification dates (sync metadata), tombstone tracking
+      case "$pb_cmd" in
+        *":modifiedDate "*|*":tombstones "*)
+          return 0 ;;
+      esac
+      ;;
   esac
 
   return 1

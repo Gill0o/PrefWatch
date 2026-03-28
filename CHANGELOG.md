@@ -2,6 +2,10 @@
 
 ## 1.1.5 — unreleased
 
+### Noise
+- Exclude `TokenBucketRateLimiter` (ML embedding rate limiter counters/timestamps)
+- Widen `com.apple.bird` exclusion to `com.apple.bird*` to also catch `com.apple.bird.containers.notifications`
+- Filter `controllers:tombstones`, `*:modifiedDate` for `com.apple.GameController` (internal sync metadata, not user preferences)
 
 ## 1.1.4 — 2026-03-12
 
