@@ -6,6 +6,11 @@
 - Exclude `TokenBucketRateLimiter` (ML embedding rate limiter counters/timestamps)
 - Widen `com.apple.bird` exclusion to `com.apple.bird*` to also catch `com.apple.bird.containers.notifications`
 - Filter `controllers:tombstones`, `*:modifiedDate` for `com.apple.GameController` (internal sync metadata, not user preferences)
+- Exclude `com.apple.EmojiCache` (auto-generated emoji locale cache)
+- Filter `Scrutiny`, `CKBackgroundSettingsLastReportHour` for `com.apple.MobileSMS` (iMessage analytics/telemetry)
+- Filter `CharacterPaletteIM` sub-key for `com.apple.HIToolbox` (transient emoji viewer open/close)
+- Filter `lastFireDate` sub-key for `com.rogueamoeba.loopbackd` (scheduler timestamp)
+- Filter `uret-init` for `com.native-instruments.*` (telemetry init flag)
 
 ## 1.1.4 — 2026-03-12
 

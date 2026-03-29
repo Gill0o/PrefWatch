@@ -314,6 +314,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # ML rate limiter (token bucket counters/timestamps for embedding processing)
   "TokenBucketRateLimiter"
 
+  # Emoji search cache (auto-generated locale emoji lists, not user preferences)
+  "com.apple.EmojiCache"
+
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
 
@@ -1111,6 +1114,22 @@ is_noisy_key() {
       esac
       ;;
 
+    # Messages (iMessage): Filter analytics/telemetry, keep user preferences
+    com.apple.MobileSMS)
+      case "$keyname" in
+        # Noisy: internal analytics (contact scrutiny, background report counters)
+        Scrutiny|CKBackgroundSettingsLastReportHour)
+          return 0 ;;
+      esac
+      ;;
+
+    # Native Instruments: Filter telemetry init flags
+    com.native-instruments.*)
+      case "$keyname" in
+        uret-init) return 0 ;;
+      esac
+      ;;
+
   esac
 
   return 1
@@ -1178,6 +1197,27 @@ is_noisy_pbcmd() {
       # Noisy: modification dates (sync metadata), tombstone tracking
       case "$pb_cmd" in
         *":modifiedDate "*|*":tombstones "*)
+          return 0 ;;
+      esac
+      ;;
+    com.rogueamoeba.loopbackd)
+      # Noisy: periodic scheduler fire timestamps
+      case "$pb_cmd" in
+        *":lastFireDate "*)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.HIToolbox)
+      # Noisy: Character Palette (Emoji viewer) add/remove on open/close
+      case "$pb_cmd" in
+        *"CharacterPaletteIM"*)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.MobileSMS)
+      # Noisy: Scrutiny analytics (contact tracking, timestamps)
+      case "$pb_cmd" in
+        *":Scrutiny:"*|*":Scrutiny "*)
           return 0 ;;
       esac
       ;;
