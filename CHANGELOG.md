@@ -16,7 +16,6 @@
 - Exclude `Avatar Cache*` (avatar cache index, hash keys with timestamps)
 - Exclude `com.apple.diagnosticd*` (system logging subsystem filter config)
 - Filter `FXConnectToLastURL` for `com.apple.finder` (last connected server history)
-- Filter `TB Is Shown` sub-key globally (toolbar visibility toggle, keep toolbar customization)
 
 ## 1.1.4 — 2026-03-12
 

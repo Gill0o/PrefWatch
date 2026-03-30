@@ -1189,8 +1189,7 @@ is_noisy_pbcmd() {
     *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
     *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
     *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
-    *":com.apple.finder.SyncExtensions"*|\
-    *":TB\\ Is\\ Shown "*)
+    *":com.apple.finder.SyncExtensions"*)
       return 0 ;;
   esac
 
