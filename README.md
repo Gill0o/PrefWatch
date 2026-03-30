@@ -8,7 +8,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
-- **Noise filtering** — 100+ domain exclusions and global key patterns to surface only real changes
+- **Noise filtering** — 200+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
 - **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
 
 ## Quick Start
@@ -35,7 +35,6 @@ sudo ./prefwatch.sh -v
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
-| `--only-cmds` | `-q` | Show only executable commands | On |
 | `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
