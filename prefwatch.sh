@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.4
+# Version: 1.1.5
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -255,7 +255,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Cloud sync internals (constant updates, not user preferences)
   "com.apple.CloudKit*"
-  "com.apple.bird"
+  "com.apple.bird*"
   "com.apple.cloudd"
   "com.apple.CallHistorySyncHelper"
   "com.apple.appleaccountd"
@@ -311,6 +311,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.appleintelligencereporting"
   "com.apple.GenerativeFunctions*"
 
+  # ML rate limiter (token bucket counters/timestamps for embedding processing)
+  "TokenBucketRateLimiter"
+
+  # Emoji search cache (auto-generated locale emoji lists, not user preferences)
+  "com.apple.EmojiCache"
+
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
 
@@ -335,6 +341,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.windowserver*"
   "com.apple.settings.Storage"
   "diagnostics_agent"
+  "com.apple.diagnosticd*"
+  "Avatar Cache*"
 
   # Services menu localization cache (auto-regenerated, not user preferences)
   "com.apple.ServicesMenu.Services"
@@ -501,6 +509,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.StorageManagement*"
   "com.apple.MIDI*"
   "com.apple.corespotlightui"
+  "com.apple.textunderstanding*"
 
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
@@ -911,7 +920,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|FXConnectToLastURL|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -974,6 +983,9 @@ is_noisy_key() {
           return 0 ;;
         NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
           return 0 ;;
+        # Noisy: auto-learned shortcuts, reload trigger
+        mailShortcuts|reloadShortcuts)
+          return 0 ;;
         # Keep: DisabledUTTypes, EnabledPreferenceRules, orderedItems, etc.
       esac
       ;;
@@ -981,7 +993,7 @@ is_noisy_key() {
     # Zoom: Filter per-user session state (tab selection, XMPP identifiers)
     us.zoom.xos)
       case "$keyname" in
-        *@xmpp.zoom.us*|kIM_LastOpenedSession) return 0 ;;
+        *@xmpp.zoom.us*|kIM_LastOpenedSession|ZMJoinMeetingFlowAnchor) return 0 ;;
       esac
       ;;
 
@@ -1019,7 +1031,7 @@ is_noisy_key() {
     # PersonalAudio: Filter enrollment progress state
     com.apple.PersonalAudio)
       case "$keyname" in
-        currentEnrollmentProgress) return 0 ;;
+        currentEnrollmentProgress|shouldUpdateAccessory) return 0 ;;
       esac
       ;;
 
@@ -1108,6 +1120,22 @@ is_noisy_key() {
       esac
       ;;
 
+    # Messages (iMessage): Filter analytics/telemetry, keep user preferences
+    com.apple.MobileSMS)
+      case "$keyname" in
+        # Noisy: internal analytics (contact scrutiny, background report counters)
+        Scrutiny|CKBackgroundSettingsLastReportHour)
+          return 0 ;;
+      esac
+      ;;
+
+    # Native Instruments: Filter telemetry init flags
+    com.native-instruments.*)
+      case "$keyname" in
+        uret-init) return 0 ;;
+      esac
+      ;;
+
   esac
 
   return 1
@@ -1165,8 +1193,41 @@ is_noisy_pbcmd() {
     *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
     *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
     *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
-    *":com.apple.finder.SyncExtensions"*)
+    *":com.apple.finder.SyncExtensions"*|\
+    *":WindowBounds "*|*":WindowState:"*)
       return 0 ;;
+  esac
+
+  # Domain-specific sub-key patterns (need full path matching)
+  case "$domain" in
+    com.apple.GameController)
+      # Noisy: modification dates (sync metadata), tombstone tracking
+      case "$pb_cmd" in
+        *":modifiedDate "*|*":tombstones "*)
+          return 0 ;;
+      esac
+      ;;
+    com.rogueamoeba.loopbackd)
+      # Noisy: periodic scheduler fire timestamps
+      case "$pb_cmd" in
+        *":lastFireDate "*)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.HIToolbox)
+      # Noisy: Character Palette (Emoji viewer) add/remove on open/close
+      case "$pb_cmd" in
+        *"CharacterPaletteIM"*)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.MobileSMS)
+      # Noisy: Scrutiny analytics (contact tracking, timestamps)
+      case "$pb_cmd" in
+        *":Scrutiny:"*|*":Scrutiny "*)
+          return 0 ;;
+      esac
+      ;;
   esac
 
   return 1

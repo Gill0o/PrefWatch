@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.5 — 2026-03-30
+
+### Noise
+- Exclude `TokenBucketRateLimiter` (ML embedding rate limiter counters/timestamps)
+- Widen `com.apple.bird` exclusion to `com.apple.bird*` to also catch `com.apple.bird.containers.notifications`
+- Filter `controllers:tombstones`, `*:modifiedDate` for `com.apple.GameController` (internal sync metadata, not user preferences)
+- Exclude `com.apple.EmojiCache` (auto-generated emoji locale cache)
+- Filter `Scrutiny`, `CKBackgroundSettingsLastReportHour` for `com.apple.MobileSMS` (iMessage analytics/telemetry)
+- Filter `CharacterPaletteIM` sub-key for `com.apple.HIToolbox` (transient emoji viewer open/close)
+- Filter `lastFireDate` sub-key for `com.rogueamoeba.loopbackd` (scheduler timestamp)
+- Filter `uret-init` for `com.native-instruments.*` (telemetry init flag)
+- Filter `shouldUpdateAccessory` for `com.apple.PersonalAudio` (AirPods firmware state toggle)
+- Filter `ZMJoinMeetingFlowAnchor` for `us.zoom.xos` (window position)
+- Exclude `Avatar Cache*` (avatar cache index, hash keys with timestamps)
+- Exclude `com.apple.diagnosticd*` (system logging subsystem filter config)
+- Filter `FXConnectToLastURL` for `com.apple.finder` (last connected server history)
+- Filter `mailShortcuts`, `reloadShortcuts` for `com.apple.Spotlight` (auto-learned shortcuts, reload trigger)
+- Exclude `com.apple.textunderstanding*` (NLP runtime model version counters)
+- Filter `WindowBounds`, `WindowState` sub-keys in PlistBuddy commands (window position/size in nested dicts)
+
 ## 1.1.4 — 2026-03-12
 
 ### Noise
