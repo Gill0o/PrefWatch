@@ -16,6 +16,9 @@
 - Exclude `Avatar Cache*` (avatar cache index, hash keys with timestamps)
 - Exclude `com.apple.diagnosticd*` (system logging subsystem filter config)
 - Filter `FXConnectToLastURL` for `com.apple.finder` (last connected server history)
+- Filter `mailShortcuts`, `reloadShortcuts` for `com.apple.Spotlight` (auto-learned shortcuts, reload trigger)
+- Exclude `com.apple.textunderstanding*` (NLP runtime model version counters)
+- Filter `WindowBounds`, `WindowState` sub-keys in PlistBuddy commands (window position/size in nested dicts)
 
 ## 1.1.4 — 2026-03-12
 

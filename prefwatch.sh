@@ -509,6 +509,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.StorageManagement*"
   "com.apple.MIDI*"
   "com.apple.corespotlightui"
+  "com.apple.textunderstanding*"
 
   # Note: The following are now intelligently filtered instead of excluded:
   # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
@@ -982,6 +983,9 @@ is_noisy_key() {
           return 0 ;;
         NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
           return 0 ;;
+        # Noisy: auto-learned shortcuts, reload trigger
+        mailShortcuts|reloadShortcuts)
+          return 0 ;;
         # Keep: DisabledUTTypes, EnabledPreferenceRules, orderedItems, etc.
       esac
       ;;
@@ -1189,7 +1193,8 @@ is_noisy_pbcmd() {
     *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
     *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
     *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
-    *":com.apple.finder.SyncExtensions"*)
+    *":com.apple.finder.SyncExtensions"*|\
+    *":WindowBounds "*|*":WindowState:"*)
       return 0 ;;
   esac
 
