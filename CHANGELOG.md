@@ -11,6 +11,12 @@
 - Filter `CharacterPaletteIM` sub-key for `com.apple.HIToolbox` (transient emoji viewer open/close)
 - Filter `lastFireDate` sub-key for `com.rogueamoeba.loopbackd` (scheduler timestamp)
 - Filter `uret-init` for `com.native-instruments.*` (telemetry init flag)
+- Filter `shouldUpdateAccessory` for `com.apple.PersonalAudio` (AirPods firmware state toggle)
+- Filter `ZMJoinMeetingFlowAnchor` for `us.zoom.xos` (window position)
+- Exclude `Avatar Cache*` (avatar cache index, hash keys with timestamps)
+- Exclude `com.apple.diagnosticd*` (system logging subsystem filter config)
+- Filter `FXConnectToLastURL` for `com.apple.finder` (last connected server history)
+- Filter `NSToolbar Configuration*` globally (toolbar visibility/layout state)
 
 ## 1.1.4 — 2026-03-12
 

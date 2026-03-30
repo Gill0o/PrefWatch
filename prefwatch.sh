@@ -341,6 +341,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.windowserver*"
   "com.apple.settings.Storage"
   "diagnostics_agent"
+  "com.apple.diagnosticd*"
+  "Avatar Cache*"
 
   # Services menu localization cache (auto-regenerated, not user preferences)
   "com.apple.ServicesMenu.Services"
@@ -742,7 +744,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*|NSToolbar\ Configuration*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -917,7 +919,7 @@ is_noisy_key() {
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
-        FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+        FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|FXConnectToLastURL|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -987,7 +989,7 @@ is_noisy_key() {
     # Zoom: Filter per-user session state (tab selection, XMPP identifiers)
     us.zoom.xos)
       case "$keyname" in
-        *@xmpp.zoom.us*|kIM_LastOpenedSession) return 0 ;;
+        *@xmpp.zoom.us*|kIM_LastOpenedSession|ZMJoinMeetingFlowAnchor) return 0 ;;
       esac
       ;;
 
@@ -1025,7 +1027,7 @@ is_noisy_key() {
     # PersonalAudio: Filter enrollment progress state
     com.apple.PersonalAudio)
       case "$keyname" in
-        currentEnrollmentProgress) return 0 ;;
+        currentEnrollmentProgress|shouldUpdateAccessory) return 0 ;;
       esac
       ;;
 
