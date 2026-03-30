@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.1.5 — unreleased
+## 1.1.6 — unreleased
+
+
+## 1.1.5 — 2026-03-30
 
 ### Noise
 - Exclude `TokenBucketRateLimiter` (ML embedding rate limiter counters/timestamps)
