@@ -744,7 +744,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*|NSToolbar\ Configuration*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -1189,7 +1189,8 @@ is_noisy_pbcmd() {
     *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
     *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
     *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
-    *":com.apple.finder.SyncExtensions"*)
+    *":com.apple.finder.SyncExtensions"*|\
+    *":TB\\ Is\\ Shown "*)
       return 0 ;;
   esac
 
