@@ -858,7 +858,7 @@ is_noisy_key() {
       return 0 ;;
 
     # View state (scroll positions, selected items, etc.)
-    *ScrollPosition|*SelectedItem*|*ViewOptions*|*IconViewSettings*)
+    *ScrollPosition*|*scrollPosition*|*SelectedItem*|*ViewOptions*)
       return 0 ;;
 
     # Playback & connection state (transient states across all apps)
@@ -1192,10 +1192,22 @@ is_noisy_pbcmd() {
     *":dock-extra "*|*":is-beta "*|*":tile-type "*|*":recent-apps:"*|\
     *":parent-mod-date "*|*":file-mod-date "*|*":file-type "*|\
     *":vendorDefaultSettings:"*|*"TB\\ Default\\ Item"*|\
-    *"ViewSettings"*|*":GUID "*|*":window-file:"*|\
+    *":GUID "*|*":window-file:"*|\
     *":com.apple.finder.SyncExtensions"*|\
-    *":WindowBounds "*|*":WindowState:"*)
+    *":WindowBounds "*|*":WindowState:"*|\
+    *":scrollPosition"*)
       return 0 ;;
+  esac
+
+  # Domain-specific sub-key patterns (need full path matching)
+  case "$domain" in
+    com.apple.finder|com.apple.Finder)
+      # Filter column widths (resize noise, not user preferences)
+      case "$pb_cmd" in
+        *":columns:"*":width "*)
+          return 0 ;;
+      esac
+      ;;
   esac
 
   # Domain-specific sub-key patterns (need full path matching)
@@ -1630,7 +1642,7 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Some changes require 'killall Finder' to apply — view settings may also be overridden per-folder in .DS_Store" ;;
+      _note="Some changes require 'killall Finder' to apply — view settings may be overridden per-folder in .DS_Store. Column view settings are NOT stored in preferences (only in .DS_Store)" ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
