@@ -1642,7 +1642,7 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Some changes require 'killall Finder' to apply — view settings may be overridden per-folder in .DS_Store. Column view settings are NOT stored in preferences (only in .DS_Store)" ;;
+      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) are per-folder (.DS_Store): click 'Use as Defaults' to write to preferences. Column view has no global default (always .DS_Store)" ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
