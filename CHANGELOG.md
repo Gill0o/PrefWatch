@@ -11,7 +11,7 @@
 - Fix `*ScrollPosition` pattern to also match `scrollPositionX/Y` (add trailing wildcard + lowercase variant)
 - Filter `scrollPosition` sub-keys in PlistBuddy commands (nested scroll state in view settings)
 - Filter Finder column `:width` sub-keys in PlistBuddy commands (column resize noise)
-- Update Finder contextual NOTE: column view settings are only stored in .DS_Store, not in preferences
+- Update Finder contextual NOTE: View Options (Cmd+J) require 'Use as Defaults' for detection; column view has no global default (always .DS_Store)
 
 ## 1.1.5 — 2026-03-30
 
