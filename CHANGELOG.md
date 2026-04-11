@@ -2,6 +2,9 @@
 
 ## 1.1.7 — unreleased
 
+
+## 1.1.6 — 2026-04-11
+
 ### Fixed
 - Stop filtering Finder view settings (`FK_StandardViewSettings`) — `showIconPreview`, `iconSize`, `gridSpacing`, column/list view settings are real user preferences
   - Removed overly broad `*"ViewSettings"*` sub-key filter in PlistBuddy commands
