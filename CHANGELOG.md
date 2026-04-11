@@ -1,9 +1,6 @@
 # Changelog
 
-## .1.2.6000000000000001 — unreleased
-
-
-## 1.1.6 — unreleased
+## 1.1.7 — unreleased
 
 ### Fixed
 - Stop filtering Finder view settings (`FK_StandardViewSettings`) — `showIconPreview`, `iconSize`, `gridSpacing`, column/list view settings are real user preferences
