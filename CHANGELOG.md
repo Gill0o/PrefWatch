@@ -2,6 +2,16 @@
 
 ## 1.1.7 — unreleased
 
+### Fixed
+- Column view settings in Finder now detected (`StandardViewOptions:ColumnViewOptions`) — previously masked by `*ViewOptions*` global filter
+- Update Finder NOTE: column view writes directly to preferences (no 'Use as Defaults' needed)
+- Narrow 5 overly-global `is_noisy_key()` patterns that could mask real user preferences:
+  - `*History*` → `*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*` (keeps `HistoryAgeInDaysLimit`, `EnableHistory`)
+  - `*Cache*` → `*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*` (keeps `CacheSize`, `EnableCache`, `DiskCacheSize`)
+  - `*Temp*` → removed (kept `*-temp|*-tmp|*TempFile*|*TempPath*`) to avoid catching `Template*`, `ColorTemperature`
+  - `*ViewOptions*` → `*ViewOptionsFrame*|*ViewOptionsWindow*` (suffix-specific window state)
+  - `FK_SidebarWidth*` → removed (Finder sidebar width is a real user preference)
+- Filter `PreviewOptionsWindow.Location` specifically for Finder (Cmd+J panel window position)
 
 ## 1.1.6 — 2026-04-11
 

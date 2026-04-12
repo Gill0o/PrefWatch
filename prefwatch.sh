@@ -745,7 +745,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -818,7 +818,8 @@ is_noisy_key() {
       return 0 ;;
 
     # Recent items & history (noisy, changes constantly)
-    *RecentFolders|*RecentDocuments|*RecentSearches|*History*|*RecentlyUsed*)
+    # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
+    *RecentFolders|*RecentDocuments|*RecentSearches|*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*|*RecentlyUsed*)
       return 0 ;;
 
     # Finder sync state (iCloud Drive extension toolbar, not user preferences)
@@ -854,11 +855,13 @@ is_noisy_key() {
       return 0 ;;
 
     # Cache & temporary data
-    *-cache|*Cache*|*-temp|*Temp*|*-tmp)
+    # Note: keeps real prefs like CacheSize, EnableCache, ColorTemperature, Template*
+    *-cache|*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*|*-temp|*-tmp|*TempFile*|*TempPath*)
       return 0 ;;
 
     # View state (scroll positions, selected items, etc.)
-    *ScrollPosition*|*scrollPosition*|*SelectedItem*|*ViewOptions*)
+    # Note: *ViewOptionsFrame/Window only — keeps Finder StandardViewOptions etc.
+    *ScrollPosition*|*scrollPosition*|*SelectedItem*|*ViewOptionsFrame*|*ViewOptionsWindow*)
       return 0 ;;
 
     # Playback & connection state (transient states across all apps)
@@ -921,6 +924,9 @@ is_noisy_key() {
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
         FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|FXConnectToLastURL|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+          return 0 ;;
+        # Noisy: View Options panel window position (Cmd+J panel)
+        PreviewOptionsWindow.Location)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -1642,7 +1648,7 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) are per-folder (.DS_Store): click 'Use as Defaults' to write to preferences. Column view has no global default (always .DS_Store)" ;;
+      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) for icon/list are per-folder (.DS_Store): click 'Use as Defaults' to write to preferences. Column view writes directly to preferences (no 'Use as Defaults' button needed)" ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
