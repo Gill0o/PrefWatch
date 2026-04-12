@@ -297,6 +297,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.shazamd"
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
+  "com.apple.imessage.bag"
   "com.apple.AudioAccessory"
   "com.apple.systemsettings.extensions*"
   "com.apple.networkserviceproxy"
@@ -808,7 +809,7 @@ is_noisy_key() {
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*)
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*)
       return 0 ;;
 
     # Note: removed *Date|Date — too generic, could mask ExpirationDate/StartDate as real prefs
@@ -1181,6 +1182,13 @@ is_noisy_key() {
       case "$keyname" in
         # Noisy: internal analytics (contact scrutiny, background report counters)
         Scrutiny|CKBackgroundSettingsLastReportHour)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.iChat)
+      case "$keyname" in
+        # Internal IMD state (last notification timestamp, not a user preference)
+        LastIMDNotificationPostedDate)
           return 0 ;;
       esac
       ;;
@@ -1708,7 +1716,10 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list view); column view writes directly" ;;
+      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list view); column view writes directly"
+      case "$array_base" in
+        PreviewPaneSettings) _note="First opening Finder Preview pane options writes the full attribute list — only subsequent toggles reflect actual modifications" ;;
+      esac ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
