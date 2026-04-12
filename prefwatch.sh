@@ -48,6 +48,10 @@
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
 #     $9 = MDM_OUTPUT (true/false) — replace user home path with $loggedInUser
 #          variable in PlistBuddy commands for MDM deployment (default: false)
+#     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
+#          "active" so their first change is detected without fs_usage→poll
+#          round-trip. Defaults: com.apple.dock, com.apple.finder,
+#          com.apple.HIToolbox, .GlobalPreferences. Pass empty string to disable.
 # ============================================================================
 
 # ============================================================================
@@ -77,6 +81,10 @@ Options:
   -v, --verbose         Show detailed debug output with timestamps
   -q, --only-cmds       Show only executable commands (default)
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
+  --hot-domains <list>  Comma-separated list of domains kept permanently active
+                        for instant first-change detection (default:
+                        com.apple.dock,com.apple.finder,com.apple.HIToolbox,
+                        .GlobalPreferences). Pass empty string to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
                         \$loggedInUser variable in PlistBuddy commands
@@ -105,6 +113,7 @@ Jamf Pro Mode:
     $7 = ONLY_CMDS (true/false)
     $8 = EXCLUDE_DOMAINS
     $9 = MDM_OUTPUT (true/false)
+    $10 = HOT_DOMAINS (comma-separated; empty string to disable)
 
 EOF
   exit 0
@@ -166,6 +175,14 @@ parse_cli_args() {
         EXCLUDE_DOMAINS="${2}"
         shift 2
         ;;
+      --hot-domains)
+        if [[ -z "${2:-}" ]]; then
+          echo "Error: --hot-domains requires a comma-separated list argument" >&2
+          exit 1
+        fi
+        HOT_DOMAINS_RAW="${2}"
+        shift 2
+        ;;
       --mdm)
         MDM_OUTPUT_RAW="true"
         shift
@@ -200,6 +217,7 @@ if [ "$JAMF_MODE" = "true" ]; then
   ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
   EXCLUDE_DOMAINS="${8:-}"
   MDM_OUTPUT_RAW="${9:-false}"
+  HOT_DOMAINS_RAW="${10:-}"
 else
   # CLI mode: use flag-based parsing
   parse_cli_args "$@"
@@ -238,6 +256,22 @@ unsetopt verbose 2>/dev/null || true
 # ============================================================================
 # EXCLUSIONS
 # ============================================================================
+
+# "Hot" domains kept permanently marked active so their very first change is
+# detected without waiting for fs_usage→poll round-trip. Kept intentionally
+# small — organic marking handles the rest. Override via --hot-domains CLI flag
+# or Jamf $10 parameter (comma-separated list); pass empty string to disable.
+typeset -a HOT_DOMAINS=(
+  com.apple.dock
+  com.apple.finder
+  com.apple.HIToolbox
+  .GlobalPreferences
+)
+if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
+  HOT_DOMAINS=("${(@s:,:)HOT_DOMAINS_RAW}")
+elif [ "${HOT_DOMAINS_RAW+set}" = "set" ]; then
+  HOT_DOMAINS=()
+fi
 
 # Default exclusion patterns for noisy/irrelevant domains
 # These domains change frequently but are rarely useful for preference monitoring
@@ -643,9 +677,17 @@ fi
 # Utilities
 # ---------------------------------------
 
+# Fork-free strftime + stat (zsh built-in modules)
+zmodload zsh/datetime 2>/dev/null && HAVE_ZSH_STRFTIME=true || HAVE_ZSH_STRFTIME=false
+zmodload zsh/stat 2>/dev/null && HAVE_ZSH_STAT=true || HAVE_ZSH_STAT=false
+
 # Helper function for optimized timestamp
 get_timestamp() {
-  if [ "$HAVE_BIN_DATE" = "true" ]; then
+  if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
+    local _ts
+    strftime -s _ts '%Y-%m-%d %H:%M:%S' "$EPOCHSECONDS"
+    printf '%s' "$_ts"
+  elif [ "$HAVE_BIN_DATE" = "true" ]; then
     /bin/date '+%Y-%m-%d %H:%M:%S'
   else
     date '+%Y-%m-%d %H:%M:%S'
@@ -1295,9 +1337,8 @@ _log() {
       return 0
     fi
 
-    if [[ "$out" =~ 'defaults[[:space:]]+write[[:space:]]+' ]]; then
-      local _cmd_dom
-      _cmd_dom=$(printf '%s' "$out" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+    if [[ "$out" =~ 'defaults[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
+      local _cmd_dom="${match[1]}"
       if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
         return 0
       fi
@@ -1310,10 +1351,8 @@ _log() {
   fi
 
   local line="[$ts] $msg"
-  if [[ "$msg" =~ '(Cmd: |CMD: )?defaults[[:space:]]+write[[:space:]]+' ]]; then
-    local _raw _cmd_dom
-    _raw=$(printf '%s' "$msg" | /usr/bin/sed -E 's/^(Cmd: |CMD: )//')
-    _cmd_dom=$(printf '%s' "$_raw" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+  if [[ "$msg" =~ 'defaults[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
+    local _cmd_dom="${match[1]}"
     if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
       return 0
     fi
@@ -1483,12 +1522,15 @@ parse_array_index_key() {
 
 # Detect and emit commands for array additions
 emit_array_additions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
 
   local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
   py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
 import json, sys, os
 
@@ -1631,20 +1673,17 @@ for prefix, index, item in results:
             print(f"PBCMD\tAdd :{prefix[0]}:{index} {tv[0]} {tv[1]}")
 PY
 ) || return 0
+  fi
 
   [ -n "$py_output" ] || return 0
 
-  # Pass through all Python output (metadata + PBCMD lines)
-  # PBCMD lines are handled by the caller (not here, because this function
-  # is called inside $() and log_* output would be captured instead of displayed)
+  # PBCMD lines handled by caller (this runs inside $() so log_* would be captured)
   printf '%s\n' "$py_output"
 }
 
-# Dedup domain-level notes across handlers (show_plist_diff + show_domain_diff)
 typeset -gA _NOTED_DOMAIN=()
 
 # Emit contextual notes for domains that need extra steps
-# Called once per domain after array metadata processing
 _emit_contextual_note() {
   local dom="$1" array_base="$2" _note=""
   case "$dom" in
@@ -1690,15 +1729,14 @@ _emit_contextual_note() {
   log_line "Cmd: # NOTE: $_note"
 }
 
-# Detect and emit commands for array deletions
-emit_array_deletions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
+# Raw Python runner for array deletions — prints py_output to stdout so the
+# caller can prefetch it in parallel before emit_array_deletions consumes it.
+_py_deletions_raw() {
+  local dom="$1" prev_json="$2" curr_json="$3"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
-
-  local py_output
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -1776,7 +1814,21 @@ for path_tuple, index, item in results:
         keys = ""
     print(f"{array_name}\t{index}\t{keys}\t{app_label}")
 PY
-) || return 0
+}
+
+# Detect and emit commands for array deletions
+emit_array_deletions() {
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
+  [ -n "$PYTHON3_BIN" ] || return 0
+  [ -s "$curr_json" ] || return 0
+  [ -s "$prev_json" ] || return 0
+
+  local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
+    py_output=$(_py_deletions_raw "$dom" "$prev_json" "$curr_json") || return 0
+  fi
 
   [ -n "$py_output" ] || return 0
 
@@ -1835,12 +1887,15 @@ PY
 # Detect and emit PlistBuddy commands for changes inside nested dicts
 # Handles cases like symbolichotkeys where values change deep inside dicts
 emit_nested_dict_changes() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
 
   local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
   py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
 import json, sys, os
 
@@ -2049,6 +2104,7 @@ for top_key in sorted(curr.keys()):
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
 ) || return 0
+  fi
 
   [ -n "$py_output" ] || return 0
 
@@ -2076,11 +2132,17 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
-  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously
+  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously.
+  # Wait up to 3s for the lock (chained events would otherwise be dropped).
   local lockdir="$CACHE_DIR/${key}.lock"
-  if ! /bin/mkdir "$lockdir" 2>/dev/null; then
-    return 0
-  fi
+  local _wait_attempts=0
+  while ! /bin/mkdir "$lockdir" 2>/dev/null; do
+    _wait_attempts=$((_wait_attempts + 1))
+    if [ "$_wait_attempts" -gt 30 ]; then
+      return 0
+    fi
+    /bin/sleep 0.1
+  done
 
   if [ "$silent" != "true" ]; then
     dump_plist "$path" "$curr" &
@@ -2090,25 +2152,25 @@ show_plist_diff() {
     dump_plist "$path" "$curr"
   fi
 
-  # Dedup: skip if no change since last processing
-  # Retry with increasing delays — cfprefsd writes to disk asynchronously,
-  # so the file may still contain stale data when fs_usage fires.
-  # We also hint cfprefsd to sync pending writes via `defaults read` before re-diffing.
+  # Retry with increasing delays — cfprefsd writes asynchronously, so the file
+  # may still contain stale data when fs_usage fires. `defaults read` hints
+  # cfprefsd to sync. Only re-dump text (JSON dumped once change is confirmed).
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
-    local _retry_delay
-    for _retry_delay in 0.1 0.2 0.3 0.5; do
+    local _retry_delay _retry_changed=false
+    for _retry_delay in 0.1 0.2 0.3 0.5 0.7; do
       /bin/sleep "$_retry_delay"
       # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
       "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_dom" >/dev/null 2>&1 || true
-      if [ "$silent" != "true" ]; then
-        dump_plist "$path" "$curr" &
-        dump_plist_json "$path" "$curr_json" &
-        wait
-      else
-        dump_plist "$path" "$curr"
+      dump_plist "$path" "$curr"
+      if ! /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
+        _retry_changed=true
+        break
       fi
-      /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null || break
     done
+    # Change detected during retry — dump JSON now for diff engine
+    if [ "$_retry_changed" = "true" ] && [ "$silent" != "true" ]; then
+      dump_plist_json "$path" "$curr_json"
+    fi
     if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
       /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
       /bin/rmdir "$lockdir" 2>/dev/null || true
@@ -2122,10 +2184,15 @@ show_plist_diff() {
   local _has_array_additions=false
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
-    _array_meta_raw=$(emit_array_additions "$kind" "$_dom" "$prev_json" "$curr_json") || _array_meta_raw=""
-    # Detect changes inside nested dicts (e.g. symbolichotkeys)
+    # Run the 3 Python diff invocations in parallel (each ~60-100ms)
+    local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
+    emit_array_additions "$kind" "$_dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
+    _py_deletions_raw "$_dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
+    emit_nested_dict_changes "$kind" "$_dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
+    wait
+    _array_meta_raw=$(< "$_py_add")
     local _nested_raw
-    _nested_raw=$(emit_nested_dict_changes "$kind" "$_dom" "$prev_json" "$curr_json") || _nested_raw=""
+    _nested_raw=$(< "$_py_nest")
     if [ -n "$_nested_raw" ]; then
       if [ -n "$_array_meta_raw" ]; then
         _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
@@ -2201,7 +2268,8 @@ show_plist_diff() {
       done <<< "$_array_meta_raw"
     fi
 
-    emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json"
+    emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json" "$_py_del"
+    /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
   fi
 
   if [ -s "$prev" ] && [ "$silent" != "true" ]; then
@@ -2466,11 +2534,17 @@ show_domain_diff() {
   local _has_array_additions=false
 
   if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
-    _array_meta_raw=$(emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json") || _array_meta_raw=""
-    emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json"
-    # Detect changes inside nested dicts (e.g. symbolichotkeys)
+    # Run the 3 Python diff invocations in parallel
+    local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
+    emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
+    _py_deletions_raw "$dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
+    emit_nested_dict_changes DOMAIN "$dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
+    wait
+    _array_meta_raw=$(< "$_py_add")
+    emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json" "$_py_del"
     local _nested_raw
-    _nested_raw=$(emit_nested_dict_changes DOMAIN "$dom" "$prev_json" "$curr_json") || _nested_raw=""
+    _nested_raw=$(< "$_py_nest")
+    /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
     if [ -n "$_nested_raw" ]; then
       if [ -n "$_array_meta_raw" ]; then
         _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
@@ -2943,18 +3017,33 @@ start_watch_all() {
 
   # fs_usage monitoring function
   fs_watch() {
+    # Debounce: cfprefsd fires several fs_usage events per logical write.
+    # Skip events seen <$FS_DEBOUNCE_S ago; poll_watch catches misses.
+    typeset -A _fs_last_seen=()
+    local _FS_DEBOUNCE_S=0.3
+    # Force line-buffered I/O so a single fs_usage event isn't stuck in a
+    # block buffer waiting for more data (notably for idle domains).
     script -q /dev/null /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
-    /usr/bin/sed -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
+    /usr/bin/sed -l -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
     /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
       path=$0;
       if (index(path, pu)==1)      { print "USER " path }
       else if (index(path, ps)==1) { print "SYSTEM " path }
       else                         { print "OTHER " path }
+      fflush()
     }' | while IFS= read -r line; do
       cat_type="${line%% *}"; plist="${line#* }"
       [ -z "$plist" ] && continue
       if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
         continue
+      fi
+      # Debounce per-plist using EPOCHREALTIME (float seconds, fork-free via zsh/datetime)
+      if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
+        local _now="$EPOCHREALTIME" _last="${_fs_last_seen[$plist]:-0}"
+        if (( _now - _last < _FS_DEBOUNCE_S )); then
+          continue
+        fi
+        _fs_last_seen[$plist]="$_now"
       fi
       dom=$(domain_from_plist_path "$plist")
       if is_excluded_domain "$dom"; then
@@ -2984,13 +3073,26 @@ start_watch_all() {
     while true; do
       # Flush cfprefsd for recently-active domains (last 30s) before polling.
       # `defaults read` forces cfprefsd to sync pending writes for that domain.
-      if [ -d "$active_dir" ]; then
-        /usr/bin/find "$active_dir" -type f -mmin -0.5 2>/dev/null | while IFS= read -r _af; do
-          [ -n "$_af" ] || continue
-          local _adom
-          _adom=$(/usr/bin/basename "$_af")
-          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 || true
+      if [ -d "$active_dir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+        # Refresh hot markers so they never expire via the 30s cleanup below
+        local _hd
+        for _hd in "${HOT_DOMAINS[@]}"; do
+          /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
         done
+        local _af _adom
+        typeset -A _st
+        for _af in "$active_dir"/*(N); do
+          [ -f "$_af" ] || continue
+          zstat -H _st "$_af" 2>/dev/null || continue
+          if (( EPOCHSECONDS - _st[mtime] > 30 )); then
+            /bin/rm -f "$_af" 2>/dev/null || true
+            continue
+          fi
+          _adom="${_af:t}"
+          # Parallel flush: each XPC round-trip is ~20-50ms
+          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
+        done
+        wait
       fi
 
       if [ -d "$prefs_user" ]; then
@@ -3017,7 +3119,7 @@ start_watch_all() {
       fi
       /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
-      /bin/sleep 1
+      /bin/sleep 0.5
     done
   }
 
@@ -3159,6 +3261,12 @@ start_watch_all() {
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
   # Create active-domains tracking dir (shared by fs_watch + poll_watch)
   /bin/mkdir -p "$PREFWATCH_TMPDIR/active-domains" 2>/dev/null || true
+  # Pre-seed hot domains so first change is detected without fs_usage→poll
+  # round-trip. poll_watch auto-refreshes them so they never expire.
+  local _hd
+  for _hd in "${HOT_DOMAINS[@]}"; do
+    /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$_hd" 2>/dev/null || true
+  done
 
   # Start all mechanisms
   local FS_PID=""

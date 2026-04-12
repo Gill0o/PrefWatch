@@ -2,20 +2,24 @@
 
 ## 1.2.0 — unreleased
 
-Major version bump — performance overhaul planned (combined Python diff,
-skip JSON during retries, reduced log_line forks, fs_usage debounce,
-parallel active-domains flush).
-
-## 1.1.7 — 2026-04-12
+Major version bump — performance overhaul plus broad noise-filter review to
+unmask real user preferences previously hidden by over-greedy patterns.
 
 ### Fixed
-- Finder column view settings now detected (`StandardViewOptions:ColumnViewOptions`) — previously hidden by `*ViewOptions*` global filter
+- Finder column view settings now detected (`StandardViewOptions:ColumnViewOptions`) — previously hidden by the `*ViewOptions*` global filter
 - Finder NOTE updated: View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list); column view writes directly
 
-### Detection reliability
-- Hint cfprefsd to sync pending writes during `show_plist_diff` retry via `defaults read $domain` — reduces random missed detections when cfprefsd buffers writes
-- Retry schedule: `0.1 0.2 0.3 0.5` (4 attempts, 1.1s total) instead of `0.5 1.5` — more frequent flush hints catch cfprefsd sync faster
-- Track recently-active domains in `$PREFWATCH_TMPDIR/active-domains/` from fs_watch and poll_watch; each poll iteration pre-flushes cfprefsd for active domains (last 30s) — non-destructive alternative to `killall cfprefsd`
+### Performance
+- New active-domains registry: fs_watch + poll_watch mark each touched domain in `$PREFWATCH_TMPDIR/active-domains/`; every poll iteration pre-flushes cfprefsd for those domains via `defaults read`, forcing buffered writes to disk — non-destructive alternative to `killall cfprefsd`.
+- Pre-seed `HOT_DOMAINS` (`com.apple.dock`, `com.apple.finder`, `com.apple.HIToolbox`, `.GlobalPreferences`) into the active-domains registry at startup and auto-refresh them each poll cycle so they never expire. Eliminates the fs_usage→poll round-trip latency on the first change to these frequently-admin-touched domains. Override via `--hot-domains <list>` CLI flag or Jamf `$10` parameter (empty string disables).
+- Force line-buffered I/O in the fs_watch pipeline (`sed -l` + `awk fflush()`). Without this, a single fs_usage event on a previously-inactive domain could sit in a block buffer between `sed`/`awk`/`while read` until more data pushes it through. Changes on idle domains are now delivered immediately.
+- Reduce `poll_watch` cadence from 1s to 0.5s — halves the worst-case latency when the fs_usage retry loop bails before cfprefsd flushes.
+- Tighter `show_plist_diff` retry schedule `0.1 0.2 0.3 0.5 0.7` (total 1.8s) replacing the previous `0.5 + 1.5` (2s). More frequent flush hints catch cfprefsd sync faster in the fs_usage path rather than waiting for the next poll cycle.
+- Parallelize active-domains cfprefsd flush in `poll_watch`: `defaults read` calls run concurrently via `&` + `wait` instead of sequentially.
+- Debounce `fs_usage` events per-plist at 300ms using `$EPOCHREALTIME` from `zsh/datetime`. cfprefsd typically fires multiple fs_usage events per logical write (temp file + rename + sync); collapsing them avoids redundant `show_plist_diff` passes. `poll_watch` catches anything missed.
+- Reduce forks in `_log` (called for every output line): use `zsh/datetime` `strftime` instead of `/bin/date` in `get_timestamp`, and replace two `printf | sed` pipelines with zsh `[[ =~ ]]` + `${match[1]}` capture on `defaults write` messages.
+- Run the 3 Python diff invocations (`emit_array_additions`, `emit_array_deletions` via new `_py_deletions_raw` helper, `emit_nested_dict_changes`) in parallel in both `show_plist_diff` and `show_domain_diff`.
+- Skip `dump_plist_json` during retries in `show_plist_diff` — JSON is only needed after a change is confirmed, not during the retry loop.
 
 ### Noise
 - Filter `*lastProcessed*|*LastProcessed*` (processing timestamps like `lastProcessedDate`)
