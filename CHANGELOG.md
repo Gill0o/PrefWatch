@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.1.7 — unreleased
+## 1.2.0 — unreleased
+
+Major version bump — performance overhaul planned (combined Python diff,
+skip JSON during retries, reduced log_line forks, fs_usage debounce,
+parallel active-domains flush).
+
+## 1.1.7 — 2026-04-12
 
 ### Fixed
 - Finder column view settings now detected (`StandardViewOptions:ColumnViewOptions`) — previously hidden by `*ViewOptions*` global filter
