@@ -11,6 +11,8 @@ unmask real user preferences hidden by over-greedy patterns.
 - New contextual NOTE for Finder `PreviewPaneSettings`: first open of Preview pane options writes the full attribute list — only subsequent toggles are actual user modifications
 
 ### Performance
+- Skip `dump_plist` in `show_plist_diff` retry loop when file mtime is unchanged — previously re-dumped every iteration (up to 5× per event, 100-200ms each on large plists) even when cfprefsd hadn't touched the file yet.
+- Preemptive cfprefsd flush in `fs_watch`: on every event, spawn `defaults read $dom` in the background immediately before invoking `show_plist_diff`. Gives cfprefsd a head-start on syncing pending writes, so the retry loop is more likely to catch the change on its first iteration.
 - New active-domains registry: fs_watch + poll_watch mark each touched domain in `$PREFWATCH_TMPDIR/active-domains/`; every poll iteration pre-flushes cfprefsd for those domains via `defaults read`, forcing buffered writes to disk — non-destructive alternative to `killall cfprefsd`.
 - Pre-seed `HOT_DOMAINS` (`com.apple.dock`, `com.apple.finder`, `com.apple.HIToolbox`, `.GlobalPreferences`) into the active-domains registry at startup and auto-refresh them each poll cycle so they never expire. Eliminates the fs_usage→poll round-trip latency on the first change to these frequently-admin-touched domains. Override via `--hot-domains <list>` CLI flag or Jamf `$10` parameter (empty string disables).
 - Force line-buffered I/O in the fs_watch pipeline (`sed -l` + `awk fflush()`) — a single fs_usage event on an idle domain could otherwise sit in a block buffer between `sed`/`awk`/`while read` until more data pushes it through.

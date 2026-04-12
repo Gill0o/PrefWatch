@@ -2166,12 +2166,19 @@ show_plist_diff() {
   # Retry with increasing delays — cfprefsd writes asynchronously, so the file
   # may still contain stale data when fs_usage fires. `defaults read` hints
   # cfprefsd to sync. Only re-dump text (JSON dumped once change is confirmed).
+  # Skip expensive dump_plist when file mtime is unchanged (fast-path skip).
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
-    local _retry_delay _retry_changed=false
+    local _retry_delay _retry_changed=false _last_mtime _cur_mtime
+    _last_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
     for _retry_delay in 0.1 0.2 0.3 0.5 0.7; do
       /bin/sleep "$_retry_delay"
       # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
       "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_dom" >/dev/null 2>&1 || true
+      _cur_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
+      if [ -n "$_cur_mtime" ] && [ "$_cur_mtime" = "$_last_mtime" ]; then
+        continue
+      fi
+      _last_mtime="$_cur_mtime"
       dump_plist "$path" "$curr"
       if ! /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
         _retry_changed=true
@@ -3060,8 +3067,13 @@ start_watch_all() {
       if is_excluded_domain "$dom"; then
         continue
       fi
-      # Track active domain so poll_watch can flush cfprefsd for it next iteration
-      [ -n "$dom" ] && /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
+      if [ -n "$dom" ]; then
+        # Track active domain so poll_watch can flush cfprefsd for it next iteration
+        /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
+        # Preemptive flush: hint cfprefsd to sync pending writes now so
+        # show_plist_diff's retry loop catches the change on its first iteration.
+        "${RUN_AS_USER[@]}" /usr/bin/defaults read "$dom" >/dev/null 2>&1 &
+      fi
       if [ "$cat_type" = "USER" ]; then
         log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
       else
