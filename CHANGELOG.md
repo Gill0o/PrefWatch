@@ -3,15 +3,42 @@
 ## 1.1.7 — unreleased
 
 ### Fixed
-- Column view settings in Finder now detected (`StandardViewOptions:ColumnViewOptions`) — previously masked by `*ViewOptions*` global filter
-- Update Finder NOTE: column view writes directly to preferences (no 'Use as Defaults' needed)
-- Narrow 5 overly-global `is_noisy_key()` patterns that could mask real user preferences:
-  - `*History*` → `*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*` (keeps `HistoryAgeInDaysLimit`, `EnableHistory`)
-  - `*Cache*` → `*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*` (keeps `CacheSize`, `EnableCache`, `DiskCacheSize`)
-  - `*Temp*` → removed (kept `*-temp|*-tmp|*TempFile*|*TempPath*`) to avoid catching `Template*`, `ColorTemperature`
-  - `*ViewOptions*` → `*ViewOptionsFrame*|*ViewOptionsWindow*` (suffix-specific window state)
-  - `FK_SidebarWidth*` → removed (Finder sidebar width is a real user preference)
-- Filter `PreviewOptionsWindow.Location` specifically for Finder (Cmd+J panel window position)
+- Finder column view settings now detected (`StandardViewOptions:ColumnViewOptions`) — previously hidden by `*ViewOptions*` global filter
+- Finder NOTE updated: View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list); column view writes directly
+
+### Detection reliability
+- Hint cfprefsd to sync pending writes during `show_plist_diff` retry via `defaults read $domain` — reduces random missed detections when cfprefsd buffers writes
+- Retry schedule: `0.1 0.2 0.3 0.5` (4 attempts, 1.1s total) instead of `0.5 1.5` — more frequent flush hints catch cfprefsd sync faster
+- Track recently-active domains in `$PREFWATCH_TMPDIR/active-domains/` from fs_watch and poll_watch; each poll iteration pre-flushes cfprefsd for active domains (last 30s) — non-destructive alternative to `killall cfprefsd`
+
+### Noise
+- Filter `*lastProcessed*|*LastProcessed*` (processing timestamps like `lastProcessedDate`)
+- Filter `*LastBackup*|*lastBackup*` (TimeMachine daemon state like `LastBackupActivity`)
+- Filter `CloudKitAccountInfoCache|*CloudKitAccountInfo*` globally (hash-keyed CloudKit account cache)
+- Filter TimeMachine `Destinations:N:` daemon sub-keys (`BytesAvailable`, `BytesUsed`, `NumberOfSnapshots`, `SnapshotDates`, `ConsistencyScanDate`, `FilesystemTypeName`, `LastKnownEncryptionState`, `LastKnownVolumeName`, `ReferenceLocalSnapshotDate`, `attemptDate`, `backupOfVolumeUUIDs`) — keeps user config (`ID`, `Kind`, `QuotaGB`, `Name`)
+- Filter `PreviewOptionsWindow.Location` for Finder (Cmd+J panel window position)
+
+### Prevent masking real user preferences
+Narrowed overly-broad global patterns in `is_noisy_key()` that could hide real prefs:
+- `*History*` → `*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*` (keeps `HistoryAgeInDaysLimit`, `EnableHistory`)
+- `*Cache*` → `*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*` (keeps `CacheSize`, `EnableCache`, `DiskCacheSize`)
+- `*Temp*` → removed (kept `*-temp|*-tmp|*TempFile*|*TempPath*`) — avoid catching `Template*`, `ColorTemperature`
+- `*ViewOptions*` → `*ViewOptionsFrame*|*ViewOptionsWindow*` (suffix-specific window state)
+- `FK_SidebarWidth*` → removed (real user preference)
+- `*Analytics*|*Telemetry*` → `*AnalyticsQueue/Session/Event*|*TelemetryQueue/Session/Event*` (keeps `AnalyticsEnabled`, `SendAnalytics`)
+- `SUSendProfileInfo` → removed (Sparkle opt-in toggle)
+- `flags` exact → removed (too generic)
+- `uses` / `*donate*` → removed/narrowed to `launchCount`, `*donateDialogShown*`, `*lastDonateDate*`
+- `state|status|State|Status` exact → removed
+- `*ConnectionState*` → removed
+- `*Date|Date` exact suffix → removed (specific date noise already covered)
+- `last-selection` → removed from global
+- ALL_CAPS regex → removed (could catch real prefs like `SHOW_HIDDEN_FILES`)
+
+Narrowed `DEFAULT_EXCLUSIONS` that hid entire domains with real user preferences:
+- `com.apple.SoftwareUpdate` → removed (`AutomaticDownload`, `AutomaticallyInstallMacOSUpdates`, `AutomaticCheckEnabled`)
+- `com.apple.TimeMachine` → narrowed to `.helper`/`.agent` (keeps `AutoBackup`, `ExcludedPaths`)
+- `com.apple.security*` → narrowed to known daemon sub-domains
 
 ## 1.1.6 — 2026-04-11
 

@@ -274,7 +274,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Security & crash reporting (noisy, not user settings)
   "com.apple.CrashReporter"
-  "com.apple.security*"
+  # Note: com.apple.security* narrowed — catch only known noisy sub-domains,
+  # not "com.apple.security.authorization" or similar which may have real prefs
+  "com.apple.security.cloudkeychainproxy3"
+  "com.apple.security.smartcard"
+  "com.apple.securityagent"
+  "com.apple.securityd"
   "com.apple.biometrickitd"
 
   # Accessibility internals (auth warnings, hearing device state, not user preferences)
@@ -291,8 +296,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.apsd"
 
   # Backup internals (constant state updates, not user preferences)
-  "com.apple.TimeMachine"
-  "com.apple.timemachine*"
+  # Note: com.apple.TimeMachine removed — contains real prefs (AutoBackup, ExcludedPaths)
+  "com.apple.timemachine.helper"
+  "com.apple.timemachine.agent"
 
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"
@@ -320,8 +326,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
 
-  # Software Update cache (available updates metadata, not user settings)
-  "com.apple.SoftwareUpdate"
+  # Note: com.apple.SoftwareUpdate removed from exclusions — contains real prefs
+  # (AutomaticDownload, AutomaticallyInstallMacOSUpdates, AutomaticCheckEnabled)
+  # Cache noise should be filtered at key level instead
 
   # Power management internals (constant battery updates)
   "com.apple.PowerManagement*"
@@ -753,17 +760,17 @@ is_noisy_key() {
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
-    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion|SUUpdateRelaunchingMarker)
+    # Note: SUSendProfileInfo kept — it's a user-toggleable opt-in for stats
+    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSkippedVersion|SUUpdateRelaunchingMarker)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*)
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*)
       return 0 ;;
 
-    # Date fields (float/string dates are usually metadata)
-    *Date|Date)
-      return 0 ;;
+    # Note: removed *Date|Date — too generic, could mask ExpirationDate/StartDate as real prefs
+    # Specific date noise is already caught by *timestamp*, *LastSync*, *lastBootstrap*, etc.
 
     # Error states & sync errors (transient, not user preferences)
     *Error|*Errors|*error|*errors|*ErrorCode*|*ErrorDomain*|*ErrorUserInfo*|IMCloudKitSyncErrors|IMSerializedError*)
@@ -774,7 +781,8 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters (not user preferences)
-    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
+    # Note: keeps opt-in toggles like AnalyticsEnabled, SendAnalytics, TelemetryEnabled
+    *AnalyticsQueue*|*AnalyticsSession*|*AnalyticsEvent*|*TelemetryEvent*|*TelemetrySession*|*TelemetryQueue*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
@@ -785,9 +793,10 @@ is_noisy_key() {
     preferredLocalizations)
       return 0 ;;
 
-    # UUIDs and flags (transient notification/state identifiers)
+    # UUIDs (transient notification/state identifiers)
     # Matches: uuid, UUID, *UUID, *uuid (e.g., sessionUUID, updatedSinceBootUUID)
-    uuid|UUID|flags|*UUID|*uuid)
+    # Note: removed exact `flags` — too generic, apps can use it as a real pref
+    uuid|UUID|*UUID|*uuid)
       return 0 ;;
 
     # VoiceOver internal state (Braille defaults, display text timestamps)
@@ -813,9 +822,7 @@ is_noisy_key() {
     parent-mod-date|file-mod-date|mod-count|file-type)
       return 0 ;;
 
-    # Screenshot last selection area (changes every capture)
-    last-selection)
-      return 0 ;;
+    # Note: removed global `last-selection` — too generic, move to domain-specific if needed
 
     # Recent items & history (noisy, changes constantly)
     # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
@@ -835,7 +842,8 @@ is_noisy_key() {
       return 0 ;;
 
     # App launch counters & donation reminders (internal state)
-    uses|launchCount|*reminder.date|*donate*)
+    # Note: removed `uses` exact and `*donate*` — too generic, could mask real prefs
+    launchCount|*reminder.date|*donateDialogShown*|*lastDonateDate*)
       return 0 ;;
 
     # Migration flags (one-time internal state, not user preferences)
@@ -848,6 +856,10 @@ is_noisy_key() {
 
     # Session duration counters (telemetry, not user preferences)
     SessionDuration)
+      return 0 ;;
+
+    # CloudKit account cache (hash-keyed entries, daemon-managed)
+    CloudKitAccountInfoCache|*CloudKitAccountInfo*)
       return 0 ;;
 
     # WebKit internal state (set when opening Settings panels that use WebKit views)
@@ -865,12 +877,11 @@ is_noisy_key() {
       return 0 ;;
 
     # Playback & connection state (transient states across all apps)
-    *PlaybackStatus*|*Playback*Status*|*ConnectionState*|*lastNowPlayedTime*|*LastConnected*)
+    # Note: removed *ConnectionState* — too broad, could mask real connection prefs
+    *PlaybackStatus*|*Playback*Status*|*lastNowPlayedTime*|*LastConnected*)
       return 0 ;;
 
-    # App state & status (running state, temporary status)
-    state|status|State|Status)
-      return 0 ;;
+    # Note: removed state|status|State|Status — too generic, apps may use these as real prefs
   esac
 
   # Hash keys (session IDs, cache keys) - long hex strings (zsh built-in regex, no fork)
@@ -885,11 +896,8 @@ is_noisy_key() {
     return 0
   fi
 
-  # Feature flags (ALL_CAPS keys with underscores) - system A/B testing configs
-  # Examples: SIRI_MEMORY_SYNC_CONFIG, HEALTH_FEATURE_AVAILABILITY
-  if [[ "$keyname" =~ ^[A-Z][A-Z_0-9]+$ ]] && [[ "$keyname" == *_* ]]; then
-    return 0
-  fi
+  # Note: removed ALL_CAPS regex — too broad, could mask real prefs like SHOW_HIDDEN_FILES, ENABLE_DEBUG
+  # Known noisy ALL_CAPS keys should be filtered per-domain instead
 
   # ========================================================================
   # DOMAIN-SPECIFIC NOISY KEYS
@@ -1222,6 +1230,19 @@ is_noisy_pbcmd() {
       # Noisy: modification dates (sync metadata), tombstone tracking
       case "$pb_cmd" in
         *":modifiedDate "*|*":tombstones "*)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.TimeMachine)
+      # Noisy: disk space metrics (change on every backup), snapshot counters,
+      # filesystem state detection. Keeps: ID, Kind, QuotaGB, Name (user config)
+      case "$pb_cmd" in
+        *":BytesAvailable "*|*":BytesUsed "*|*":NumberOfSnapshots "*|\
+        *":SnapshotDates "*|*":SnapshotDates:"*|\
+        *":ConsistencyScanDate "*|*":FilesystemTypeName "*|\
+        *":LastKnownEncryptionState "*|*":LastKnownVolumeName "*|\
+        *":ReferenceLocalSnapshotDate "*|*":attemptDate "*|\
+        *":backupOfVolumeUUIDs"*)
           return 0 ;;
       esac
       ;;
@@ -1648,7 +1669,7 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) for icon/list are per-folder (.DS_Store): click 'Use as Defaults' to write to preferences. Column view writes directly to preferences (no 'Use as Defaults' button needed)" ;;
+      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list view); column view writes directly" ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
@@ -2071,11 +2092,14 @@ show_plist_diff() {
 
   # Dedup: skip if no change since last processing
   # Retry with increasing delays — cfprefsd writes to disk asynchronously,
-  # so the file may still contain stale data when fs_usage fires (0.5s + 1.5s = 2s max)
+  # so the file may still contain stale data when fs_usage fires.
+  # We also hint cfprefsd to sync pending writes via `defaults read` before re-diffing.
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
     local _retry_delay
-    for _retry_delay in 0.5 1.5; do
+    for _retry_delay in 0.1 0.2 0.3 0.5; do
       /bin/sleep "$_retry_delay"
+      # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
+      "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_dom" >/dev/null 2>&1 || true
       if [ "$silent" != "true" ]; then
         dump_plist "$path" "$curr" &
         dump_plist_json "$path" "$curr_json" &
@@ -2936,6 +2960,8 @@ start_watch_all() {
       if is_excluded_domain "$dom"; then
         continue
       fi
+      # Track active domain so poll_watch can flush cfprefsd for it next iteration
+      [ -n "$dom" ] && /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
       if [ "$cat_type" = "USER" ]; then
         log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
       else
@@ -2946,14 +2972,27 @@ start_watch_all() {
 
   # Polling monitoring function
   poll_watch() {
-    local marker_user marker_sys
+    local marker_user marker_sys active_dir
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
+    active_dir="$PREFWATCH_TMPDIR/active-domains"
+    /bin/mkdir -p "$active_dir" 2>/dev/null || true
     # Only create markers if not pre-initialized (avoids rescanning all plists after initial snapshot)
     [ -f "$marker_user" ] || /usr/bin/touch "$marker_user" 2>/dev/null || true
     [ -f "$marker_sys" ]  || /usr/bin/touch "$marker_sys" 2>/dev/null || true
 
     while true; do
+      # Flush cfprefsd for recently-active domains (last 30s) before polling.
+      # `defaults read` forces cfprefsd to sync pending writes for that domain.
+      if [ -d "$active_dir" ]; then
+        /usr/bin/find "$active_dir" -type f -mmin -0.5 2>/dev/null | while IFS= read -r _af; do
+          [ -n "$_af" ] || continue
+          local _adom
+          _adom=$(/usr/bin/basename "$_af")
+          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 || true
+        done
+      fi
+
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -2961,6 +3000,8 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
+          # Track active domain for next iteration's targeted flush
+          [ -n "$dom" ] && /usr/bin/touch "$active_dir/$dom" 2>/dev/null || true
           log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
@@ -3116,6 +3157,8 @@ start_watch_all() {
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
+  # Create active-domains tracking dir (shared by fs_watch + poll_watch)
+  /bin/mkdir -p "$PREFWATCH_TMPDIR/active-domains" 2>/dev/null || true
 
   # Start all mechanisms
   local FS_PID=""
