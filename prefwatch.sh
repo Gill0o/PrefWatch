@@ -51,7 +51,7 @@
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
 #          round-trip. Defaults: com.apple.dock, com.apple.finder,
-#          com.apple.HIToolbox, .GlobalPreferences. Pass empty string to disable.
+#          .GlobalPreferences. Pass empty string to disable.
 # ============================================================================
 
 # ============================================================================
@@ -83,8 +83,8 @@ Options:
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   --hot-domains <list>  Comma-separated list of domains kept permanently active
                         for instant first-change detection (default:
-                        com.apple.dock,com.apple.finder,com.apple.HIToolbox,
-                        .GlobalPreferences). Pass empty string to disable.
+                        com.apple.dock,com.apple.finder,.GlobalPreferences).
+                        Pass empty string to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
                         \$loggedInUser variable in PlistBuddy commands
@@ -264,7 +264,6 @@ unsetopt verbose 2>/dev/null || true
 typeset -a HOT_DOMAINS=(
   com.apple.dock
   com.apple.finder
-  com.apple.HIToolbox
   .GlobalPreferences
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then

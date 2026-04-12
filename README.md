@@ -35,7 +35,7 @@ sudo ./prefwatch.sh -v
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
-| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (empty string disables) | `com.apple.dock,com.apple.finder,com.apple.HIToolbox,.GlobalPreferences` |
+| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (empty string disables) | `com.apple.dock,com.apple.finder,.GlobalPreferences` |
 | `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
