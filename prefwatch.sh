@@ -50,8 +50,8 @@
 #          variable in PlistBuddy commands for MDM deployment (default: false)
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
-#          round-trip. Defaults: com.apple.dock, com.apple.finder,
-#          .GlobalPreferences. Pass "NONE" to disable.
+#          round-trip. Defaults: com.apple.finder, .GlobalPreferences.
+#          Pass "NONE" to disable.
 # ============================================================================
 
 # ============================================================================
@@ -83,7 +83,7 @@ Options:
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   --hot-domains <list>  Comma-separated list of domains kept permanently active
                         for instant first-change detection (default:
-                        com.apple.dock,com.apple.finder,.GlobalPreferences).
+                        com.apple.finder,.GlobalPreferences).
                         Pass "NONE" to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
@@ -264,7 +264,6 @@ unsetopt verbose 2>/dev/null || true
 # small — organic marking handles the rest. Override via --hot-domains CLI flag
 # or Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
 typeset -a HOT_DOMAINS=(
-  com.apple.dock
   com.apple.finder
   .GlobalPreferences
 )

@@ -20,7 +20,7 @@ Run in Terminal. Output is also logged and viewable in Console.app.
 sudo ./prefwatch.sh
 
 # Monitor a specific domain (no sudo, lower CPU)
-./prefwatch.sh com.apple.dock
+./prefwatch.sh com.apple.finder
 
 # Verbose mode
 sudo ./prefwatch.sh -v
@@ -35,7 +35,7 @@ sudo ./prefwatch.sh -v
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
-| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | `com.apple.dock,com.apple.finder,.GlobalPreferences` |
+| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | `com.apple.finder,.GlobalPreferences` |
 | `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
@@ -44,21 +44,18 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist-based preferences, energy settings (`pmset`), and printer configuration (`lpadmin`). Settings stored outside these sources are out of scope by design:
+PrefWatch monitors plist files, energy settings (`pmset`), and printer configuration (CUPS). Preferences stored outside plist files won't be detected — notably **Safari, Mail, and Calendar**, which since recent macOS releases keep most of their settings in internal app databases.
 
-- **Some Apple apps** (Safari, Messages, etc.) — recent macOS versions store preferences outside plists (CloudKit, sandbox databases)
-- **Some System Settings** — certain panels write to SQLite databases or SIP-protected frameworks
-- **Secure Enclave / FileVault** — hardware-level security, not accessible via plists
-- **Runtime state** — transient settings that don't persist to disk
+For detected changes that require extra steps to apply (logout/login, `killall`, settings that write but don't take effect, etc.), PrefWatch emits inline `# NOTE:` comments in the output.
 
 ## Notes
 
-- ALL mode takes an initial baseline snapshot before monitoring. Wait for "you can now make your changes" before modifying settings.
-- There may be a delay between a preference change and its appearance in the console, depending on when `cfprefsd` flushes to disk.
+- ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
+- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, frequently-touched domains (`com.apple.finder`, `.GlobalPreferences` by default) are kept "hot" and flushed preemptively every 0.5s, typically surfacing changes within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
 
 ## Security
 
-PrefWatch writes plist diffs and the reproduction commands to `/var/log/prefwatch-v*.log` and syslog. Depending on which domains change, these logs may include device identifiers, CloudKit/iCloud account cache, OAuth/session tokens, file paths, and other user-specific data. **Review the log before sharing it** (issue reports, support tickets, screenshots). Use `--exclude` or `EXCLUDE_DOMAINS` to skip sensitive domains if needed.
+PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths). **Review before sharing** — use `--exclude` to skip sensitive domains.
 
 ## License
 
