@@ -51,7 +51,7 @@
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
 #          round-trip. Defaults: com.apple.dock, com.apple.finder,
-#          .GlobalPreferences. Pass empty string to disable.
+#          .GlobalPreferences. Pass "NONE" to disable.
 # ============================================================================
 
 # ============================================================================
@@ -84,7 +84,7 @@ Options:
   --hot-domains <list>  Comma-separated list of domains kept permanently active
                         for instant first-change detection (default:
                         com.apple.dock,com.apple.finder,.GlobalPreferences).
-                        Pass empty string to disable.
+                        Pass "NONE" to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
                         \$loggedInUser variable in PlistBuddy commands
@@ -113,7 +113,7 @@ Jamf Pro Mode:
     $7 = ONLY_CMDS (true/false)
     $8 = EXCLUDE_DOMAINS
     $9 = MDM_OUTPUT (true/false)
-    $10 = HOT_DOMAINS (comma-separated; empty string to disable)
+    $10 = HOT_DOMAINS (comma-separated; "NONE" to disable)
 
 EOF
   exit 0
@@ -217,7 +217,9 @@ if [ "$JAMF_MODE" = "true" ]; then
   ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
   EXCLUDE_DOMAINS="${8:-}"
   MDM_OUTPUT_RAW="${9:-false}"
-  HOT_DOMAINS_RAW="${10:-}"
+  # Only set HOT_DOMAINS_RAW if $10 was explicitly provided (non-empty),
+  # so the default HOT_DOMAINS array is preserved when $10 is omitted.
+  [ -n "${10:-}" ] && HOT_DOMAINS_RAW="${10}"
 else
   # CLI mode: use flag-based parsing
   parse_cli_args "$@"
@@ -260,16 +262,18 @@ unsetopt verbose 2>/dev/null || true
 # "Hot" domains kept permanently marked active so their very first change is
 # detected without waiting for fs_usage→poll round-trip. Kept intentionally
 # small — organic marking handles the rest. Override via --hot-domains CLI flag
-# or Jamf $10 parameter (comma-separated list); pass empty string to disable.
+# or Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
 typeset -a HOT_DOMAINS=(
   com.apple.dock
   com.apple.finder
   .GlobalPreferences
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
-  HOT_DOMAINS=("${(@s:,:)HOT_DOMAINS_RAW}")
-elif [ "${HOT_DOMAINS_RAW+set}" = "set" ]; then
-  HOT_DOMAINS=()
+  if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then
+    HOT_DOMAINS=()
+  else
+    HOT_DOMAINS=("${(@s:,:)HOT_DOMAINS_RAW}")
+  fi
 fi
 
 # Default exclusion patterns for noisy/irrelevant domains
@@ -2174,7 +2178,9 @@ show_plist_diff() {
       # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
       "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_dom" >/dev/null 2>&1 || true
       _cur_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
-      if [ -n "$_cur_mtime" ] && [ "$_cur_mtime" = "$_last_mtime" ]; then
+      # Last retry: always dump — stat %m has 1-second granularity so
+      # same-second cfprefsd flushes are invisible to the mtime check.
+      if [ "$_retry_delay" != "0.7" ] && [ -n "$_cur_mtime" ] && [ "$_cur_mtime" = "$_last_mtime" ]; then
         continue
       fi
       _last_mtime="$_cur_mtime"
