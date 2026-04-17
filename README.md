@@ -35,7 +35,7 @@ sudo ./prefwatch.sh -v
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
-| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (empty string disables) | `com.apple.dock,com.apple.finder,.GlobalPreferences` |
+| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | `com.apple.dock,com.apple.finder,.GlobalPreferences` |
 | `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
@@ -55,6 +55,10 @@ PrefWatch monitors plist-based preferences, energy settings (`pmset`), and print
 
 - ALL mode takes an initial baseline snapshot before monitoring. Wait for "you can now make your changes" before modifying settings.
 - There may be a delay between a preference change and its appearance in the console, depending on when `cfprefsd` flushes to disk.
+
+## Security
+
+PrefWatch writes plist diffs and the reproduction commands to `/var/log/prefwatch-v*.log` and syslog. Depending on which domains change, these logs may include device identifiers, CloudKit/iCloud account cache, OAuth/session tokens, file paths, and other user-specific data. **Review the log before sharing it** (issue reports, support tickets, screenshots). Use `--exclude` or `EXCLUDE_DOMAINS` to skip sensitive domains if needed.
 
 ## License
 

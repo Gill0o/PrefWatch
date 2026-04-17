@@ -11,6 +11,11 @@ unmask real user preferences hidden by over-greedy patterns.
 - New contextual NOTE for Finder `PreviewPaneSettings`: first open of Preview pane options writes the full attribute list — only subsequent toggles are actual user modifications
 - `show_plist_diff` retry loop silently skipped same-second cfprefsd flushes: `stat -f %m` returns integer seconds, so when cfprefsd wrote the plist within the same second as the initial mtime capture, the mtime-skip optimization caused all 5 retries to bail without re-dumping, and the change was lost by the fs_watch path. Fix: force an unconditional `dump_plist` on the final retry iteration (0.7s) regardless of mtime.
 - `HOT_DOMAINS` silently disabled in Jamf mode when `$10` was omitted: `HOT_DOMAINS_RAW="${10:-}"` always assigned the variable, and the `${HOT_DOMAINS_RAW+set}` check then interpreted the empty value as "user explicitly disabled". Fix: only assign `HOT_DOMAINS_RAW` when `$10` is non-empty; the disable sentinel is now the literal string `"NONE"` (was undocumented empty string, unreachable via positional parameters anyway).
+- `start_watch()` single-domain mode had the same `stat -f %m` 1-second granularity issue as `show_plist_diff`: if the user modified the preference within the same second as the initial baseline, the mtime comparison never fired and the change was invisible until a later-second write occurred. Fix: force `show_domain_diff` every 4 poll iterations (~2s) regardless of mtime; `defaults export` reads cfprefsd directly so it catches same-second writes the mtime check missed.
+
+### Docs
+- README: `--hot-domains` description updated from "empty string disables" to `NONE` disables (matches new Jamf-safe sentinel).
+- README: new **Security** section — logs may contain device identifiers, CloudKit cache, OAuth/session tokens, and file paths depending on which domains change; review before sharing.
 
 ### Performance
 - Skip `dump_plist` in `show_plist_diff` retry loop when file mtime is unchanged — previously re-dumped every iteration (up to 5× per event) even when cfprefsd hadn't touched the file yet.

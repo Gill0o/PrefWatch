@@ -2898,6 +2898,7 @@ start_watch() {
       # Take initial baseline snapshot so first user change is detected immediately
       show_domain_diff "$DOMAIN"
       last_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
+      local _forced_tick=0
       while true; do
         if [ -f "$plist_path" ]; then
           current_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
@@ -2906,6 +2907,18 @@ start_watch() {
           if [ -n "$current_mtime" ] && [ "$current_mtime" != "$last_mtime" ]; then
             show_domain_diff "$DOMAIN"
             last_mtime="$current_mtime"
+            _forced_tick=0
+          else
+            # Periodic forced diff every 4 iterations (~2s): stat %m has 1-second
+            # granularity, so same-second cfprefsd writes are invisible to mtime
+            # comparison. show_domain_diff uses `defaults export` (reads cfprefsd
+            # directly), so it catches any change the mtime check missed.
+            _forced_tick=$((_forced_tick + 1))
+            if [ "$_forced_tick" -ge 4 ]; then
+              show_domain_diff "$DOMAIN"
+              last_mtime="$current_mtime"
+              _forced_tick=0
+            fi
           fi
         else
           # File doesn't exist yet, wait for it
