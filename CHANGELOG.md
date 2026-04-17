@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.2.0 — 2026-04-17
+
+### Feature
+- New `--hot-domains <list>` CLI flag / Jamf `$10` parameter: comma-separated list of domains kept permanently "active" so their first change is detected without waiting for the fs_usage→poll round-trip. Defaults: `com.apple.finder`, `.GlobalPreferences`. Pass `NONE` to disable.
+- Contextual `# NOTE:` for Finder `PreviewPaneSettings` — first-open writes the full attribute list; only subsequent toggles reflect actual user modifications.
+- README: new **Security** section flagging that `/var/log/prefwatch-v*.log` may contain user-specific data.
+
+### Fix
+- `start_watch` single-domain mode missed any change that happened within the same second as its initial baseline: `stat -f %m` has 1-second granularity, so the `current_mtime != last_mtime` check never fired for same-second writes and the change remained invisible until a later-second write occurred. Now forces a full `show_domain_diff` every 4 poll iterations (~2s) regardless of mtime; `defaults export` reads `cfprefsd` directly and catches same-second writes the mtime check missed.
+- Detect Finder column view settings (`StandardViewOptions:ColumnViewOptions`) — previously filtered out.
+- Finder NOTE clarified: View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list view); column view writes directly.
+
+### Performance
+- Preemptive `cfprefsd` flush in `fs_watch`: spawn `defaults read $dom` in the background before invoking `show_plist_diff`, giving the retry loop a better chance of seeing up-to-date data.
+- New active-domains registry: `fs_watch` and `poll_watch` mark each touched domain in `$PREFWATCH_TMPDIR/active-domains/`; every poll iteration pre-flushes `cfprefsd` for those domains in parallel via `defaults read`. Non-destructive alternative to `killall cfprefsd`.
+- HOT_DOMAINS are seeded into the active-domains registry at startup and auto-refreshed each poll cycle so they never expire — first change detected near-instantly.
+- Tighter `show_plist_diff` retry schedule `0.1 0.2 0.3 0.5 0.7` (total 1.8s) replacing the previous `0.5 + 1.5` (2s). More frequent flush hints catch `cfprefsd` sync faster in the fs_usage path.
+- `show_plist_diff` retry loop skips `dump_plist` when file mtime is unchanged (up to 5× per event saved). A final unconditional dump on the last retry ensures same-second writes are still caught, since `stat -f %m` has 1-second granularity.
+- Skip `dump_plist_json` during retries in `show_plist_diff` — JSON is only needed after a change is confirmed.
+- Reduce `poll_watch` cadence from 1s to 0.5s — halves the worst-case latency when the fs_usage path misses a flush.
+- Debounce `fs_usage` events per-plist at 300ms using `$EPOCHREALTIME` (fork-free via `zsh/datetime`). `cfprefsd` emits multiple fs_usage events per logical write (observable via `fs_usage`); collapsing them avoids redundant `show_plist_diff` passes.
+- Force line-buffered I/O in the fs_watch pipeline (`sed -l` + `awk fflush()`) — prevents block buffering between `sed`/`awk`/`while read` from holding back events on quiet pipelines.
+- Run the 3 Python diff invocations (`emit_array_additions`, `emit_array_deletions` via new `_py_deletions_raw` helper, `emit_nested_dict_changes`) in parallel in both `show_plist_diff` and `show_domain_diff`.
+- Reduce forks in `_log` (called for every output line): use `zsh/datetime` `strftime` instead of `/bin/date` in `get_timestamp`; replace two `printf | sed` pipelines with zsh `[[ =~ ]]` + `${match[1]}` capture on `defaults write` messages.
+
+### Noise
+- Exclude `com.apple.metrickitd` (MetricKit daemon — `MXClient*` keys are per-app diagnostic bookkeeping touched whenever Outlook, Teams, Edge, etc. query MetricKit, not user preferences)
+- Exclude `com.apple.imessage.bag` (Apple service config bag: `CacheTime` TTL + `Date` refresh timestamp, server-controlled)
+- Filter `LastIMDNotificationPostedDate` for `com.apple.iChat` (Instant Messaging Daemon notification timestamp)
+- Filter `*lastAppUpdateCheck*|*LastAppUpdateCheck*` globally (auto-update check timestamps, e.g. Raycast `raycast-updates-lastAppUpdateCheckDate`)
+- Filter `*lastProcessed*|*LastProcessed*` (processing timestamps like `lastProcessedDate`)
+- Filter `*LastBackup*|*lastBackup*` (TimeMachine daemon state like `LastBackupActivity`)
+- Filter `CloudKitAccountInfoCache|*CloudKitAccountInfo*` globally (hash-keyed CloudKit account cache)
+- Filter TimeMachine `Destinations:N:` daemon sub-keys (`BytesAvailable`, `BytesUsed`, `NumberOfSnapshots`, `SnapshotDates`, `ConsistencyScanDate`, `FilesystemTypeName`, `LastKnownEncryptionState`, `LastKnownVolumeName`, `ReferenceLocalSnapshotDate`, `attemptDate`, `backupOfVolumeUUIDs`) — keeps user config (`ID`, `Kind`, `QuotaGB`, `Name`)
+- Filter `PreviewOptionsWindow.Location` for Finder (Cmd+J panel window position)
+
+### Prevent masking real user preferences
+Narrowed overly-broad global patterns in `is_noisy_key()` that could hide real prefs:
+- `*History*` → `*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*` (keeps `HistoryAgeInDaysLimit`, `EnableHistory`)
+- `*Cache*` → `*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*` (keeps `CacheSize`, `EnableCache`, `DiskCacheSize`)
+- `*Temp*` → removed (kept `*-temp|*-tmp|*TempFile*|*TempPath*`) — avoid catching `Template*`, `ColorTemperature`
+- `*ViewOptions*` → `*ViewOptionsFrame*|*ViewOptionsWindow*` (suffix-specific window state)
+- `FK_SidebarWidth*` → removed (real user preference)
+- `*Analytics*|*Telemetry*` → `*AnalyticsQueue/Session/Event*|*TelemetryQueue/Session/Event*` (keeps `AnalyticsEnabled`, `SendAnalytics`)
+- `SUSendProfileInfo` → removed (Sparkle opt-in toggle)
+- `flags` exact → removed (too generic)
+- `uses` / `*donate*` → removed/narrowed to `launchCount`, `*donateDialogShown*`, `*lastDonateDate*`
+- `state|status|State|Status` exact → removed
+- `*ConnectionState*` → removed
+- `*Date|Date` exact suffix → removed (specific date noise already covered)
+- `last-selection` → removed from global
+- ALL_CAPS regex → removed (could catch real prefs like `SHOW_HIDDEN_FILES`)
+
+Narrowed `DEFAULT_EXCLUSIONS` that hid entire domains with real user preferences:
+- `com.apple.SoftwareUpdate` → removed (`AutomaticDownload`, `AutomaticallyInstallMacOSUpdates`, `AutomaticCheckEnabled`)
+- `com.apple.TimeMachine` → narrowed to `.helper`/`.agent` (keeps `AutoBackup`, `ExcludedPaths`)
+- `com.apple.security*` → narrowed to known daemon sub-domains
+
 ## 1.1.6 — 2026-04-11
 
 ### Fixed
@@ -47,10 +105,10 @@
 - Filter `RecentMoveAndCopyDestinations` for `com.apple.finder` (recent copy/move destination history)
 - Filter `preferredLocalizations` globally (system-managed localization, not user preferences)
 - Filter `SystemInfoDynamic.*` globally (internal system state, not user preferences)
-- Exclude `com.apple.remindd*` (Reminders daemon CloudKit sync state, replaces babysitter-only exclusion)
+- Exclude `com.apple.remindd*` (Reminders daemon CloudKit sync state)
 
 ### Fix
-- Python3 warning now written to log file (previously stdout only) — visible when checking `/var/log/prefwatch-*.log` directly
+- Python3 warning now written to log file — visible when checking `/var/log/prefwatch-*.log` directly
 - Python3 prompt unified for CLI and Jamf: same interactive prompt in both modes, auto-continues ("y") when no TTY (Jamf)
 - Python3 warning visible in Jamf output even in ONLY_CMDS mode (prefixed with `Cmd: #`)
 
@@ -82,7 +140,7 @@
 ## 1.1.2 — 2026-02-24
 
 ### Fix
-- Apply `--mdm` path substitution to PlistBuddy `Delete` commands (was only applied to `Add`/`Set`)
+- Apply `--mdm` path substitution to PlistBuddy `Delete` commands
 
 ### Noise
 - Filter `*SKPurchaseIntent*` (StoreKit license check timestamps)
@@ -133,11 +191,11 @@
 - Fix orphan contextual note when all PBCMD commands are filtered (lazy emit after filter)
 - Fix duplicate commands for new top-level arrays (dedup between `emit_array_additions` and `emit_nested_dict_changes`)
 - Fix `NSWindowTabbingShoudShowTabBarKey` incorrectly filtered (is a real user preference: show/hide tab bar)
-- Fix log path documentation in header (was `preferences.watch.log`, now matches actual `prefwatch-v<version>.log`)
+- Fix log path documentation in header to match actual `prefwatch-v<version>.log`
 
 ### UX
 - Add contextual note `killall Finder` + `.DS_Store` per-window overrides for Finder domain
-- Add generic first-create note when any top-level dict/array is created for the first time (replaces Spotlight-specific note)
+- Add generic first-create note when any top-level dict/array is created for the first time
 - Add contextual note for symbolic hotkeys parameter rewrite on toggle
 - Add post-snapshot polling delay notice
 - Add contextual note for `com.apple.WindowManager` (Desktop & Dock first-open writes all defaults)
@@ -157,7 +215,7 @@
 - Dock icon add/remove: `bundle-identifier`, `_CFURLString`, `file-label` no longer filtered in PlistBuddy commands — app name and path now visible in output
 - Print presets: detect new top-level dict settings and emit full PlistBuddy `Add` tree — reproduces complete preset via terminal
 - Print presets: emit `Add :array_name array` when array is new (e.g. `customPresetsInfo`)
-- PlistBuddy `pb_type_value()`: use `true/false` for bools (was `YES/NO` — invalid for PlistBuddy)
+- PlistBuddy `pb_type_value()`: emit `true/false` for bools (required by PlistBuddy)
 - Parallel snapshot: fix invalid `shift _snap_pids` zsh syntax — use array slice instead
 - Poll watch: remove dead `_poll_first` flag and stale `$now` variable reference
 
@@ -166,7 +224,7 @@
 - Contextual `# NOTE:` for keyboard shortcut changes (`com.apple.symbolichotkeys`)
 - Dock icon add/remove: emit `# Dock: AppName (bundle-id)` comment for readability
 - Dock icon remove: emit `# Dock: removed AppName` comment
-- Keyboard shortcuts (`AppleSymbolicHotKeys`) now detected in ALL mode via `emit_nested_dict_changes`
+- Detect keyboard shortcuts (`AppleSymbolicHotKeys`) in ALL mode via `emit_nested_dict_changes`
 
 ### Noise
 - Exclude `com.apple.homed` (HomeKit generation counters)
@@ -176,7 +234,7 @@
 - PBCMD handler: filter Dock tile internals (`GUID`, `dock-extra`, `is-beta`, `file-type`, `tile-type`, `*-mod-date`)
 - PBCMD handler: fix `<data:` filter (remove stale single-quote prefix)
 - PBCMD handler: sync both handlers (show_plist_diff + show_domain_diff)
-- Print preset `# NOTE:` emitted once before commands (was duplicated for array + dict)
+- Print preset `# NOTE:` emitted once before commands
 
 ## 1.0.4 — 2026-02-16
 
@@ -199,7 +257,7 @@
 ## 1.0.3 — 2026-02-15
 
 ### Fix
-- Print preset deletion now detected (`customPresetsInfo` array was incorrectly filtered as noisy)
+- Detect print preset deletion (`customPresetsInfo` array)
 - CUPS printer monitoring — debounce 5s to filter DNS-SD/Bonjour false positives
 
 ### Noise

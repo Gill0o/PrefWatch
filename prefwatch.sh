@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.1.6
+# Version: 1.2.0
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -48,6 +48,10 @@
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
 #     $9 = MDM_OUTPUT (true/false) — replace user home path with $loggedInUser
 #          variable in PlistBuddy commands for MDM deployment (default: false)
+#     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
+#          "active" so their first change is detected without fs_usage→poll
+#          round-trip. Defaults: com.apple.finder, .GlobalPreferences.
+#          Pass "NONE" to disable.
 # ============================================================================
 
 # ============================================================================
@@ -77,6 +81,10 @@ Options:
   -v, --verbose         Show detailed debug output with timestamps
   -q, --only-cmds       Show only executable commands (default)
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
+  --hot-domains <list>  Comma-separated list of domains kept permanently active
+                        for instant first-change detection (default:
+                        com.apple.finder,.GlobalPreferences).
+                        Pass "NONE" to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
                         \$loggedInUser variable in PlistBuddy commands
@@ -105,6 +113,7 @@ Jamf Pro Mode:
     $7 = ONLY_CMDS (true/false)
     $8 = EXCLUDE_DOMAINS
     $9 = MDM_OUTPUT (true/false)
+    $10 = HOT_DOMAINS (comma-separated; "NONE" to disable)
 
 EOF
   exit 0
@@ -166,6 +175,14 @@ parse_cli_args() {
         EXCLUDE_DOMAINS="${2}"
         shift 2
         ;;
+      --hot-domains)
+        if [[ -z "${2:-}" ]]; then
+          echo "Error: --hot-domains requires a comma-separated list argument" >&2
+          exit 1
+        fi
+        HOT_DOMAINS_RAW="${2}"
+        shift 2
+        ;;
       --mdm)
         MDM_OUTPUT_RAW="true"
         shift
@@ -200,6 +217,9 @@ if [ "$JAMF_MODE" = "true" ]; then
   ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
   EXCLUDE_DOMAINS="${8:-}"
   MDM_OUTPUT_RAW="${9:-false}"
+  # Only set HOT_DOMAINS_RAW if $10 was explicitly provided (non-empty),
+  # so the default HOT_DOMAINS array is preserved when $10 is omitted.
+  [ -n "${10:-}" ] && HOT_DOMAINS_RAW="${10}"
 else
   # CLI mode: use flag-based parsing
   parse_cli_args "$@"
@@ -239,6 +259,22 @@ unsetopt verbose 2>/dev/null || true
 # EXCLUSIONS
 # ============================================================================
 
+# "Hot" domains kept permanently marked active so their very first change is
+# detected without waiting for fs_usage→poll round-trip. Kept intentionally
+# small — organic marking handles the rest. Override via --hot-domains CLI flag
+# or Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
+typeset -a HOT_DOMAINS=(
+  com.apple.finder
+  .GlobalPreferences
+)
+if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
+  if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then
+    HOT_DOMAINS=()
+  else
+    HOT_DOMAINS=("${(@s:,:)HOT_DOMAINS_RAW}")
+  fi
+fi
+
 # Default exclusion patterns for noisy/irrelevant domains
 # These domains change frequently but are rarely useful for preference monitoring
 # You can override with --exclude flag or $8 parameter in Jamf mode
@@ -263,6 +299,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.shazamd"
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
+  "com.apple.imessage.bag"
   "com.apple.AudioAccessory"
   "com.apple.systemsettings.extensions*"
   "com.apple.networkserviceproxy"
@@ -274,7 +311,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Security & crash reporting (noisy, not user settings)
   "com.apple.CrashReporter"
-  "com.apple.security*"
+  # Note: com.apple.security* narrowed — catch only known noisy sub-domains,
+  # not "com.apple.security.authorization" or similar which may have real prefs
+  "com.apple.security.cloudkeychainproxy3"
+  "com.apple.security.smartcard"
+  "com.apple.securityagent"
+  "com.apple.securityd"
   "com.apple.biometrickitd"
 
   # Accessibility internals (auth warnings, hearing device state, not user preferences)
@@ -291,8 +333,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.apsd"
 
   # Backup internals (constant state updates, not user preferences)
-  "com.apple.TimeMachine"
-  "com.apple.timemachine*"
+  # Note: com.apple.TimeMachine removed — contains real prefs (AutoBackup, ExcludedPaths)
+  "com.apple.timemachine.helper"
+  "com.apple.timemachine.agent"
 
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"
@@ -311,6 +354,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.appleintelligencereporting"
   "com.apple.GenerativeFunctions*"
 
+  # MetricKit daemon (per-app diagnostic bookkeeping, MX* keys touched on every
+  # MetricKit query — Outlook, Teams, Edge, etc. trigger writes, not user prefs)
+  "com.apple.metrickitd"
+
   # ML rate limiter (token bucket counters/timestamps for embedding processing)
   "TokenBucketRateLimiter"
 
@@ -320,8 +367,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
 
-  # Software Update cache (available updates metadata, not user settings)
-  "com.apple.SoftwareUpdate"
+  # Note: com.apple.SoftwareUpdate removed from exclusions — contains real prefs
+  # (AutomaticDownload, AutomaticallyInstallMacOSUpdates, AutomaticCheckEnabled)
+  # Cache noise should be filtered at key level instead
 
   # Power management internals (constant battery updates)
   "com.apple.PowerManagement*"
@@ -636,9 +684,17 @@ fi
 # Utilities
 # ---------------------------------------
 
+# Fork-free strftime + stat (zsh built-in modules)
+zmodload zsh/datetime 2>/dev/null && HAVE_ZSH_STRFTIME=true || HAVE_ZSH_STRFTIME=false
+zmodload zsh/stat 2>/dev/null && HAVE_ZSH_STAT=true || HAVE_ZSH_STAT=false
+
 # Helper function for optimized timestamp
 get_timestamp() {
-  if [ "$HAVE_BIN_DATE" = "true" ]; then
+  if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
+    local _ts
+    strftime -s _ts '%Y-%m-%d %H:%M:%S' "$EPOCHSECONDS"
+    printf '%s' "$_ts"
+  elif [ "$HAVE_BIN_DATE" = "true" ]; then
     /bin/date '+%Y-%m-%d %H:%M:%S'
   else
     date '+%Y-%m-%d %H:%M:%S'
@@ -745,7 +801,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|FK_SidebarWidth*|*.column.*.width|*.column.*.width.*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -753,17 +809,17 @@ is_noisy_key() {
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
-    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSendProfileInfo|SUSkippedVersion|SUUpdateRelaunchingMarker)
+    # Note: SUSendProfileInfo kept — it's a user-toggleable opt-in for stats
+    SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSkippedVersion|SUUpdateRelaunchingMarker)
       return 0 ;;
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*)
+    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*)
       return 0 ;;
 
-    # Date fields (float/string dates are usually metadata)
-    *Date|Date)
-      return 0 ;;
+    # Note: removed *Date|Date — too generic, could mask ExpirationDate/StartDate as real prefs
+    # Specific date noise is already caught by *timestamp*, *LastSync*, *lastBootstrap*, etc.
 
     # Error states & sync errors (transient, not user preferences)
     *Error|*Errors|*error|*errors|*ErrorCode*|*ErrorDomain*|*ErrorUserInfo*|IMCloudKitSyncErrors|IMSerializedError*)
@@ -774,7 +830,8 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters (not user preferences)
-    *Analytics*|*Telemetry*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
+    # Note: keeps opt-in toggles like AnalyticsEnabled, SendAnalytics, TelemetryEnabled
+    *AnalyticsQueue*|*AnalyticsSession*|*AnalyticsEvent*|*TelemetryEvent*|*TelemetrySession*|*TelemetryQueue*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device, not user preferences)
@@ -785,9 +842,10 @@ is_noisy_key() {
     preferredLocalizations)
       return 0 ;;
 
-    # UUIDs and flags (transient notification/state identifiers)
+    # UUIDs (transient notification/state identifiers)
     # Matches: uuid, UUID, *UUID, *uuid (e.g., sessionUUID, updatedSinceBootUUID)
-    uuid|UUID|flags|*UUID|*uuid)
+    # Note: removed exact `flags` — too generic, apps can use it as a real pref
+    uuid|UUID|*UUID|*uuid)
       return 0 ;;
 
     # VoiceOver internal state (Braille defaults, display text timestamps)
@@ -813,12 +871,11 @@ is_noisy_key() {
     parent-mod-date|file-mod-date|mod-count|file-type)
       return 0 ;;
 
-    # Screenshot last selection area (changes every capture)
-    last-selection)
-      return 0 ;;
+    # Note: removed global `last-selection` — too generic, move to domain-specific if needed
 
     # Recent items & history (noisy, changes constantly)
-    *RecentFolders|*RecentDocuments|*RecentSearches|*History*|*RecentlyUsed*)
+    # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
+    *RecentFolders|*RecentDocuments|*RecentSearches|*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*|*RecentlyUsed*)
       return 0 ;;
 
     # Finder sync state (iCloud Drive extension toolbar, not user preferences)
@@ -834,7 +891,8 @@ is_noisy_key() {
       return 0 ;;
 
     # App launch counters & donation reminders (internal state)
-    uses|launchCount|*reminder.date|*donate*)
+    # Note: removed `uses` exact and `*donate*` — too generic, could mask real prefs
+    launchCount|*reminder.date|*donateDialogShown*|*lastDonateDate*)
       return 0 ;;
 
     # Migration flags (one-time internal state, not user preferences)
@@ -849,25 +907,30 @@ is_noisy_key() {
     SessionDuration)
       return 0 ;;
 
+    # CloudKit account cache (hash-keyed entries, daemon-managed)
+    CloudKitAccountInfoCache|*CloudKitAccountInfo*)
+      return 0 ;;
+
     # WebKit internal state (set when opening Settings panels that use WebKit views)
     WebKitUseSystemAppearance)
       return 0 ;;
 
     # Cache & temporary data
-    *-cache|*Cache*|*-temp|*Temp*|*-tmp)
+    # Note: keeps real prefs like CacheSize, EnableCache, ColorTemperature, Template*
+    *-cache|*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*|*-temp|*-tmp|*TempFile*|*TempPath*)
       return 0 ;;
 
     # View state (scroll positions, selected items, etc.)
-    *ScrollPosition*|*scrollPosition*|*SelectedItem*|*ViewOptions*)
+    # Note: *ViewOptionsFrame/Window only — keeps Finder StandardViewOptions etc.
+    *ScrollPosition*|*scrollPosition*|*SelectedItem*|*ViewOptionsFrame*|*ViewOptionsWindow*)
       return 0 ;;
 
     # Playback & connection state (transient states across all apps)
-    *PlaybackStatus*|*Playback*Status*|*ConnectionState*|*lastNowPlayedTime*|*LastConnected*)
+    # Note: removed *ConnectionState* — too broad, could mask real connection prefs
+    *PlaybackStatus*|*Playback*Status*|*lastNowPlayedTime*|*LastConnected*)
       return 0 ;;
 
-    # App state & status (running state, temporary status)
-    state|status|State|Status)
-      return 0 ;;
+    # Note: removed state|status|State|Status — too generic, apps may use these as real prefs
   esac
 
   # Hash keys (session IDs, cache keys) - long hex strings (zsh built-in regex, no fork)
@@ -882,11 +945,8 @@ is_noisy_key() {
     return 0
   fi
 
-  # Feature flags (ALL_CAPS keys with underscores) - system A/B testing configs
-  # Examples: SIRI_MEMORY_SYNC_CONFIG, HEALTH_FEATURE_AVAILABILITY
-  if [[ "$keyname" =~ ^[A-Z][A-Z_0-9]+$ ]] && [[ "$keyname" == *_* ]]; then
-    return 0
-  fi
+  # Note: removed ALL_CAPS regex — too broad, could mask real prefs like SHOW_HIDDEN_FILES, ENABLE_DEBUG
+  # Known noisy ALL_CAPS keys should be filtered per-domain instead
 
   # ========================================================================
   # DOMAIN-SPECIFIC NOISY KEYS
@@ -921,6 +981,9 @@ is_noisy_key() {
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
         FXRecentFolders|RecentMoveAndCopyDestinations|FXConnectToBounds|FXConnectToLastURL|SearchRecentsSavedViewStyle|SearchRecentsViewSettings|GoToField*|LastTrashState|FXDesktopVolumePositions|name)
+          return 0 ;;
+        # Noisy: View Options panel window position (Cmd+J panel)
+        PreviewOptionsWindow.Location)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -1128,6 +1191,13 @@ is_noisy_key() {
           return 0 ;;
       esac
       ;;
+    com.apple.iChat)
+      case "$keyname" in
+        # Internal IMD state (last notification timestamp, not a user preference)
+        LastIMDNotificationPostedDate)
+          return 0 ;;
+      esac
+      ;;
 
     # Native Instruments: Filter telemetry init flags
     com.native-instruments.*)
@@ -1219,6 +1289,19 @@ is_noisy_pbcmd() {
           return 0 ;;
       esac
       ;;
+    com.apple.TimeMachine)
+      # Noisy: disk space metrics (change on every backup), snapshot counters,
+      # filesystem state detection. Keeps: ID, Kind, QuotaGB, Name (user config)
+      case "$pb_cmd" in
+        *":BytesAvailable "*|*":BytesUsed "*|*":NumberOfSnapshots "*|\
+        *":SnapshotDates "*|*":SnapshotDates:"*|\
+        *":ConsistencyScanDate "*|*":FilesystemTypeName "*|\
+        *":LastKnownEncryptionState "*|*":LastKnownVolumeName "*|\
+        *":ReferenceLocalSnapshotDate "*|*":attemptDate "*|\
+        *":backupOfVolumeUUIDs"*)
+          return 0 ;;
+      esac
+      ;;
     com.rogueamoeba.loopbackd)
       # Noisy: periodic scheduler fire timestamps
       case "$pb_cmd" in
@@ -1268,9 +1351,8 @@ _log() {
       return 0
     fi
 
-    if [[ "$out" =~ 'defaults[[:space:]]+write[[:space:]]+' ]]; then
-      local _cmd_dom
-      _cmd_dom=$(printf '%s' "$out" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+    if [[ "$out" =~ 'defaults[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
+      local _cmd_dom="${match[1]}"
       if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
         return 0
       fi
@@ -1283,10 +1365,8 @@ _log() {
   fi
 
   local line="[$ts] $msg"
-  if [[ "$msg" =~ '(Cmd: |CMD: )?defaults[[:space:]]+write[[:space:]]+' ]]; then
-    local _raw _cmd_dom
-    _raw=$(printf '%s' "$msg" | /usr/bin/sed -E 's/^(Cmd: |CMD: )//')
-    _cmd_dom=$(printf '%s' "$_raw" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+  if [[ "$msg" =~ 'defaults[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
+    local _cmd_dom="${match[1]}"
     if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
       return 0
     fi
@@ -1456,12 +1536,15 @@ parse_array_index_key() {
 
 # Detect and emit commands for array additions
 emit_array_additions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
 
   local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
   py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
 import json, sys, os
 
@@ -1604,20 +1687,17 @@ for prefix, index, item in results:
             print(f"PBCMD\tAdd :{prefix[0]}:{index} {tv[0]} {tv[1]}")
 PY
 ) || return 0
+  fi
 
   [ -n "$py_output" ] || return 0
 
-  # Pass through all Python output (metadata + PBCMD lines)
-  # PBCMD lines are handled by the caller (not here, because this function
-  # is called inside $() and log_* output would be captured instead of displayed)
+  # PBCMD lines handled by caller (this runs inside $() so log_* would be captured)
   printf '%s\n' "$py_output"
 }
 
-# Dedup domain-level notes across handlers (show_plist_diff + show_domain_diff)
 typeset -gA _NOTED_DOMAIN=()
 
 # Emit contextual notes for domains that need extra steps
-# Called once per domain after array metadata processing
 _emit_contextual_note() {
   local dom="$1" array_base="$2" _note=""
   case "$dom" in
@@ -1642,7 +1722,10 @@ _emit_contextual_note() {
         AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
       esac ;;
     com.apple.finder)
-      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) are per-folder (.DS_Store): click 'Use as Defaults' to write to preferences. Column view has no global default (always .DS_Store)" ;;
+      _note="Some changes require 'killall Finder' to apply — View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list view); column view writes directly"
+      case "$array_base" in
+        PreviewPaneSettings) _note="First opening Finder Preview pane options writes the full attribute list — only subsequent toggles reflect actual modifications" ;;
+      esac ;;
     com.apple.WindowManager)
       _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
     com.apple.universalaccess)
@@ -1663,15 +1746,14 @@ _emit_contextual_note() {
   log_line "Cmd: # NOTE: $_note"
 }
 
-# Detect and emit commands for array deletions
-emit_array_deletions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
+# Raw Python runner for array deletions — prints py_output to stdout so the
+# caller can prefetch it in parallel before emit_array_deletions consumes it.
+_py_deletions_raw() {
+  local dom="$1" prev_json="$2" curr_json="$3"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
-
-  local py_output
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -1749,7 +1831,21 @@ for path_tuple, index, item in results:
         keys = ""
     print(f"{array_name}\t{index}\t{keys}\t{app_label}")
 PY
-) || return 0
+}
+
+# Detect and emit commands for array deletions
+emit_array_deletions() {
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
+  [ -n "$PYTHON3_BIN" ] || return 0
+  [ -s "$curr_json" ] || return 0
+  [ -s "$prev_json" ] || return 0
+
+  local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
+    py_output=$(_py_deletions_raw "$dom" "$prev_json" "$curr_json") || return 0
+  fi
 
   [ -n "$py_output" ] || return 0
 
@@ -1808,12 +1904,15 @@ PY
 # Detect and emit PlistBuddy commands for changes inside nested dicts
 # Handles cases like symbolichotkeys where values change deep inside dicts
 emit_nested_dict_changes() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4"
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
 
   local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
   py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
 import json, sys, os
 
@@ -2022,6 +2121,7 @@ for top_key in sorted(curr.keys()):
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
 ) || return 0
+  fi
 
   [ -n "$py_output" ] || return 0
 
@@ -2049,11 +2149,17 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
-  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously
+  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously.
+  # Wait up to 3s for the lock (chained events would otherwise be dropped).
   local lockdir="$CACHE_DIR/${key}.lock"
-  if ! /bin/mkdir "$lockdir" 2>/dev/null; then
-    return 0
-  fi
+  local _wait_attempts=0
+  while ! /bin/mkdir "$lockdir" 2>/dev/null; do
+    _wait_attempts=$((_wait_attempts + 1))
+    if [ "$_wait_attempts" -gt 30 ]; then
+      return 0
+    fi
+    /bin/sleep 0.1
+  done
 
   if [ "$silent" != "true" ]; then
     dump_plist "$path" "$curr" &
@@ -2063,22 +2169,34 @@ show_plist_diff() {
     dump_plist "$path" "$curr"
   fi
 
-  # Dedup: skip if no change since last processing
-  # Retry with increasing delays — cfprefsd writes to disk asynchronously,
-  # so the file may still contain stale data when fs_usage fires (0.5s + 1.5s = 2s max)
+  # Retry with increasing delays — cfprefsd writes asynchronously, so the file
+  # may still contain stale data when fs_usage fires. `defaults read` hints
+  # cfprefsd to sync. Only re-dump text (JSON dumped once change is confirmed).
+  # Skip expensive dump_plist when file mtime is unchanged (fast-path skip).
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
-    local _retry_delay
-    for _retry_delay in 0.5 1.5; do
+    local _retry_delay _retry_changed=false _last_mtime _cur_mtime
+    _last_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
+    for _retry_delay in 0.1 0.2 0.3 0.5 0.7; do
       /bin/sleep "$_retry_delay"
-      if [ "$silent" != "true" ]; then
-        dump_plist "$path" "$curr" &
-        dump_plist_json "$path" "$curr_json" &
-        wait
-      else
-        dump_plist "$path" "$curr"
+      # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
+      "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_dom" >/dev/null 2>&1 || true
+      _cur_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
+      # Last retry: always dump — stat %m has 1-second granularity so
+      # same-second cfprefsd flushes are invisible to the mtime check.
+      if [ "$_retry_delay" != "0.7" ] && [ -n "$_cur_mtime" ] && [ "$_cur_mtime" = "$_last_mtime" ]; then
+        continue
       fi
-      /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null || break
+      _last_mtime="$_cur_mtime"
+      dump_plist "$path" "$curr"
+      if ! /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
+        _retry_changed=true
+        break
+      fi
     done
+    # Change detected during retry — dump JSON now for diff engine
+    if [ "$_retry_changed" = "true" ] && [ "$silent" != "true" ]; then
+      dump_plist_json "$path" "$curr_json"
+    fi
     if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
       /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
       /bin/rmdir "$lockdir" 2>/dev/null || true
@@ -2092,10 +2210,15 @@ show_plist_diff() {
   local _has_array_additions=false
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
-    _array_meta_raw=$(emit_array_additions "$kind" "$_dom" "$prev_json" "$curr_json") || _array_meta_raw=""
-    # Detect changes inside nested dicts (e.g. symbolichotkeys)
+    # Run the 3 Python diff invocations in parallel (each ~60-100ms)
+    local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
+    emit_array_additions "$kind" "$_dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
+    _py_deletions_raw "$_dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
+    emit_nested_dict_changes "$kind" "$_dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
+    wait
+    _array_meta_raw=$(< "$_py_add")
     local _nested_raw
-    _nested_raw=$(emit_nested_dict_changes "$kind" "$_dom" "$prev_json" "$curr_json") || _nested_raw=""
+    _nested_raw=$(< "$_py_nest")
     if [ -n "$_nested_raw" ]; then
       if [ -n "$_array_meta_raw" ]; then
         _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
@@ -2171,7 +2294,8 @@ show_plist_diff() {
       done <<< "$_array_meta_raw"
     fi
 
-    emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json"
+    emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json" "$_py_del"
+    /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
   fi
 
   if [ -s "$prev" ] && [ "$silent" != "true" ]; then
@@ -2436,11 +2560,17 @@ show_domain_diff() {
   local _has_array_additions=false
 
   if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
-    _array_meta_raw=$(emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json") || _array_meta_raw=""
-    emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json"
-    # Detect changes inside nested dicts (e.g. symbolichotkeys)
+    # Run the 3 Python diff invocations in parallel
+    local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
+    emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
+    _py_deletions_raw "$dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
+    emit_nested_dict_changes DOMAIN "$dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
+    wait
+    _array_meta_raw=$(< "$_py_add")
+    emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json" "$_py_del"
     local _nested_raw
-    _nested_raw=$(emit_nested_dict_changes DOMAIN "$dom" "$prev_json" "$curr_json") || _nested_raw=""
+    _nested_raw=$(< "$_py_nest")
+    /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
     if [ -n "$_nested_raw" ]; then
       if [ -n "$_array_meta_raw" ]; then
         _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
@@ -2771,6 +2901,7 @@ start_watch() {
       # Take initial baseline snapshot so first user change is detected immediately
       show_domain_diff "$DOMAIN"
       last_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
+      local _forced_tick=0
       while true; do
         if [ -f "$plist_path" ]; then
           current_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
@@ -2779,6 +2910,18 @@ start_watch() {
           if [ -n "$current_mtime" ] && [ "$current_mtime" != "$last_mtime" ]; then
             show_domain_diff "$DOMAIN"
             last_mtime="$current_mtime"
+            _forced_tick=0
+          else
+            # Periodic forced diff every 4 iterations (~2s): stat %m has 1-second
+            # granularity, so same-second cfprefsd writes are invisible to mtime
+            # comparison. show_domain_diff uses `defaults export` (reads cfprefsd
+            # directly), so it catches any change the mtime check missed.
+            _forced_tick=$((_forced_tick + 1))
+            if [ "$_forced_tick" -ge 4 ]; then
+              show_domain_diff "$DOMAIN"
+              last_mtime="$current_mtime"
+              _forced_tick=0
+            fi
           fi
         else
           # File doesn't exist yet, wait for it
@@ -2913,22 +3056,44 @@ start_watch_all() {
 
   # fs_usage monitoring function
   fs_watch() {
+    # Debounce: cfprefsd fires several fs_usage events per logical write.
+    # Skip events seen <$FS_DEBOUNCE_S ago; poll_watch catches misses.
+    typeset -A _fs_last_seen=()
+    local _FS_DEBOUNCE_S=0.3
+    # Force line-buffered I/O so a single fs_usage event isn't stuck in a
+    # block buffer waiting for more data (notably for idle domains).
     script -q /dev/null /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
-    /usr/bin/sed -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
+    /usr/bin/sed -l -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
     /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
       path=$0;
       if (index(path, pu)==1)      { print "USER " path }
       else if (index(path, ps)==1) { print "SYSTEM " path }
       else                         { print "OTHER " path }
+      fflush()
     }' | while IFS= read -r line; do
       cat_type="${line%% *}"; plist="${line#* }"
       [ -z "$plist" ] && continue
       if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
         continue
       fi
+      # Debounce per-plist using EPOCHREALTIME (float seconds, fork-free via zsh/datetime)
+      if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
+        local _now="$EPOCHREALTIME" _last="${_fs_last_seen[$plist]:-0}"
+        if (( _now - _last < _FS_DEBOUNCE_S )); then
+          continue
+        fi
+        _fs_last_seen[$plist]="$_now"
+      fi
       dom=$(domain_from_plist_path "$plist")
       if is_excluded_domain "$dom"; then
         continue
+      fi
+      if [ -n "$dom" ]; then
+        # Track active domain so poll_watch can flush cfprefsd for it next iteration
+        /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
+        # Preemptive flush: hint cfprefsd to sync pending writes now so
+        # show_plist_diff's retry loop catches the change on its first iteration.
+        "${RUN_AS_USER[@]}" /usr/bin/defaults read "$dom" >/dev/null 2>&1 &
       fi
       if [ "$cat_type" = "USER" ]; then
         log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
@@ -2940,14 +3105,40 @@ start_watch_all() {
 
   # Polling monitoring function
   poll_watch() {
-    local marker_user marker_sys
+    local marker_user marker_sys active_dir
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
+    active_dir="$PREFWATCH_TMPDIR/active-domains"
+    /bin/mkdir -p "$active_dir" 2>/dev/null || true
     # Only create markers if not pre-initialized (avoids rescanning all plists after initial snapshot)
     [ -f "$marker_user" ] || /usr/bin/touch "$marker_user" 2>/dev/null || true
     [ -f "$marker_sys" ]  || /usr/bin/touch "$marker_sys" 2>/dev/null || true
 
     while true; do
+      # Flush cfprefsd for recently-active domains (last 30s) before polling.
+      # `defaults read` forces cfprefsd to sync pending writes for that domain.
+      if [ -d "$active_dir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+        # Refresh hot markers so they never expire via the 30s cleanup below
+        local _hd
+        for _hd in "${HOT_DOMAINS[@]}"; do
+          /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
+        done
+        local _af _adom
+        typeset -A _st
+        for _af in "$active_dir"/*(N); do
+          [ -f "$_af" ] || continue
+          zstat -H _st "$_af" 2>/dev/null || continue
+          if (( EPOCHSECONDS - _st[mtime] > 30 )); then
+            /bin/rm -f "$_af" 2>/dev/null || true
+            continue
+          fi
+          _adom="${_af:t}"
+          # Parallel flush: each XPC round-trip is ~20-50ms
+          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
+        done
+        wait
+      fi
+
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -2955,6 +3146,8 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
+          # Track active domain for next iteration's targeted flush
+          [ -n "$dom" ] && /usr/bin/touch "$active_dir/$dom" 2>/dev/null || true
           log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
@@ -2970,7 +3163,7 @@ start_watch_all() {
       fi
       /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
-      /bin/sleep 1
+      /bin/sleep 0.5
     done
   }
 
@@ -3110,6 +3303,14 @@ start_watch_all() {
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
+  # Create active-domains tracking dir (shared by fs_watch + poll_watch)
+  /bin/mkdir -p "$PREFWATCH_TMPDIR/active-domains" 2>/dev/null || true
+  # Pre-seed hot domains so first change is detected without fs_usage→poll
+  # round-trip. poll_watch auto-refreshes them so they never expire.
+  local _hd
+  for _hd in "${HOT_DOMAINS[@]}"; do
+    /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$_hd" 2>/dev/null || true
+  done
 
   # Start all mechanisms
   local FS_PID=""
