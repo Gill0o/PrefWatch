@@ -5,31 +5,28 @@
 Major version bump — performance overhaul plus broad noise-filter review to
 unmask real user preferences hidden by over-greedy patterns.
 
-### Fixed
-- Detect Finder column view settings (`StandardViewOptions:ColumnViewOptions`)
-- Finder NOTE updated: View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list); column view writes directly
-- New contextual NOTE for Finder `PreviewPaneSettings`: first open of Preview pane options writes the full attribute list — only subsequent toggles are actual user modifications
-- `show_plist_diff` retry loop silently skipped same-second cfprefsd flushes: `stat -f %m` returns integer seconds, so when cfprefsd wrote the plist within the same second as the initial mtime capture, the mtime-skip optimization caused all 5 retries to bail without re-dumping, and the change was lost by the fs_watch path. Fix: force an unconditional `dump_plist` on the final retry iteration (0.7s) regardless of mtime.
-- `HOT_DOMAINS` silently disabled in Jamf mode when `$10` was omitted: `HOT_DOMAINS_RAW="${10:-}"` always assigned the variable, and the `${HOT_DOMAINS_RAW+set}` check then interpreted the empty value as "user explicitly disabled". Fix: only assign `HOT_DOMAINS_RAW` when `$10` is non-empty; the disable sentinel is now the literal string `"NONE"` (was undocumented empty string, unreachable via positional parameters anyway).
-- `start_watch()` single-domain mode had the same `stat -f %m` 1-second granularity issue as `show_plist_diff`: if the user modified the preference within the same second as the initial baseline, the mtime comparison never fired and the change was invisible until a later-second write occurred. Fix: force `show_domain_diff` every 4 poll iterations (~2s) regardless of mtime; `defaults export` reads cfprefsd directly so it catches same-second writes the mtime check missed.
+### Feature
+- New `--hot-domains <list>` CLI flag / Jamf `$10` parameter: comma-separated list of domains kept permanently "active" so their first change is detected without waiting for the fs_usage→poll round-trip. Defaults: `com.apple.finder`, `.GlobalPreferences`. Pass `NONE` to disable.
+- Contextual `# NOTE:` for Finder `PreviewPaneSettings` — first-open writes the full attribute list; only subsequent toggles reflect actual user modifications.
+- README: new **Security** section flagging that `/var/log/prefwatch-v*.log` may contain user-specific data.
 
-### Docs
-- README: `--hot-domains` description updated from "empty string disables" to `NONE` disables (matches new Jamf-safe sentinel).
-- README: new **Security** section — logs may contain device identifiers, CloudKit cache, OAuth/session tokens, and file paths depending on which domains change; review before sharing.
+### Fix
+- `start_watch` single-domain mode missed any change that happened within the same second as its initial baseline: `stat -f %m` has 1-second granularity, so the `current_mtime != last_mtime` check never fired for same-second writes and the change remained invisible until a later-second write occurred. Now forces a full `show_domain_diff` every 4 poll iterations (~2s) regardless of mtime; `defaults export` reads `cfprefsd` directly and catches same-second writes the mtime check missed.
+- Detect Finder column view settings (`StandardViewOptions:ColumnViewOptions`) — previously filtered out.
+- Finder NOTE clarified: View Options (Cmd+J) require 'Use as Defaults' for detection (icon/list view); column view writes directly.
 
 ### Performance
-- Skip `dump_plist` in `show_plist_diff` retry loop when file mtime is unchanged — previously re-dumped every iteration (up to 5× per event) even when cfprefsd hadn't touched the file yet.
-- Preemptive cfprefsd flush in `fs_watch`: on every event, spawn `defaults read $dom` in the background immediately before invoking `show_plist_diff`. `defaults read` is documented to trigger a sync, so this gives the retry loop a better chance of seeing up-to-date data.
-- New active-domains registry: fs_watch + poll_watch mark each touched domain in `$PREFWATCH_TMPDIR/active-domains/`; every poll iteration pre-flushes cfprefsd for those domains via `defaults read`, forcing buffered writes to disk — non-destructive alternative to `killall cfprefsd`.
-- Pre-seed `HOT_DOMAINS` (`com.apple.finder`, `.GlobalPreferences` by default) into the active-domains registry at startup and auto-refresh them each poll cycle so they never expire. Eliminates the fs_usage→poll round-trip latency on the first change to these frequently-admin-touched domains. Override via `--hot-domains <list>` CLI flag or Jamf `$10` parameter (`NONE` disables).
+- Preemptive `cfprefsd` flush in `fs_watch`: spawn `defaults read $dom` in the background before invoking `show_plist_diff`, giving the retry loop a better chance of seeing up-to-date data.
+- New active-domains registry: `fs_watch` and `poll_watch` mark each touched domain in `$PREFWATCH_TMPDIR/active-domains/`; every poll iteration pre-flushes `cfprefsd` for those domains in parallel via `defaults read`. Non-destructive alternative to `killall cfprefsd`.
+- HOT_DOMAINS are seeded into the active-domains registry at startup and auto-refreshed each poll cycle so they never expire — first change detected near-instantly.
+- Tighter `show_plist_diff` retry schedule `0.1 0.2 0.3 0.5 0.7` (total 1.8s) replacing the previous `0.5 + 1.5` (2s). More frequent flush hints catch `cfprefsd` sync faster in the fs_usage path.
+- `show_plist_diff` retry loop skips `dump_plist` when file mtime is unchanged (up to 5× per event saved). A final unconditional dump on the last retry ensures same-second writes are still caught, since `stat -f %m` has 1-second granularity.
+- Skip `dump_plist_json` during retries in `show_plist_diff` — JSON is only needed after a change is confirmed.
+- Reduce `poll_watch` cadence from 1s to 0.5s — halves the worst-case latency when the fs_usage path misses a flush.
+- Debounce `fs_usage` events per-plist at 300ms using `$EPOCHREALTIME` (fork-free via `zsh/datetime`). `cfprefsd` emits multiple fs_usage events per logical write (observable via `fs_usage`); collapsing them avoids redundant `show_plist_diff` passes.
 - Force line-buffered I/O in the fs_watch pipeline (`sed -l` + `awk fflush()`) — prevents block buffering between `sed`/`awk`/`while read` from holding back events on quiet pipelines.
-- Reduce `poll_watch` cadence from 1s to 0.5s — halves the worst-case latency when the fs_usage retry loop bails before cfprefsd flushes.
-- Tighter `show_plist_diff` retry schedule `0.1 0.2 0.3 0.5 0.7` (total 1.8s) replacing the previous `0.5 + 1.5` (2s). More frequent flush hints catch cfprefsd sync faster in the fs_usage path rather than waiting for the next poll cycle.
-- Parallelize active-domains cfprefsd flush in `poll_watch`: `defaults read` calls run concurrently via `&` + `wait` instead of sequentially.
-- Debounce `fs_usage` events per-plist at 300ms using `$EPOCHREALTIME` from `zsh/datetime`. cfprefsd emits multiple fs_usage events per logical write (observable via `fs_usage`); collapsing them avoids redundant `show_plist_diff` passes. `poll_watch` catches anything missed.
-- Reduce forks in `_log` (called for every output line): use `zsh/datetime` `strftime` instead of `/bin/date` in `get_timestamp`, and replace two `printf | sed` pipelines with zsh `[[ =~ ]]` + `${match[1]}` capture on `defaults write` messages.
 - Run the 3 Python diff invocations (`emit_array_additions`, `emit_array_deletions` via new `_py_deletions_raw` helper, `emit_nested_dict_changes`) in parallel in both `show_plist_diff` and `show_domain_diff`.
-- Skip `dump_plist_json` during retries in `show_plist_diff` — JSON is only needed after a change is confirmed, not during the retry loop.
+- Reduce forks in `_log` (called for every output line): use `zsh/datetime` `strftime` instead of `/bin/date` in `get_timestamp`; replace two `printf | sed` pipelines with zsh `[[ =~ ]]` + `${match[1]}` capture on `defaults write` messages.
 
 ### Noise
 - Exclude `com.apple.imessage.bag` (Apple service config bag: `CacheTime` TTL + `Date` refresh timestamp, server-controlled)
