@@ -41,17 +41,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Check Bash syntax
+    - name: Check Zsh syntax (prefwatch.sh)
       run: |
-        echo "Checking Bash syntax..."
-        bash -n prefwatch.sh
-        [ -f release.sh ] && bash -n release.sh || echo "release.sh not present — skipping"
-
-    - name: Check Zsh syntax
-      run: |
-        echo "Checking Zsh syntax..."
+        echo "Checking Zsh syntax on prefwatch.sh..."
         zsh -n prefwatch.sh
-        [ -f release.sh ] && zsh -n release.sh || echo "release.sh not present — skipping"
+
+    - name: Check Bash syntax (release.sh)
+      run: |
+        if [ -f release.sh ]; then
+          echo "Checking Bash syntax on release.sh..."
+          bash -n release.sh
+        else
+          echo "release.sh not present — skipping"
+        fi
 
   version-check:
     name: Version Consistency Check
