@@ -2,9 +2,6 @@
 
 ## 1.2.0 — unreleased
 
-Major version bump — performance overhaul plus broad noise-filter review to
-unmask real user preferences hidden by over-greedy patterns.
-
 ### Feature
 - New `--hot-domains <list>` CLI flag / Jamf `$10` parameter: comma-separated list of domains kept permanently "active" so their first change is detected without waiting for the fs_usage→poll round-trip. Defaults: `com.apple.finder`, `.GlobalPreferences`. Pass `NONE` to disable.
 - Contextual `# NOTE:` for Finder `PreviewPaneSettings` — first-open writes the full attribute list; only subsequent toggles reflect actual user modifications.
