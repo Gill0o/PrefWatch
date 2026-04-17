@@ -354,6 +354,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.appleintelligencereporting"
   "com.apple.GenerativeFunctions*"
 
+  # MetricKit daemon (per-app diagnostic bookkeeping, MX* keys touched on every
+  # MetricKit query — Outlook, Teams, Edge, etc. trigger writes, not user prefs)
+  "com.apple.metrickitd"
+
   # ML rate limiter (token bucket counters/timestamps for embedding processing)
   "TokenBucketRateLimiter"
 

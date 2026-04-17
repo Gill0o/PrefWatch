@@ -26,6 +26,7 @@
 - Reduce forks in `_log` (called for every output line): use `zsh/datetime` `strftime` instead of `/bin/date` in `get_timestamp`; replace two `printf | sed` pipelines with zsh `[[ =~ ]]` + `${match[1]}` capture on `defaults write` messages.
 
 ### Noise
+- Exclude `com.apple.metrickitd` (MetricKit daemon — `MXClient*` keys are per-app diagnostic bookkeeping touched whenever Outlook, Teams, Edge, etc. query MetricKit, not user preferences)
 - Exclude `com.apple.imessage.bag` (Apple service config bag: `CacheTime` TTL + `Date` refresh timestamp, server-controlled)
 - Filter `LastIMDNotificationPostedDate` for `com.apple.iChat` (Instant Messaging Daemon notification timestamp)
 - Filter `*lastAppUpdateCheck*|*LastAppUpdateCheck*` globally (auto-update check timestamps, e.g. Raycast `raycast-updates-lastAppUpdateCheckDate`)
