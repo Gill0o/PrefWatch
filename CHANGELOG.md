@@ -1,9 +1,11 @@
 # Changelog
 
-## .1.3. — unreleased
+## 1.2.1 — unreleased
 
+### CI
+- `validate.yml`: drop the `bash -n prefwatch.sh` syntax check. The script is `#!/bin/zsh` and uses zsh-only constructs (`zmodload`, `EPOCHREALTIME`, `${(@s:,:)…}`, glob qualifiers like `*(N)`); running `bash -n` on it failed at the `*(N)` null-glob qualifier in `poll_watch`. The zsh syntax check on `prefwatch.sh` and the bash syntax check on `release.sh` are kept.
 
-## 1.2.0 — unreleased
+## 1.2.0 — 2026-04-17
 
 ### Feature
 - New `--hot-domains <list>` CLI flag / Jamf `$10` parameter: comma-separated list of domains kept permanently "active" so their first change is detected without waiting for the fs_usage→poll round-trip. Defaults: `com.apple.finder`, `.GlobalPreferences`. Pass `NONE` to disable.
