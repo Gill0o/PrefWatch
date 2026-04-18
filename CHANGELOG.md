@@ -2,6 +2,9 @@
 
 ## 1.2.1 — unreleased
 
+### Fix
+- `poll_watch` could freeze indefinitely when `cfprefsd` hung on a single domain: the parallel `defaults read` flush ended with an unbounded `wait`, so one stuck child stalled every subsequent iteration and no further changes were reported. Added a 3s watchdog that `SIGTERM`s (then `SIGKILL`s after 1s) any straggler so the loop always advances; worst case we skip one flush cycle.
+
 ### CI
 - `validate.yml`: drop the `bash -n prefwatch.sh` syntax check. The script is `#!/bin/zsh` and uses zsh-only constructs (`zmodload`, `EPOCHREALTIME`, `${(@s:,:)…}`, glob qualifiers like `*(N)`); running `bash -n` on it failed at the `*(N)` null-glob qualifier in `poll_watch`. The zsh syntax check on `prefwatch.sh` and the bash syntax check on `release.sh` are kept.
 

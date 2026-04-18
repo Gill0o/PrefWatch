@@ -3123,7 +3123,9 @@ start_watch_all() {
         for _hd in "${HOT_DOMAINS[@]}"; do
           /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
         done
-        local _af _adom
+        local _af _adom _p _watchdog
+        local -a _pids
+        _pids=()
         typeset -A _st
         for _af in "$active_dir"/*(N); do
           [ -f "$_af" ] || continue
@@ -3135,8 +3137,23 @@ start_watch_all() {
           _adom="${_af:t}"
           # Parallel flush: each XPC round-trip is ~20-50ms
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
+          _pids+=($!)
         done
-        wait
+        # Watchdog: cfprefsd occasionally hangs on a specific domain; without
+        # this bound, `wait` would freeze the polling loop indefinitely and no
+        # further changes would be reported. Kill stragglers after 3s.
+        if (( ${#_pids[@]} > 0 )); then
+          (
+            /bin/sleep 3
+            for _p in "${_pids[@]}"; do /bin/kill -TERM "$_p" 2>/dev/null; done
+            /bin/sleep 1
+            for _p in "${_pids[@]}"; do /bin/kill -KILL "$_p" 2>/dev/null; done
+          ) &
+          _watchdog=$!
+          for _p in "${_pids[@]}"; do wait "$_p" 2>/dev/null || true; done
+          /bin/kill -TERM "$_watchdog" 2>/dev/null || true
+          wait "$_watchdog" 2>/dev/null || true
+        fi
       fi
 
       if [ -d "$prefs_user" ]; then
