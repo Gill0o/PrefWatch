@@ -2,11 +2,25 @@
 
 ## 1.2.1 — unreleased
 
+### Feature
+- Pre-flight confirmation now shown only when Python3/CLT is missing. `prompt_yn` adds an `osascript` GUI fallback via `launchctl asuser` for Jamf Self Service / launchd sessions (5-min timeout → auto-continue so policies never hang).
+
 ### Fix
-- `poll_watch` could freeze indefinitely when `cfprefsd` hung on a single domain: the parallel `defaults read` flush ended with an unbounded `wait`, so one stuck child stalled every subsequent iteration and no further changes were reported. Added a 3s watchdog that `SIGTERM`s (then `SIGKILL`s after 1s) any straggler so the loop always advances; worst case we skip one flush cycle.
+- `poll_watch` could freeze when `cfprefsd` hung on a domain (parallel flush → unbounded `wait`). Added a 3s watchdog that SIGTERM/SIGKILLs stragglers so the loop always advances.
+
+### Note
+- Reworded the "new top-level key" NOTE: parent dict must exist before `Set`, so `Add` commands must run in order.
+
+### Noise
+- Add `*TimeStamp*` to global timestamp noise — zsh glob case sensitivity made `*Timestamp*` miss camelCase like `SuspendHelperActivityTimeStamp`.
+- `com.apple.CharacterPicker`: filter `State` (per-app emoji picker UI keyed by bundle ID).
+- `com.apple.quicklook.ThumbnailsAgent`: filter `QLMTCacheSize*LastCheck*` (periodic cache-size check).
+- `com.bjango.istatmenus.menubar.*`: filter `License` (periodic license re-validation).
+- `com.apple.wifi.WiFiAgent`: filter `UserDismissedLimitedNetworkFirstJoins` (per-SSID "don't show again" bookkeeping).
+- Exclude `com.apple.CloudSubscriptionFeatures*` (iCloud+ geo cache with UUID-keyed binary entries — caused multi-second pauses in `show_plist_diff` on each cache refresh).
 
 ### CI
-- `validate.yml`: drop the `bash -n prefwatch.sh` syntax check. The script is `#!/bin/zsh` and uses zsh-only constructs (`zmodload`, `EPOCHREALTIME`, `${(@s:,:)…}`, glob qualifiers like `*(N)`); running `bash -n` on it failed at the `*(N)` null-glob qualifier in `poll_watch`. The zsh syntax check on `prefwatch.sh` and the bash syntax check on `release.sh` are kept.
+- `validate.yml`: drop `bash -n prefwatch.sh` — script is `#!/bin/zsh` and uses zsh-only constructs (`*(N)` glob qualifier failed under bash). zsh check on `prefwatch.sh` + bash check on `release.sh` are kept.
 
 ## 1.2.0 — 2026-04-17
 

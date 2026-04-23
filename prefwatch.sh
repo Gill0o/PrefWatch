@@ -238,8 +238,8 @@ MDM_OUTPUT=$(to_bool "$MDM_OUTPUT_RAW")
 
 # Replace user home path with $loggedInUser variable for MDM deployment scripts
 mdm_plist_path() {
-  if [ "$MDM_OUTPUT" = "true" ] && [[ "$1" == "$HOME"* ]]; then
-    printf '%s' "/Users/\$loggedInUser${1#$HOME}"
+  if [ "$MDM_OUTPUT" = "true" ] && [[ "$1" == "$TARGET_HOME"* ]]; then
+    printf '%s' "/Users/\$loggedInUser${1#$TARGET_HOME}"
   else
     printf '%s' "$1"
   fi
@@ -279,7 +279,7 @@ fi
 # These domains change frequently but are rarely useful for preference monitoring
 # You can override with --exclude flag or $8 parameter in Jamf mode
 typeset -a DEFAULT_EXCLUSIONS=(
-  # Background daemons & agents (very noisy, no user-configurable preferences)
+  # Background daemons & agents
   "com.apple.cfprefsd*"
   "com.apple.notificationcenterui*"
   "com.apple.ncplugin*"
@@ -289,7 +289,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.powerlogd"
   "ContextStoreAgent*"
 
-  # Cloud sync internals (constant updates, not user preferences)
+  # Cloud sync internals
   "com.apple.CloudKit*"
   "com.apple.bird*"
   "com.apple.cloudd"
@@ -300,16 +300,17 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
   "com.apple.imessage.bag"
+  "com.apple.CloudSubscriptionFeatures*"
   "com.apple.AudioAccessory"
   "com.apple.systemsettings.extensions*"
   "com.apple.networkserviceproxy"
   "journal"
   "com.apple.remindd*"
 
-  # System maintenance & cache (noisy, not user settings)
+  # System maintenance & cache
   "com.apple.CacheDelete"
 
-  # Security & crash reporting (noisy, not user settings)
+  # Security & crash reporting
   "com.apple.CrashReporter"
   # Note: com.apple.security* narrowed — catch only known noisy sub-domains,
   # not "com.apple.security.authorization" or similar which may have real prefs
@@ -319,12 +320,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.securityd"
   "com.apple.biometrickitd"
 
-  # Accessibility internals (auth warnings, hearing device state, not user preferences)
+  # Accessibility internals (auth warnings, hearing device state)
   "com.apple.universalaccessAuthWarning"
   "com.apple.AccessibilityHearingNearby"
   "com.apple.SpeakSelection"
 
-  # Network internals (frequent changes, not user preferences)
+  # Network internals
   "com.apple.networkextension*"
   "com.apple.wifi.known-networks"
   "com.apple.vmnet"
@@ -332,7 +333,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.launchservices*"
   "com.apple.apsd"
 
-  # Backup internals (constant state updates, not user preferences)
+  # Backup internals (constant state updates)
   # Note: com.apple.TimeMachine removed — contains real prefs (AutoBackup, ExcludedPaths)
   "com.apple.timemachine.helper"
   "com.apple.timemachine.agent"
@@ -340,28 +341,26 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"
 
-  # App store internals (not user preferences)
-  "com.apple.appstored"
+  # App store internals  "com.apple.appstored"
   "com.apple.AppStore"
   "com.apple.AppleMediaServices*"
 
-  # Game Center internals (daemon state, not user preferences)
+  # Game Center internals (daemon state)
   "com.apple.gamed"
   "com.apple.gamecenter"
 
-  # Input analytics / telemetry (not user preferences)
-  "com.apple.inputAnalytics*"
+  # Input analytics / telemetry  "com.apple.inputAnalytics*"
   "com.apple.appleintelligencereporting"
   "com.apple.GenerativeFunctions*"
 
   # MetricKit daemon (per-app diagnostic bookkeeping, MX* keys touched on every
-  # MetricKit query — Outlook, Teams, Edge, etc. trigger writes, not user prefs)
+  # MetricKit query — Outlook, Teams, Edge, etc. trigger writes)
   "com.apple.metrickitd"
 
   # ML rate limiter (token bucket counters/timestamps for embedding processing)
   "TokenBucketRateLimiter"
 
-  # Emoji search cache (auto-generated locale emoji lists, not user preferences)
+  # Emoji search cache (auto-generated locale emoji lists)
   "com.apple.EmojiCache"
 
   # Calculator currency cache (auto-updated exchange rates)
@@ -375,13 +374,13 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.PowerManagement*"
   "com.apple.BackgroundTaskManagement*"
 
-  # Audio internals (device routing state, not user preferences)
+  # Audio internals (device routing state)
   "com.apple.audio.SystemSettings"
 
-  # User activity tracking (Handoff/Continuity state, not user preferences)
+  # User activity tracking (Handoff/Continuity state)
   "com.apple.coreservices.useractivityd*"
 
-  # System internals (no plist-based user settings)
+  # System internals
   "com.apple.loginwindow"
   "com.apple.spaces"
   "com.apple.BezelServices"
@@ -392,13 +391,13 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.diagnosticd*"
   "Avatar Cache*"
 
-  # Services menu localization cache (auto-regenerated, not user preferences)
+  # Services menu localization cache (auto-regenerated)
   "com.apple.ServicesMenu.Services"
 
-  # Address Book UI state (window geometry, selection, not user preferences)
+  # Address Book UI state (window geometry, selection)
   "com.apple.AddressBook"
 
-  # Calendar internals (account UUIDs, UI state, not user preferences)
+  # Calendar internals (account UUIDs, UI state)
   "com.apple.iCal"
 
   # Messages preview rendering internals (screen scale, dimensions)
@@ -407,7 +406,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Notification Center internal state (app path tracking, binary blobs)
   "com.apple.ncprefs"
 
-  # Account existence tracking (internal state, not user preferences)
+  # Account existence tracking
   "com.apple.accounts.exists"
 
   # Find My device daemon (APS tokens, internal state)
@@ -510,7 +509,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # QuickLook daemon (plugin modification timestamps)
   "com.apple.QuickLookDaemon"
 
-  # Third-party updaters & telemetry (background noise, not user preferences)
+  # Third-party updaters & telemetry
   "com.microsoft.autoupdate*"
   "com.microsoft.shared"
   "com.microsoft.office"
@@ -520,7 +519,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "ChatGPTHelper"
   "com.segment.storage.*"
 
-  # Background observers (constant telemetry, not user preferences)
+  # Background observers (constant telemetry)
   "com.apple.suggestions.*Observer*"
   "com.apple.personalizationportrait.*Observer*"
 
@@ -530,7 +529,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Ad platform internals (correlation IDs, tracking counters)
   "com.apple.AdPlatforms"
 
-  # Background event counters & sync telemetry (constant updates, not user preferences)
+  # Background event counters & sync telemetry
   "com.apple.cseventlistener"
   "com.apple.spotlightknowledge"
   "com.apple.amsengagementd"
@@ -609,6 +608,19 @@ CONSOLE_USER="${CONSOLE_USER:-$(get_console_user)}"
 RUN_AS_USER=()
 if [ "$(id -u)" -eq 0 ] && [ "$CONSOLE_USER" != "root" ]; then
   RUN_AS_USER=(/usr/bin/sudo -u "$CONSOLE_USER" -H)
+fi
+
+# Target home directory for plist lookups. When running as root via Jamf/MDM,
+# $HOME is /var/root but user prefs live in the console user's home. Resolve
+# via dscl, with /Users/<user> as a fallback. In CLI mode $HOME is correct.
+TARGET_HOME="$HOME"
+if [ "$(id -u)" -eq 0 ] && [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+  _resolved_home=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
+  if [ -n "$_resolved_home" ]; then
+    TARGET_HOME="$_resolved_home"
+  elif [ -d "/Users/$CONSOLE_USER" ]; then
+    TARGET_HOME="/Users/$CONSOLE_USER"
+  fi
 fi
 
 # Binary availability checks (optimization to avoid repeated lookups)
@@ -707,8 +719,8 @@ get_plist_path() {
   if [[ "$domain" =~ ^/ ]]; then
     printf '%s' "$domain"
   else
-    # Use $HOME instead of ~ to ensure proper expansion in [ -f ... ] tests
-    printf '%s' "$HOME/Library/Preferences/${domain}.plist"
+    # $TARGET_HOME: console user's home when root (Jamf), $HOME otherwise
+    printf '%s' "$TARGET_HOME/Library/Preferences/${domain}.plist"
   fi
 }
 
@@ -757,6 +769,67 @@ prepare_logfile() {
     : > "$path" 2>/dev/null || true
   fi
   echo "$path"
+}
+
+# Interactive y/n prompt with TTY → /dev/tty → GUI dialog fallback chain.
+# Exit codes:
+#   0 — user confirmed (Yes / y / Y)
+#   1 — user declined (No / anything else)
+#   2 — no usable channel OR dialog timed out (caller decides default)
+# Channels tried in order:
+#   1. stdin when TTY (works under sudo with inherited stdin)
+#   2. /dev/tty when openable (probe avoids a set -e exit in Jamf Self Service
+#      where /dev/tty exists as a char device but has no controlling terminal)
+#   3. osascript GUI dialog as the console user via `launchctl asuser` (Jamf
+#      Self Service, launchd with a logged-in user). 5-minute giving-up
+#      timeout maps to return 2 so Jamf policies never hang forever.
+prompt_yn() {
+  local prompt="$1" answer=""
+
+  if [ -t 0 ]; then
+    printf "%s (y/n) " "$prompt"
+    read -r answer || return 2
+    case "$answer" in [Yy]*) return 0 ;; *) return 1 ;; esac
+  fi
+
+  if [ -c /dev/tty ] && : </dev/tty 2>/dev/null; then
+    printf "%s (y/n) " "$prompt" >/dev/tty 2>/dev/null || true
+    if read -r answer </dev/tty 2>/dev/null; then
+      case "$answer" in [Yy]*) return 0 ;; *) return 1 ;; esac
+    fi
+  fi
+
+  # GUI fallback — only when a real console user is logged in.
+  # `on run argv` passes $prompt as a native argument, so embedded newlines
+  # render correctly and no shell/AppleScript escaping is needed.
+  if [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ] \
+     && [ -x /usr/bin/osascript ]; then
+    local uid result rc=1
+    uid=$(id -u "$CONSOLE_USER" 2>/dev/null) || uid=""
+    if [ -n "$uid" ]; then
+      local osa='on run argv
+display dialog (item 1 of argv) buttons {"No", "Yes"} default button "Yes" with icon caution with title "PrefWatch" giving up after 300
+end run'
+      if [ "$(id -u)" -eq 0 ]; then
+        result=$(/bin/launchctl asuser "$uid" /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/osascript -e "$osa" "$prompt" 2>/dev/null)
+        rc=$?
+      else
+        result=$(/usr/bin/osascript -e "$osa" "$prompt" 2>/dev/null)
+        rc=$?
+      fi
+      if [ $rc -eq 0 ]; then
+        if [[ "$result" == *"gave up:true"* ]]; then
+          return 2
+        elif [[ "$result" == *"Yes"* ]]; then
+          return 0
+        else
+          return 1
+        fi
+      fi
+    fi
+  fi
+
+  return 2
 }
 
 # ---------------------------------------
@@ -815,26 +888,25 @@ is_noisy_key() {
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*)
+    *timestamp*|*Timestamp*|*TimeStamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*)
       return 0 ;;
 
     # Note: removed *Date|Date — too generic, could mask ExpirationDate/StartDate as real prefs
     # Specific date noise is already caught by *timestamp*, *LastSync*, *lastBootstrap*, etc.
 
-    # Error states & sync errors (transient, not user preferences)
+    # Error states & sync errors (transient)
     *Error|*Errors|*error|*errors|*ErrorCode*|*ErrorDomain*|*ErrorUserInfo*|IMCloudKitSyncErrors|IMSerializedError*)
       return 0 ;;
 
-    # Rollout configs & A/B testing (system telemetry, not user settings)
+    # Rollout configs & A/B testing (system telemetry)
     rollouts|rolloutId|deploymentId|*RolloutId|*DeploymentId)
       return 0 ;;
 
-    # Analytics & telemetry counters (not user preferences)
-    # Note: keeps opt-in toggles like AnalyticsEnabled, SendAnalytics, TelemetryEnabled
+    # Analytics & telemetry counters    # Note: keeps opt-in toggles like AnalyticsEnabled, SendAnalytics, TelemetryEnabled
     *AnalyticsQueue*|*AnalyticsSession*|*AnalyticsEvent*|*TelemetryEvent*|*TelemetrySession*|*TelemetryQueue*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
       return 0 ;;
 
-    # Device/Library/Session IDs (change per device, not user preferences)
+    # Device/Library/Session IDs (change per device)
     *-library-id|*-persistent-id|*-session-id|*-device-id|shared-library-id|devices-persistent-id|SessionId|SessionVersion|SessionLongBuildNumber|CampaignManagerVersionKey)
       return 0 ;;
 
@@ -852,18 +924,18 @@ is_noisy_key() {
     SCRC*|SCRDisplay*)
       return 0 ;;
 
-    # Feature flags (internal state, not user preferences)
+    # Feature flags (internal state)
     # Exception: com.apple.universalaccess feature.* are real accessibility settings
     feature.*)
       [ "$domain" = "com.apple.universalaccess" ] || return 0 ;;
 
 
 
-    # Dynamic system info (internal state, not user preferences)
+    # Dynamic system info (internal state)
     SystemInfoDynamic.*)
       return 0 ;;
 
-    # Metadata/sync counters (change constantly, not user preferences)
+    # Metadata/sync counters (change constantly)
     *ChangeCount*|*MetaDataChange*|*ChangeToken*|*DataSequenceKey*)
       return 0 ;;
 
@@ -873,12 +945,12 @@ is_noisy_key() {
 
     # Note: removed global `last-selection` — too generic, move to domain-specific if needed
 
-    # Recent items & history (noisy, changes constantly)
+    # Recent items & history
     # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
     *RecentFolders|*RecentDocuments|*RecentSearches|*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*|*RecentlyUsed*)
       return 0 ;;
 
-    # Finder sync state (iCloud Drive extension toolbar, not user preferences)
+    # Finder sync state (iCloud Drive extension toolbar)
     FXSync*)
       return 0 ;;
 
@@ -895,15 +967,15 @@ is_noisy_key() {
     launchCount|*reminder.date|*donateDialogShown*|*lastDonateDate*)
       return 0 ;;
 
-    # Migration flags (one-time internal state, not user preferences)
+    # Migration flags (one-time internal state)
     *DidMigrate*|*didMigrate*)
       return 0 ;;
 
-    # First-launch flags (version-stamped one-time state, not user preferences)
+    # First-launch flags (version-stamped one-time state)
     FirstLaunch*|firstLaunch*)
       return 0 ;;
 
-    # Session duration counters (telemetry, not user preferences)
+    # Session duration counters
     SessionDuration)
       return 0 ;;
 
@@ -939,7 +1011,7 @@ is_noisy_key() {
     return 0
   fi
 
-  # UUID keys (internal identifiers used as key names, not user preferences)
+  # UUID keys (internal identifiers used as key names)
   # Examples: 3A4B5C6D-1234-5678-9ABC-DEF012345678 (com.apple.prodisplaylibrary, etc.)
   if [[ "$keyname" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     return 0
@@ -953,7 +1025,7 @@ is_noisy_key() {
   # ========================================================================
 
   case "$domain" in
-    # Accessibility Keyboard: Filter window position, keep panel settings
+    # Accessibility Keyboard: Filter window position
     com.apple.AssistiveControl.virtualKeyboard)
       case "$keyname" in
         PanelFrame|SCLaunchedAsSlave) return 0 ;;
@@ -961,13 +1033,13 @@ is_noisy_key() {
       esac
       ;;
 
-    # Dock preferences: Keep useful settings, filter workspace state & tile internals
+    # Dock preferences: Filter workspace state & tile internals
     com.apple.dock)
       case "$keyname" in
         # Noisy: workspace IDs, counts, expose gestures, trash state, recent apps
         workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
           return 0 ;;
-        # Noisy: internal tile metadata (reorder noise, not user preferences)
+        # Noisy: internal tile metadata (reorder noise)
         GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
           return 0 ;;
         # Note: bundle-identifier, _CFURLString, file-label are useful in PlistBuddy output
@@ -976,7 +1048,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Finder preferences: Keep view settings, filter recent folders
+    # Finder preferences: Filter recent folders
     com.apple.finder|com.apple.Finder)
       case "$keyname" in
         # Noisy: recent folders, trash state, search history, window name
@@ -989,27 +1061,25 @@ is_noisy_key() {
       esac
       ;;
 
-    # System Settings: Filter timestamps, keep actual settings
+    # System Settings: Filter timestamps
     com.apple.systemsettings*)
       case "$keyname" in
         # Noisy: last seen timestamps, navigation state, indexing timestamps, extension state
         *-last-seen|*LastUpdate*|*NavigationState*|*update-state-indexing*|*.extension)
           return 0 ;;
-        # Keep: actual preference values
       esac
       ;;
 
-    # Control Center: Filter UI positioning state, keep preference toggles
+    # Control Center: Filter UI positioning state
     com.apple.controlcenter)
       case "$keyname" in
         # Noisy: status item visibility/position changes from UI interaction
         NSStatusItem*)
           return 0 ;;
-        # Keep: actual preference toggles
       esac
       ;;
 
-    # HIToolbox: Filter transient input source state, keep layout additions/removals
+    # HIToolbox: Filter transient input source state
     com.apple.HIToolbox)
       case "$keyname" in
         # Noisy: current active keyboard (changes on every language switch)
@@ -1019,7 +1089,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Universal Access: Filter internal change history, keep accessibility settings
+    # Universal Access: Filter internal change history
     com.apple.universalaccess)
       case "$keyname" in
         History|com.apple.custommenu.apps|displaysLastCursorLocation) return 0 ;;
@@ -1034,7 +1104,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Spotlight: Filter UI state and counters, keep preference settings
+    # Spotlight: Filter UI state and counters
     com.apple.Spotlight)
       case "$keyname" in
         # Noisy: usage counters, window state, timestamps, binary data
@@ -1067,14 +1137,14 @@ is_noisy_key() {
       esac
       ;;
 
-    # Terminal: Keep profile settings, filter preferences UI state
+    # Terminal: Filter preferences UI state
     com.apple.Terminal)
       case "$keyname" in
         TTAppPreferences\ Selected\ Tab) return 0 ;;
       esac
       ;;
 
-    # Safari: Keep useful prefs, filter safe browsing updates
+    # Safari: Filter safe browsing updates
     com.apple.Safari)
       case "$keyname" in
         # Noisy: safe browsing cache, history
@@ -1106,14 +1176,14 @@ is_noisy_key() {
       esac
       ;;
 
-    # CUPS printing prefs: Keep UseLastPrinter, filter printer history
+    # CUPS printing prefs: Filter printer history
     org.cups.PrintingPrefs)
       case "$keyname" in
         Network|PrinterID) return 0 ;;
       esac
       ;;
 
-    # Print presets: Keep meaningful settings, filter Fiery driver defaults & print metadata
+    # Print presets: Filter Fiery driver defaults & print metadata
     com.apple.print.custompresets*)
       case "$keyname" in
         # Keep: preset array (for emit_array_additions/deletions)
@@ -1132,7 +1202,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Adobe Crash Reporter: Filter crash state, not user preferences
+    # Adobe Crash Reporter: Filter crash state
     com.adobe.crashreporter)
       case "$keyname" in
         # Noisy: crash dialog state and crash metadata (version-stamped keys)
@@ -1141,7 +1211,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Adobe Photoshop: Filter internal app state, not user preferences
+    # Adobe Photoshop: Filter internal app state
     com.adobe.Photoshop)
       case "$keyname" in
         # Noisy: Adobe Butler service first-launch flag (version-stamped)
@@ -1153,7 +1223,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Adobe Bridge: Filter internal app state, keep user preferences
+    # Adobe Bridge: Filter internal app state
     com.adobe.bridge*)
       case "$keyname" in
         # Noisy: "Do Not Show Again" dialog suppression flags
@@ -1177,13 +1247,44 @@ is_noisy_key() {
     # Adobe Premiere Pro: Filter session/recovery state
     "com.Adobe.Premiere Pro"*)
       case "$keyname" in
-        # Noisy: crash recovery project list (session state, not user preferences)
+        # Noisy: crash recovery project list (session state)
         RecoveryOpenProjectInfos)
           return 0 ;;
       esac
       ;;
 
-    # Messages (iMessage): Filter analytics/telemetry, keep user preferences
+    # WiFi Agent: Filter per-SSID "limited network" dismissal bookkeeping
+    com.apple.wifi.WiFiAgent)
+      case "$keyname" in
+        # Noisy: grows with every new network joined; not a user preference
+        UserDismissedLimitedNetworkFirstJoins) return 0 ;;
+      esac
+      ;;
+
+    # Character Picker (emoji/special chars panel): Filter per-app UI state
+    com.apple.CharacterPicker)
+      case "$keyname" in
+        # Noisy: per-app picker state (selectedIndex, scrollPos, date) keyed by bundle ID
+        State) return 0 ;;
+      esac
+      ;;
+
+    # QuickLook Thumbnails Agent: Filter periodic cache-size check timestamp
+    com.apple.quicklook.ThumbnailsAgent)
+      case "$keyname" in
+        QLMTCacheSize*LastCheck*) return 0 ;;
+      esac
+      ;;
+
+    # iStat Menus menubar variants: Filter periodic license re-validation
+    com.bjango.istatmenus.menubar.*)
+      case "$keyname" in
+        # Noisy: License:Validation:{signature,time} refreshed on schedule by iStat
+        License) return 0 ;;
+      esac
+      ;;
+
+    # Messages (iMessage): Filter analytics/telemetry
     com.apple.MobileSMS)
       case "$keyname" in
         # Noisy: internal analytics (contact scrutiny, background report counters)
@@ -1272,7 +1373,7 @@ is_noisy_pbcmd() {
   # Domain-specific sub-key patterns (need full path matching)
   case "$domain" in
     com.apple.finder|com.apple.Finder)
-      # Filter column widths (resize noise, not user preferences)
+      # Filter column widths (resize noise)
       case "$pb_cmd" in
         *":columns:"*":width "*)
           return 0 ;;
@@ -2045,7 +2146,7 @@ for top_key in sorted(curr.keys()):
     if top_key not in prev:
         # New top-level dict/list: emit Add commands for entire tree
         if not _first_create_noted:
-            print("PBCMD\t# NOTE: First change creates the full structure — subsequent changes only modify individual entries")
+            print("PBCMD\t# NOTE: New top-level key — PlistBuddy requires the full dict tree to exist before Set. Run Add commands in order; subsequent changes will only emit Set")
             _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
@@ -2840,26 +2941,26 @@ get_plist_path_for_domain() {
 
   # Special case: NSGlobalDomain uses .GlobalPreferences.plist
   if [ "$domain" = "NSGlobalDomain" ] || [ "$domain" = ".GlobalPreferences" ]; then
-    plist_path="$HOME/Library/Preferences/.GlobalPreferences.plist"
+    plist_path="$TARGET_HOME/Library/Preferences/.GlobalPreferences.plist"
     [ -f "$plist_path" ] && echo "$plist_path" && return 0
   fi
 
   # Try sandboxed Container first (common for modern apps)
-  plist_path="$HOME/Library/Containers/${domain}/Data/Library/Preferences/${domain}.plist"
+  plist_path="$TARGET_HOME/Library/Containers/${domain}/Data/Library/Preferences/${domain}.plist"
   [ -f "$plist_path" ] && echo "$plist_path" && return 0
 
   # Try standard Preferences directory
-  plist_path="$HOME/Library/Preferences/${domain}.plist"
+  plist_path="$TARGET_HOME/Library/Preferences/${domain}.plist"
   [ -f "$plist_path" ] && echo "$plist_path" && return 0
 
   # Try ByHost preferences
-  plist_path="$HOME/Library/Preferences/ByHost/${domain}."*".plist"
+  plist_path="$TARGET_HOME/Library/Preferences/ByHost/${domain}."*".plist"
   plist_path=$(/bin/ls $plist_path 2>/dev/null | head -1)
   [ -n "$plist_path" ] && [ -f "$plist_path" ] && echo "$plist_path" && return 0
 
   # Try Group Containers (for app groups)
-  if [ -d "$HOME/Library/Group Containers" ]; then
-    plist_path=$(/usr/bin/find "$HOME/Library/Group Containers" -name "${domain}.plist" -type f 2>/dev/null | head -1)
+  if [ -d "$TARGET_HOME/Library/Group Containers" ]; then
+    plist_path=$(/usr/bin/find "$TARGET_HOME/Library/Group Containers" -name "${domain}.plist" -type f 2>/dev/null | head -1)
     [ -n "$plist_path" ] && echo "$plist_path" && return 0
   fi
 
@@ -2956,17 +3057,9 @@ start_watch_all() {
     log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
   fi
 
-  local console_user console_home prefs_user prefs_system
-  console_user=$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || echo "")
+  local prefs_user prefs_system
   prefs_system="/Library/Preferences"
-
-  if [ -n "$console_user" ] && [ "$console_user" != "root" ]; then
-    console_home=$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
-    [ -z "$console_home" ] && console_home="/Users/$console_user"
-    prefs_user="$console_home/Library/Preferences"
-  else
-    prefs_user="$HOME/Library/Preferences"
-  fi
+  prefs_user="$TARGET_HOME/Library/Preferences"
 
   # Snapshot a single plist (for parallel execution in subshell)
   _snapshot_one_plist() {
@@ -3350,6 +3443,35 @@ start_watch_all() {
 # MAIN
 # ============================================================================
 
+# Pre-flight banner + conditional confirmation. The y/n prompt only appears
+# when Python3/CLT is missing (degraded detection — user should acknowledge).
+# With CLT installed, start directly. Non-interactive contexts (Jamf Self
+# Service / launchd / cron) always auto-confirm and log the decision.
+_pf_target="$DOMAIN"
+if [ "$ALL_MODE" = "true" ]; then
+  [ "$INCLUDE_SYSTEM" = "true" ] && _pf_target="ALL (user + system)" || _pf_target="ALL (user only)"
+fi
+printf "PrefWatch: %s → %s\n" "$_pf_target" "$LOGFILE"
+if [ -z "$PYTHON3_BIN" ]; then
+  # Prompt contains the warning so Jamf GUI users (who never see stdout) get
+  # full context in the osascript dialog. Capture return in `||` context so
+  # set -e doesn't exit on non-zero returns (1 = declined, 2 = no channel).
+  _pf_rc=0
+  prompt_yn "⚠ Python3 unavailable — limited detection.
+
+Run 'xcode-select --install' to enable full detection (array/dict diffs, PlistBuddy commands).
+
+Start anyway?" || _pf_rc=$?
+  case $_pf_rc in
+    0) ;;
+    1) printf "Aborted.\n"; exit 0 ;;
+    2)
+      printf "⚠ No TTY or GUI session available — auto-continuing with limited detection\n"
+      /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable — auto-continued (no prompt channel)"
+      ;;
+  esac
+fi
+
 # Prepare log file
 LOGFILE="$(prepare_logfile "$LOGFILE")"
 
@@ -3367,28 +3489,13 @@ else
   log_line "Starting monitoring on $DOMAIN"
 fi
 
-# Python3 status — in ALL mode, prompt user (non-interactive fallback to "y" for Jamf/no-TTY)
+# Python3 status — user already consented at pre-flight; log/warn only
 if [ -n "$PYTHON3_BIN" ]; then
   log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
-elif [ "$ALL_MODE" = "true" ]; then
+else
   printf "WARNING: Xcode Command Line Tools not installed — Python3 unavailable\n"         | tee -a "$LOGFILE" 2>/dev/null || true
   printf "Without Python3: array/dict changes and PlistBuddy commands will not be detected\n" | tee -a "$LOGFILE" 2>/dev/null || true
-  printf "For full detection, install Xcode CLT:\n"                                        | tee -a "$LOGFILE" 2>/dev/null || true
-  printf "  xcode-select --install\n"                                                      | tee -a "$LOGFILE" 2>/dev/null || true
-  printf "\n"
-  printf "Continue with limited detection? (y/n) "
-  read -r _py_answer </dev/tty 2>/dev/null || _py_answer="y"
-  case "$_py_answer" in
-    [Yy]*) printf "Continuing with limited detection — only simple key changes will be reported\n" | tee -a "$LOGFILE" 2>/dev/null || true ;;
-    *)
-      printf "Install Command Line Tools first, then re-run PrefWatch:\n"
-      printf "  xcode-select --install\n"
-      exit 1
-      ;;
-  esac
-else
-  log_line "Cmd: # WARNING: ${_py_warn:-Python3 not available — array change detection disabled}"
-  log_line "Cmd: # TIP: Run 'xcode-select --install' to enable array change detection"
+  /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable — limited detection"
 fi
 
 # Warn if ALL mode without root (fs_usage unavailable)
