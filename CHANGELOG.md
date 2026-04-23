@@ -1,6 +1,6 @@
 # Changelog
 
-## .1.3.1000000000000001 — unreleased
+## 1.2.2 — unreleased
 
 
 ## 1.2.1 — unreleased
