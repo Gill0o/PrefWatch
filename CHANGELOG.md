@@ -8,7 +8,7 @@
 - `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build `Updates:Attempts:N` counters and `Status:Build:Last` / `Status:Version:Last` rewritten on each menubar update).
 
 
-## 1.2.1 — unreleased
+## 1.2.1 — 2026-05-14
 
 ### Feature
 - Pre-flight confirmation now shown only when Python3/CLT is missing. `prompt_yn` adds an `osascript` GUI fallback via `launchctl asuser` for Jamf Self Service / launchd sessions (5-min timeout → auto-continue so policies never hang).
