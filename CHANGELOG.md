@@ -2,6 +2,11 @@
 
 ## 1.2.2 — unreleased
 
+### Noise
+- `com.surteesstudios.Bartender`: filter `TerminationReasons` (timestamped exit-reason log, grows each launch).
+- `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID / USB engine path / virtual-device name — won't transplant via MDM).
+- `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build `Updates:Attempts:N` counters and `Status:Build:Last` / `Status:Version:Last` rewritten on each menubar update).
+
 
 ## 1.2.1 — unreleased
 

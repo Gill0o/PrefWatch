@@ -1276,11 +1276,13 @@ is_noisy_key() {
       esac
       ;;
 
-    # iStat Menus menubar variants: Filter periodic license re-validation
+    # iStat Menus menubar variants: Filter periodic license re-validation + update/build tracking
     com.bjango.istatmenus.menubar.*)
       case "$keyname" in
         # Noisy: License:Validation:{signature,time} refreshed on schedule by iStat
         License) return 0 ;;
+        # Noisy: per-build attempt counters (Updates:Attempts:N) + last-seen build/version (Status:Build:Last, Status:Version:Last)
+        Updates|Status) return 0 ;;
       esac
       ;;
 
@@ -1304,6 +1306,21 @@ is_noisy_key() {
     com.native-instruments.*)
       case "$keyname" in
         uret-init) return 0 ;;
+      esac
+      ;;
+
+    # Bartender: Filter termination reason log (grows each launch)
+    com.surteesstudios.Bartender)
+      case "$keyname" in
+        TerminationReasons) return 0 ;;
+      esac
+      ;;
+
+    # Audio MIDI Setup: Filter machine-specific device selection
+    com.apple.audio.AudioMIDISetup)
+      case "$keyname" in
+        # Hardware UUID / USB engine path / virtual-device name — won't transplant
+        audioDevice.selected) return 0 ;;
       esac
       ;;
 
