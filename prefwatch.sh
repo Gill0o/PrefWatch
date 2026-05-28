@@ -3078,7 +3078,25 @@ start_watch_all() {
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
 
     while true; do
-      /bin/sleep 1
+      /bin/sleep 0.5
+
+      # Detect Printer Sharing toggle FIRST — independent of lpstat (the
+      # printer-list debounce path below would otherwise delay this by 5s
+      # since enabling sharing causes cupsd to re-publish via Bonjour and
+      # the lpstat output transiently changes).
+      local share_curr=""
+      share_curr=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
+      if [ -n "$share_curr" ] && [ "$share_curr" != "$share_snap" ]; then
+        if [ "$share_curr" = "1" ]; then
+          log_line "Cmd: # CUPS: Printer Sharing enabled"
+          log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
+        else
+          log_line "Cmd: # CUPS: Printer Sharing disabled"
+          log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+        fi
+        share_snap="$share_curr"
+      fi
+
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
 
       # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
@@ -3113,20 +3131,6 @@ start_watch_all() {
         log_line "Cmd: # CUPS: printer removed — $printer"
         log_line "Cmd: lpadmin -x \"$printer\""
       done
-
-      # Detect Printer Sharing toggle (cupsctl _share_printers transition)
-      local share_curr=""
-      share_curr=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
-      if [ -n "$share_curr" ] && [ "$share_curr" != "$share_snap" ]; then
-        if [ "$share_curr" = "1" ]; then
-          log_line "Cmd: # CUPS: Printer Sharing enabled"
-          log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
-        else
-          log_line "Cmd: # CUPS: Printer Sharing disabled"
-          log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
-        fi
-        share_snap="$share_curr"
-      fi
 
       # Update snapshot
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
