@@ -1709,6 +1709,29 @@ _build_defaults_write_cmd() {
   printf '%s' "$cmd"
 }
 
+# Build a `defaults delete` command for a key (flat) or an array index.
+# Args:
+#   $1 dom        domain
+#   $2 keyname    key — used when array_name is empty
+#   $3 array_name array name — when set, target becomes ":array_name:array_idx"
+#   $4 array_idx  array index (only consulted when array_name is set)
+#   $5 hostflag   "-currentHost" for ByHost plists, "" otherwise
+# Stdout: complete `defaults [hostflag] delete dom "target"` command.
+_build_defaults_delete_cmd() {
+  local dom="$1" keyname="$2" array_name="$3" array_idx="$4" hostflag="$5"
+  local target
+  if [ -n "$array_name" ]; then
+    target=":${array_name}:${array_idx}"
+  else
+    target="$keyname"
+  fi
+  if [ -n "$hostflag" ]; then
+    printf 'defaults %s delete %s "%s"' "$hostflag" "$dom" "$target"
+  else
+    printf 'defaults delete %s "%s"' "$dom" "$target"
+  fi
+}
+
 # ---------------------------------------
 # Diff Engine
 # ---------------------------------------
@@ -2620,7 +2643,7 @@ show_plist_diff() {
             if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
               continue
             fi
-            local base dom hostflag target delete_cmd
+            local base dom hostflag delete_cmd
             base="$(/usr/bin/basename "$path")"
             dom="${base%.plist}"
             hostflag=""
@@ -2628,16 +2651,7 @@ show_plist_diff() {
               hostflag="-currentHost"
               dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
             fi
-            if [ -n "$array_name" ]; then
-              target=":${array_name}:${array_idx}"
-            else
-              target="$keyname"
-            fi
-            delete_cmd="defaults"
-            if [ -n "$hostflag" ]; then
-              delete_cmd="${delete_cmd} ${hostflag}"
-            fi
-            delete_cmd="${delete_cmd} delete ${dom} \"${target}\""
+            delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
 
             if is_noisy_command "$delete_cmd"; then
               :
@@ -2907,13 +2921,8 @@ show_domain_diff() {
             if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
               continue
             fi
-            local target delete_cmd
-            if [ -n "$array_name" ]; then
-              target=":${array_name}:${array_idx}"
-            else
-              target="$keyname"
-            fi
-            delete_cmd="defaults delete ${dom} \"${target}\""
+            local delete_cmd
+            delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "")
 
             if is_noisy_command "$delete_cmd"; then
               :
