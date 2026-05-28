@@ -3078,7 +3078,7 @@ start_watch_all() {
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
 
     while true; do
-      /bin/sleep 2
+      /bin/sleep 1
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
 
       # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
