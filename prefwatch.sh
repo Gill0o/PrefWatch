@@ -3376,6 +3376,7 @@ PY
     SHARING_EXEC_PID=$!
     launchd_state_watch &
     LAUNCHD_STATE_PID=$!
+    log_line "Cmd: # NOTE: when two equivalent commands surface for the same toggle, either works for MDM"
   fi
 
   trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
