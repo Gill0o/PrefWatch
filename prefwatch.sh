@@ -3135,10 +3135,15 @@ start_watch_all() {
     # buffer and would never fire on sparse event streams (one toggle every
     # few minutes). -u also forces unbuffered stdout.
     /usr/bin/eslogger exec 2>/dev/null \
-      | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' \
+      | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' -e '/launchctl"' \
       | "$PYTHON3_BIN" -u -c '
 import json, sys, shlex
-SHARING_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
+# Direct sharing-toolkit binaries — any invocation is relevant
+DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
+# launchctl is the universal worker macOS Tahoe System Settings calls via
+# the writeconfig XPC service. Filter to subcommands that change state —
+# drop noisy kill / list / print / dumpstate.
+LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -3151,13 +3156,13 @@ while True:
         if not exe:
             continue
         basename = exe.rsplit("/", 1)[-1]
-        if basename not in SHARING_BINS:
-            continue
         args = ev.get("args", []) or []
-        if len(args) > 1:
-            print(exe + " " + " ".join(shlex.quote(a) for a in args[1:]), flush=True)
-        else:
-            print(exe, flush=True)
+        if basename in DIRECT_BINS:
+            tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
+            print((exe + " " + tail).rstrip(), flush=True)
+        elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
+            tail = " ".join(shlex.quote(a) for a in args[1:])
+            print(exe + " " + tail, flush=True)
     except Exception:
         pass
 ' 2>/dev/null \
