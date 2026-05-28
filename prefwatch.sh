@@ -245,9 +245,7 @@ mdm_plist_path() {
   fi
 }
 
-# Disable xtrace/verbose so -v/--verbose only enables our own logging, not
-# shell trace of every variable assignment. zsh unsetopt covers both bash
-# (`set -x`/`set -v`) and zsh-native equivalents in one call.
+# Disable shell trace so -v/--verbose only toggles our own logging.
 unsetopt xtrace verbose 2>/dev/null || true
 
 # ============================================================================
@@ -660,18 +658,13 @@ if [ -z "$PYTHON3_BIN" ]; then
   _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
-# Temp directory — all temp files under one directory for clean /tmp.
-# EXIT trap guarantees cleanup on every exit path (incl. "Aborted" pre-flight,
-# set -e firing before start_watch* subshell registers its TERM/INT trap, or
-# kill -9 on MAIN alone). Watch subshells still install their own traps to
-# tear down workers before MAIN's EXIT trap fires.
+# Temp directory + EXIT trap — covers every MAIN exit path (sub-shells
+# still arm their own TERM/INT traps to kill workers before EXIT fires).
 PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
 /bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
 trap '/bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true' EXIT
 
-# Sweep orphan tmpdirs from prior crashed runs (PID no longer alive).
-# Scoped to /tmp/prefwatch.<digits>* glob → can't touch unrelated dirs.
-# kill -0 distinguishes alive PIDs from reaped ones without sending a signal.
+# Reclaim tmpdirs from crashed prior runs (kill -0 → PID gone).
 for _stale in /tmp/prefwatch.[0-9]*(N/); do
   _stale_pid="${${_stale:t}#prefwatch.}"
   _stale_pid="${_stale_pid%%.*}"
@@ -1649,18 +1642,9 @@ convert_delete_to_plistbuddy() {
   return 0
 }
 
-# Build a `defaults write` command for a key=value pair by detecting the
-# actual plist type. Cascade: defaults read-type (most accurate) → numeric
-# heuristics on $trimmed → plutil -extract on $plist_path → `<type> <value>`
-# fallback. Returns empty for array/dict (can't be expressed as flat write).
-#
-# Args:
-#   $1 dom        domain (e.g. com.apple.dock)
-#   $2 keyname    preference key
-#   $3 trimmed    value from diff, whitespace-trimmed
-#   $4 hostflag   "-currentHost" for ByHost plists, "" otherwise
-#   $5 plist_path source plist for plutil fallback (file may not exist → fallback to `<type> <value>`)
-# Stdout: complete `defaults write …` command, or empty if unrepresentable.
+# Build `defaults write …` for dom/keyname/trimmed via type cascade.
+# Stdout = command, or empty for array/dict (not flat-writable).
+# Args: dom keyname trimmed hostflag plist_path
 _build_defaults_write_cmd() {
   local dom="$1" keyname="$2" trimmed="$3" hostflag="$4" plist_path="$5"
   local actual_type="" type_val noquotes str cmd=""
@@ -1709,14 +1693,8 @@ _build_defaults_write_cmd() {
   printf '%s' "$cmd"
 }
 
-# Build a `defaults delete` command for a key (flat) or an array index.
-# Args:
-#   $1 dom        domain
-#   $2 keyname    key — used when array_name is empty
-#   $3 array_name array name — when set, target becomes ":array_name:array_idx"
-#   $4 array_idx  array index (only consulted when array_name is set)
-#   $5 hostflag   "-currentHost" for ByHost plists, "" otherwise
-# Stdout: complete `defaults [hostflag] delete dom "target"` command.
+# Build `defaults [hostflag] delete dom "target"`. Target is :array:idx
+# when array_name is set, else keyname. Args: dom keyname array_name array_idx hostflag
 _build_defaults_delete_cmd() {
   local dom="$1" keyname="$2" array_name="$3" array_idx="$4" hostflag="$5"
   local target
@@ -1741,29 +1719,15 @@ _log_kind() {
   esac
 }
 
-# Central emit function used by show_plist_diff / show_domain_diff after a
-# defaults command (write or delete) has been built. Applies all filters,
-# the per-kind ALL_MODE/ONLY_CMDS gate (DOMAIN only), contextual NOTE
-# emission (write only — deletes are quieter by convention), and finally
-# routes to log_user / log_system / log_line via _log_kind. For deletes,
-# tries PlistBuddy conversion via convert_delete_to_plistbuddy first and
-# emits each resulting line (comments preserve the `# WARNING:` prefix
-# without the `Cmd: ` marker so they don't get fed back to defaults).
-#
-# Args:
-#   $1 kind       USER | SYSTEM | DOMAIN — selects the logger
-#   $2 cmd        constructed `defaults …` command (empty cmd = silent skip)
-#   $3 note_dom   domain key fed to _emit_contextual_note (ignored for deletes)
-#   $4 is_delete  "true" | "false"
+# Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
+# Deletes go through convert_delete_to_plistbuddy.
+# Args: kind cmd note_dom is_delete
 _emit_cmd() {
   local kind="$1" cmd="$2" note_dom="$3" is_delete="$4"
 
   [ -n "$cmd" ] || return 0
   is_noisy_command "$cmd" && return 0
 
-  # Write path: re-check exclusion via the cmd-extracted domain (covers
-  # ByHost suffix variations) and emit the NOTE for this domain once per
-  # session (_emit_contextual_note dedupes internally via _NOTED_DOMAIN).
   if [ "$is_delete" != "true" ]; then
     local _cmd_dom
     _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
@@ -1771,9 +1735,7 @@ _emit_cmd() {
     _emit_contextual_note "$note_dom" ""
   fi
 
-  # DOMAIN-only gate: in ALL_MODE with ONLY_CMDS, the catch-all domain
-  # diff is a redundant fallback to the per-plist diff — skip its output
-  # but allow the note + filters above to run normally.
+  # ALL_MODE+ONLY_CMDS skips DOMAIN output (covered by per-plist diff).
   if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
     return 0
   fi
@@ -1796,33 +1758,11 @@ _emit_cmd() {
   fi
 }
 
-# Process the tab-separated metadata stream produced by the 3 Python diff
-# workers (emit_array_additions + emit_nested_dict_changes — deletions are
-# handled separately by emit_array_deletions). Two kinds of input lines:
-#
-#   1. "PBCMD\t<plistbuddy command>\t" — emit through _log_kind, wrapped
-#      in /usr/libexec/PlistBuddy with the (MDM-rewritten) plist path.
-#      Comment lines (starting with `#`) are buffered and flushed just
-#      before the next real command so they don't trail filtered output.
-#   2. "<base>\t<idx>\t<comma-separated-keys>" — metadata describing keys
-#      already covered by a PBCMD; populated into the global _SKIP_KEYS
-#      so the subsequent diff-text loop won't re-emit them as flat
-#      defaults writes.
-#
-# The first non-filtered PBCMD also triggers one contextual NOTE via
-# _emit_contextual_note (uses the most-recent metadata line's array_base
-# so the right note can be selected for hot keys like AppleSymbolicHotKeys).
-#
-# Args:
-#   $1 kind        USER | SYSTEM | DOMAIN — for _log_kind dispatch
-#   $2 dom         domain for is_noisy_pbcmd / _emit_contextual_note
-#   $3 meta_raw    concatenated worker output
-#   $4 plist_path  path used by mdm_plist_path → PlistBuddy file. If
-#                  empty, PBCMD lines are skipped but metadata still
-#                  populates _SKIP_KEYS (matches show_domain_diff behavior
-#                  when get_plist_path returns nothing).
-#
-# Side effects: mutates global _SKIP_KEYS, emits PBCMDs via _log_kind.
+# Consume the tab-separated stream from emit_array_additions +
+# emit_nested_dict_changes. PBCMD lines → PlistBuddy emit via _log_kind;
+# metadata lines → populate global _SKIP_KEYS. Empty plist_path skips
+# PBCMDs but still populates _SKIP_KEYS.
+# Args: kind dom meta_raw plist_path
 _process_py_meta() {
   local kind="$1" dom="$2" meta_raw="$3" plist_path="$4"
   [ -n "$meta_raw" ] || return 0
@@ -1883,29 +1823,12 @@ _process_py_meta() {
   done <<< "$meta_raw"
 }
 
-# Parse the unified diff between two plutil-text snapshots and emit a
-# defaults write (for +) or defaults delete (for -) for each surviving
-# changed key. "Surviving" means: not in _SKIP_KEYS (covered by a PBCMD),
-# not matched by is_noisy_key, not the print-preset flat-delete special
-# case, and — for deletes — actually gone from $curr (not just changed).
-#
-# Both top-of-loop emissions (Diff/Key/Item) and the final defaults
-# command go through _log_kind / _emit_cmd, so the helper is kind-agnostic
-# and works for USER, SYSTEM, and DOMAIN paths.
-#
-# Args:
-#   $1 kind        USER | SYSTEM | DOMAIN
-#   $2 dom         domain for is_noisy_key + print-preset check + NOTE
-#   $3 hostflag    "-currentHost" for ByHost plists, "" otherwise
-#   $4 prev        previous plutil-text snapshot path
-#   $5 curr        current plutil-text snapshot path
-#   $6 type_src    plist file used by _build_defaults_write_cmd for
-#                  type-detection plutil fallback (real plist for
-#                  show_plist_diff, exported tmpplist for show_domain_diff)
-#   $7 diff_label  string used in the "Diff <label>: <line>" diagnostic
-#                  (path for plist diff, domain for domain diff)
-#
-# Reads globals: _SKIP_KEYS, _HAS_ARRAY_ADDITIONS.
+# Walk the unified diff(prev,curr) and emit write/delete via _emit_cmd
+# for each key not pre-handled by _SKIP_KEYS / is_noisy_key. type_src is
+# the plist used by _build_defaults_write_cmd for plutil-fallback;
+# diff_label tags the "Diff <label>:" log lines.
+# Args: kind dom hostflag prev curr type_src diff_label
+# Reads: _SKIP_KEYS, _HAS_ARRAY_ADDITIONS.
 _process_diff_lines() {
   local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7"
   [ -s "$prev" ] || return 0
@@ -2612,12 +2535,9 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
-  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously.
-  # Wait up to 3s for the lock (chained events would otherwise be dropped).
+  # Mutex for fs_watch ↔ poll_watch on the same plist (wait up to 3s).
+  # Reclaim lockdirs > 10s old — owning process was killed before rmdir.
   local lockdir="$CACHE_DIR/${key}.lock"
-  # Orphan detection: a healthy show_plist_diff holds the lock for ~3s max
-  # (retry loop). If lockdir is older than 10s, the owning process was killed
-  # before rmdir → reclaim it so events aren't silently skipped forever.
   if [ -d "$lockdir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
     typeset -A _lockstat
     if zstat -H _lockstat "$lockdir" 2>/dev/null && \
