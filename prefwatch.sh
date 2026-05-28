@@ -3122,13 +3122,21 @@ start_watch_all() {
   sharing_exec_watch() {
     [ -x /usr/bin/eslogger ] || return 0
     [ -n "$PYTHON3_BIN" ] || return 0
+    log_line "Mode: sharing_exec_watch active (eslogger streaming kickstart/systemsetup/sharing/networksetup)"
 
+    # Python reads stdin via readline() in a loop to avoid block-buffering
+    # on the pipe — `for line in sys.stdin` defers to a large internal
+    # buffer and would never fire on sparse event streams (one toggle every
+    # few minutes). -u also forces unbuffered stdout.
     /usr/bin/eslogger exec 2>/dev/null \
       | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' \
       | "$PYTHON3_BIN" -u -c '
 import json, sys, shlex
 SHARING_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
-for line in sys.stdin:
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
     try:
         d = json.loads(line)
         ev = d.get("event", {}).get("exec", {})
@@ -3141,10 +3149,9 @@ for line in sys.stdin:
             continue
         args = ev.get("args", []) or []
         if len(args) > 1:
-            print(exe + " " + " ".join(shlex.quote(a) for a in args[1:]))
+            print(exe + " " + " ".join(shlex.quote(a) for a in args[1:]), flush=True)
         else:
-            print(exe)
-        sys.stdout.flush()
+            print(exe, flush=True)
     except Exception:
         pass
 ' 2>/dev/null \
