@@ -3120,9 +3120,15 @@ start_watch_all() {
   # /Library/Preferences/ so the regular fs_usage path can't capture them.
   # Requires root + eslogger (Ventura+) + Python3.
   sharing_exec_watch() {
-    [ -x /usr/bin/eslogger ] || return 0
-    [ -n "$PYTHON3_BIN" ] || return 0
-    log_line "Mode: sharing_exec_watch active (eslogger streaming kickstart/systemsetup/sharing/networksetup)"
+    if [ ! -x /usr/bin/eslogger ]; then
+      log_line "Cmd: # sharing_exec_watch DISABLED: /usr/bin/eslogger not executable"
+      return 0
+    fi
+    if [ -z "$PYTHON3_BIN" ]; then
+      log_line "Cmd: # sharing_exec_watch DISABLED: Python3 unavailable"
+      return 0
+    fi
+    log_line "Cmd: # sharing_exec_watch active (eslogger streaming kickstart/systemsetup/sharing/networksetup)"
 
     # Python reads stdin via readline() in a loop to avoid block-buffering
     # on the pipe — `for line in sys.stdin` defers to a large internal
