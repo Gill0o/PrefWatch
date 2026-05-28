@@ -2294,6 +2294,16 @@ show_plist_diff() {
   # Lock to prevent fs_watch + poll_watch processing the same file simultaneously.
   # Wait up to 3s for the lock (chained events would otherwise be dropped).
   local lockdir="$CACHE_DIR/${key}.lock"
+  # Orphan detection: a healthy show_plist_diff holds the lock for ~3s max
+  # (retry loop). If lockdir is older than 10s, the owning process was killed
+  # before rmdir → reclaim it so events aren't silently skipped forever.
+  if [ -d "$lockdir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+    typeset -A _lockstat
+    if zstat -H _lockstat "$lockdir" 2>/dev/null && \
+       (( EPOCHSECONDS - ${_lockstat[mtime]:-0} > 10 )); then
+      /bin/rmdir "$lockdir" 2>/dev/null || true
+    fi
+  fi
   local _wait_attempts=0
   while ! /bin/mkdir "$lockdir" 2>/dev/null; do
     _wait_attempts=$((_wait_attempts + 1))
