@@ -3,7 +3,7 @@
 ## 1.4.0 — unreleased
 
 ### Feature
-- _placeholder — `sharing_watch`: detect toggles in System Settings → Sharing (Screen Sharing, File Sharing, Remote Login/SSH, Remote Management/ARD, AirPlay Receiver, Bluetooth Sharing) and emit the matching CLI (kickstart / systemsetup / launchctl load -w)._
+- New `sharing_exec_watch` background subshell in ALL mode: streams `eslogger exec` (macOS Ventura+ Endpoint Security CLI) filtered to sharing-related binaries (`kickstart`, `systemsetup`, `sharing`, `networksetup`) and emits the exact `<exe> <args…>` invocation as it fires. Covers UI toggles for Remote Management, SSH, File Sharing, etc. — these tools mutate state outside `/Library/Preferences/` (launchd jobs, `/var/db/RemoteManagement/`, ACLs) so the normal `fs_usage` path can't capture them. Output is MDM-replay-faithful: the captured argv is reconstructed via `shlex.quote` so spaces and shell-metacharacters are preserved. Watcher requires root + Python3 + `eslogger`; silently no-ops if any prerequisite is missing.
 
 
 ## 1.3.0 — unreleased

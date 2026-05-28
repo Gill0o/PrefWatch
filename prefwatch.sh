@@ -3113,6 +3113,46 @@ start_watch_all() {
     done
   }
 
+  # Stream eslogger exec events for sharing-related CLI binaries and emit
+  # the reconstructed command line. Catches kickstart / systemsetup / sharing
+  # / networksetup invocations (UI toggles for Remote Management, SSH, File
+  # Sharing, Network Sharing, etc.) — these tools modify state outside
+  # /Library/Preferences/ so the regular fs_usage path can't capture them.
+  # Requires root + eslogger (Ventura+) + Python3.
+  sharing_exec_watch() {
+    [ -x /usr/bin/eslogger ] || return 0
+    [ -n "$PYTHON3_BIN" ] || return 0
+
+    /usr/bin/eslogger exec 2>/dev/null \
+      | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' \
+      | "$PYTHON3_BIN" -u -c '
+import json, sys, shlex
+SHARING_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+        ev = d.get("event", {}).get("exec", {})
+        tgt = ev.get("target", {})
+        exe = tgt.get("executable", {}).get("path", "")
+        if not exe:
+            continue
+        basename = exe.rsplit("/", 1)[-1]
+        if basename not in SHARING_BINS:
+            continue
+        args = ev.get("args", []) or []
+        if len(args) > 1:
+            print(exe + " " + " ".join(shlex.quote(a) for a in args[1:]))
+        else:
+            print(exe)
+        sys.stdout.flush()
+    except Exception:
+        pass
+' 2>/dev/null \
+      | while IFS= read -r cmd; do
+          [ -n "$cmd" ] && log_line "Cmd: $cmd"
+        done
+  }
+
   # Monitor energy/battery settings via pmset
   pmset_watch() {
     # Human-readable labels for known pmset values
@@ -3219,8 +3259,13 @@ start_watch_all() {
   local CUPS_PID=$!
   pmset_watch &
   local PMSET_PID=$!
+  local SHARING_EXEC_PID=""
+  if [ "$(id -u)" -eq 0 ]; then
+    sharing_exec_watch &
+    SHARING_EXEC_PID=$!
+  fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
