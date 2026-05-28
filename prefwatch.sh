@@ -1649,6 +1649,66 @@ convert_delete_to_plistbuddy() {
   return 0
 }
 
+# Build a `defaults write` command for a key=value pair by detecting the
+# actual plist type. Cascade: defaults read-type (most accurate) → numeric
+# heuristics on $trimmed → plutil -extract on $plist_path → `<type> <value>`
+# fallback. Returns empty for array/dict (can't be expressed as flat write).
+#
+# Args:
+#   $1 dom        domain (e.g. com.apple.dock)
+#   $2 keyname    preference key
+#   $3 trimmed    value from diff, whitespace-trimmed
+#   $4 hostflag   "-currentHost" for ByHost plists, "" otherwise
+#   $5 plist_path source plist for plutil fallback (file may not exist → fallback to `<type> <value>`)
+# Stdout: complete `defaults write …` command, or empty if unrepresentable.
+_build_defaults_write_cmd() {
+  local dom="$1" keyname="$2" trimmed="$3" hostflag="$4" plist_path="$5"
+  local actual_type="" type_val noquotes str cmd=""
+  local plutil_result plutil_type plutil_value
+
+  actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" ${hostflag:+$hostflag} 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+
+  if [ "$actual_type" = "float" ]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+  elif [ "$actual_type" = "integer" ]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+  elif [ "$actual_type" = "boolean" ]; then
+    type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+  elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
+    noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
+    str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
+  elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
+    type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+  elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
+    type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+  elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+  elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+  else
+    if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
+      plutil_type="${plutil_result%%|*}"
+      plutil_value="${plutil_result#*|}"
+      case "$plutil_type" in
+        string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${plutil_value}\"" ;;
+        bool)   cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
+        int)    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
+        float)  cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
+        array|dict) cmd="" ;;
+        *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
+      esac
+    else
+      cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>"
+    fi
+  fi
+
+  printf '%s' "$cmd"
+}
+
 # ---------------------------------------
 # Diff Engine
 # ---------------------------------------
@@ -2511,7 +2571,7 @@ show_plist_diff() {
             if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
               continue
             fi
-            local base dom hostflag cmd trimmed type_val noquotes str
+            local base dom hostflag cmd trimmed
             base="$(/usr/bin/basename "$path")"
             dom="${base%.plist}"
             hostflag=""
@@ -2520,50 +2580,7 @@ show_plist_diff() {
               dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
             fi
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-
-            # Check actual plist type first to avoid misdetection (e.g., float "1" detected as bool/int)
-            local actual_type=""
-            actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" ${hostflag:+$hostflag} 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
-
-            # Use actual plist type when available for numeric/bool values to avoid misdetection
-            if [ "$actual_type" = "float" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
-            elif [ "$actual_type" = "integer" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
-            elif [ "$actual_type" = "boolean" ]; then
-              type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
-            elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
-              noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
-              str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
-            elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
-              type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
-            elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
-              type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
-            elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
-            elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
-            else
-              local plutil_result plutil_type plutil_value
-              if plutil_result=$(extract_type_value_with_plutil "$path" "$keyname" 2>/dev/null); then
-                plutil_type="${plutil_result%%|*}"
-                plutil_value="${plutil_result#*|}"
-                case "$plutil_type" in
-                  string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${plutil_value}\"" ;;
-                  bool) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
-                  int) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
-                  float) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
-                  array|dict) cmd="" ;;
-                  *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
-                esac
-              else
-                cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>"
-              fi
-            fi
+            cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "$hostflag" "$path")
 
             if [ -n "$cmd" ]; then
               local _cmd_dom
@@ -2848,52 +2865,9 @@ show_domain_diff() {
               continue
             fi
 
-            local trimmed type_val str noquotes cmd
+            local trimmed cmd
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-
-            # Check actual plist type first to avoid misdetection (e.g., float "1" detected as bool/int)
-            local actual_type=""
-            actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
-
-            # Use actual plist type when available for numeric/bool values to avoid misdetection
-            if [ "$actual_type" = "float" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" -float ${trimmed}"
-            elif [ "$actual_type" = "integer" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" -int ${trimmed}"
-            elif [ "$actual_type" = "boolean" ]; then
-              type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
-            elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
-              noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
-              str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
-              cmd="defaults write ${dom} \"${keyname}\" -string \"${str}\""
-            elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
-              type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
-            elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
-              type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
-            elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" -int ${trimmed}"
-            elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" -float ${trimmed}"
-            else
-              local plutil_result plutil_type plutil_value
-              if [ -f "$tmpplist" ] && plutil_result=$(extract_type_value_with_plutil "$tmpplist" "$keyname" 2>/dev/null); then
-                plutil_type="${plutil_result%%|*}"
-                plutil_value="${plutil_result#*|}"
-                case "$plutil_type" in
-                  string) cmd="defaults write ${dom} \"${keyname}\" -string \"${plutil_value}\"" ;;
-                  bool) cmd="defaults write ${dom} \"${keyname}\" -bool ${plutil_value}" ;;
-                  int) cmd="defaults write ${dom} \"${keyname}\" -int ${plutil_value}" ;;
-                  float) cmd="defaults write ${dom} \"${keyname}\" -float ${plutil_value}" ;;
-                  array|dict) cmd="" ;;
-                  *) cmd="defaults write ${dom} \"${keyname}\" <type> <value>" ;;
-                esac
-              else
-                cmd="defaults write ${dom} \"${keyname}\" <type> <value>"
-              fi
-            fi
+            cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "" "$tmpplist")
 
             if [ -n "$cmd" ]; then
               local _cmd_dom
