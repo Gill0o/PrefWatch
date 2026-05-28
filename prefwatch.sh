@@ -3148,7 +3148,8 @@ start_watch_all() {
       log_line "Cmd: # sharing_exec_watch DISABLED: Python3 unavailable"
       return 0
     fi
-    log_line "Cmd: # sharing_exec_watch active (eslogger streaming kickstart/systemsetup/sharing/networksetup)"
+    log_line "Cmd: # sharing_exec_watch active"
+    /bin/mkdir -p "$PREFWATCH_TMPDIR/sharing_recent" 2>/dev/null || true
 
     # Python reads stdin via readline() in a loop to avoid block-buffering
     # on the pipe — `for line in sys.stdin` defers to a large internal
@@ -3187,7 +3188,14 @@ while True:
         pass
 ' 2>/dev/null \
       | while IFS= read -r cmd; do
-          [ -n "$cmd" ] && log_line "Cmd: $cmd"
+          [ -n "$cmd" ] || continue
+          log_line "Cmd: $cmd"
+          # Drop a timestamped marker per service so launchd_state_watch can
+          # detect when it's about to emit an equivalent form and add a NOTE.
+          # Match: launchctl <verb> -w <…/com.apple.<svc>.plist>
+          if [[ "$cmd" =~ launchctl[[:space:]]+(load|unload)[[:space:]]+-w[[:space:]]+[^[:space:]]+/([^/]+)\.plist ]]; then
+            /usr/bin/touch "$PREFWATCH_TMPDIR/sharing_recent/${match[2]}" 2>/dev/null || true
+          fi
         done
   }
 
@@ -3205,7 +3213,7 @@ while True:
       console_uid=$(id -u "$CONSOLE_USER" 2>/dev/null) || console_uid=""
       [ -n "$console_uid" ] && user_plist="/var/db/com.apple.xpc.launchd/disabled.${console_uid}.plist"
     fi
-    log_line "Cmd: # launchd_state_watch active (polling /var/db/com.apple.xpc.launchd/disabled*.plist)"
+    log_line "Cmd: # launchd_state_watch active"
 
     local sys_prev="$PREFWATCH_TMPDIR/launchd.sys.json"
     local user_prev="$PREFWATCH_TMPDIR/launchd.user.json"
@@ -3235,6 +3243,26 @@ for k in sorted(set(prev) | set(curr)):
 PY
     }
 
+    # Wrap each emitted command: if sharing_exec_watch dropped a marker for
+    # the same service in the last 10s, prepend a one-shot NOTE so the
+    # reader knows the two forms are equivalent.
+    _emit_with_dup_note() {
+      local cmd="$1" recent_dir="$PREFWATCH_TMPDIR/sharing_recent"
+      [ -n "$cmd" ] || return 0
+      if [ -d "$recent_dir" ] && [[ "$cmd" =~ launchctl[[:space:]]+(enable|disable)[[:space:]]+[^[:space:]]+/([^[:space:]]+)$ ]]; then
+        local svc="${match[2]}" marker
+        marker="$recent_dir/$svc"
+        if [ -f "$marker" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+          typeset -A _mst
+          if zstat -H _mst "$marker" 2>/dev/null && (( EPOCHSECONDS - ${_mst[mtime]:-0} < 10 )); then
+            log_line "Cmd: # NOTE: equivalent to the launchctl load/unload above"
+            /bin/rm -f "$marker" 2>/dev/null || true
+          fi
+        fi
+      fi
+      log_line "Cmd: $cmd"
+    }
+
     while true; do
       /bin/sleep 2
       if [ -f "$sys_plist" ]; then
@@ -3242,7 +3270,7 @@ PY
         /usr/bin/plutil -convert json -o "$sys_curr" "$sys_plist" 2>/dev/null || true
         if [ -s "$sys_curr" ] && ! /usr/bin/cmp -s "$sys_prev" "$sys_curr" 2>/dev/null; then
           _emit_launchd_diff "$sys_prev" "$sys_curr" "system" | while IFS= read -r cmd; do
-            [ -n "$cmd" ] && log_line "Cmd: $cmd"
+            _emit_with_dup_note "$cmd"
           done
           /bin/mv -f "$sys_curr" "$sys_prev" 2>/dev/null || true
         else
@@ -3254,7 +3282,7 @@ PY
         /usr/bin/plutil -convert json -o "$user_curr" "$user_plist" 2>/dev/null || true
         if [ -s "$user_curr" ] && ! /usr/bin/cmp -s "$user_prev" "$user_curr" 2>/dev/null; then
           _emit_launchd_diff "$user_prev" "$user_curr" "gui/${console_uid}" | while IFS= read -r cmd; do
-            [ -n "$cmd" ] && log_line "Cmd: $cmd"
+            _emit_with_dup_note "$cmd"
           done
           /bin/mv -f "$user_curr" "$user_prev" 2>/dev/null || true
         else
@@ -3376,7 +3404,6 @@ PY
     SHARING_EXEC_PID=$!
     launchd_state_watch &
     LAUNCHD_STATE_PID=$!
-    log_line "Cmd: # NOTE: when two equivalent commands surface for the same toggle, either works for MDM"
   fi
 
   trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
