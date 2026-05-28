@@ -3070,29 +3070,31 @@ start_watch_all() {
   # reloads — so no cupsd-runtime lag).
   cups_sharing_watch() {
     local cupsdconf="/etc/cups/cupsd.conf"
-    [ -f "$cupsdconf" ] || return 0
-    local share_snap
-    share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
+    [ -f "$cupsdconf" ] || { log_line "Cmd: # cups_sharing_watch DISABLED: $cupsdconf not present"; return 0; }
+    local share_snap=""
+    share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
     [ -z "$share_snap" ] && share_snap="off"
+    log_line "Cmd: # cups_sharing_watch active (initial: $share_snap)"
 
     while true; do
-      /bin/sleep 0.5
+      /bin/sleep 0.5 || true
       [ -f "$cupsdconf" ] || continue
-      local share_curr
-      share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
+      local share_curr=""
+      share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
       [ -z "$share_curr" ] && share_curr="off"
-      [ "$share_curr" = "$share_snap" ] && continue
-      case "$share_curr" in
-        on|yes)
-          log_line "Cmd: # CUPS: Printer Sharing enabled"
-          log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
-          ;;
-        *)
-          log_line "Cmd: # CUPS: Printer Sharing disabled"
-          log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
-          ;;
-      esac
-      share_snap="$share_curr"
+      if [ "$share_curr" != "$share_snap" ]; then
+        case "$share_curr" in
+          on|yes)
+            log_line "Cmd: # CUPS: Printer Sharing enabled"
+            log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
+            ;;
+          *)
+            log_line "Cmd: # CUPS: Printer Sharing disabled"
+            log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+            ;;
+        esac
+        share_snap="$share_curr"
+      fi
     done
   }
 
