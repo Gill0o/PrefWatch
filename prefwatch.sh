@@ -674,6 +674,18 @@ PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH
 /bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
 trap '/bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true' EXIT
 
+# Sweep orphan tmpdirs from prior crashed runs (PID no longer alive).
+# Scoped to /tmp/prefwatch.<digits>* glob → can't touch unrelated dirs.
+# kill -0 distinguishes alive PIDs from reaped ones without sending a signal.
+for _stale in /tmp/prefwatch.[0-9]*(N/); do
+  _stale_pid="${${_stale:t}#prefwatch.}"
+  _stale_pid="${_stale_pid%%.*}"
+  [ "$_stale_pid" = "$$" ] && continue
+  /bin/kill -0 "$_stale_pid" 2>/dev/null && continue
+  /bin/rm -rf "$_stale" 2>/dev/null || true
+done
+unset _stale _stale_pid
+
 # Cache initialization
 typeset -A _EXCLUSION_CACHE  # Cache for domain exclusion checks
 CACHE_DIR=""                  # Cache directory for plist diffs (WATCH_ALL mode)
