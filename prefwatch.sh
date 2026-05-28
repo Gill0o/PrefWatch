@@ -1796,6 +1796,93 @@ _emit_cmd() {
   fi
 }
 
+# Process the tab-separated metadata stream produced by the 3 Python diff
+# workers (emit_array_additions + emit_nested_dict_changes — deletions are
+# handled separately by emit_array_deletions). Two kinds of input lines:
+#
+#   1. "PBCMD\t<plistbuddy command>\t" — emit through _log_kind, wrapped
+#      in /usr/libexec/PlistBuddy with the (MDM-rewritten) plist path.
+#      Comment lines (starting with `#`) are buffered and flushed just
+#      before the next real command so they don't trail filtered output.
+#   2. "<base>\t<idx>\t<comma-separated-keys>" — metadata describing keys
+#      already covered by a PBCMD; populated into the global _SKIP_KEYS
+#      so the subsequent diff-text loop won't re-emit them as flat
+#      defaults writes.
+#
+# The first non-filtered PBCMD also triggers one contextual NOTE via
+# _emit_contextual_note (uses the most-recent metadata line's array_base
+# so the right note can be selected for hot keys like AppleSymbolicHotKeys).
+#
+# Args:
+#   $1 kind        USER | SYSTEM | DOMAIN — for _log_kind dispatch
+#   $2 dom         domain for is_noisy_pbcmd / _emit_contextual_note
+#   $3 meta_raw    concatenated worker output
+#   $4 plist_path  path used by mdm_plist_path → PlistBuddy file. If
+#                  empty, PBCMD lines are skipped but metadata still
+#                  populates _SKIP_KEYS (matches show_domain_diff behavior
+#                  when get_plist_path returns nothing).
+#
+# Side effects: mutates global _SKIP_KEYS, emits PBCMDs via _log_kind.
+_process_py_meta() {
+  local kind="$1" dom="$2" meta_raw="$3" plist_path="$4"
+  [ -n "$meta_raw" ] || return 0
+
+  local _domain_note_emitted=false _last_array_base=""
+  local -a _pending_comments=()
+  local _array_base _array_idx _array_keys _pb_cmd _pc _k _mdm_path pb_full
+  local -a _array_key_list
+
+  while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
+    [ -n "$_array_base" ] || continue
+    if [ "$_array_base" = "PBCMD" ]; then
+      _pb_cmd="$_array_idx"
+      # Buffer comments until a real command makes it through filtering
+      if [[ "$_pb_cmd" == "#"* ]]; then
+        _pending_comments+=("$_pb_cmd")
+        continue
+      fi
+      [ -n "$plist_path" ] || continue
+      is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
+      if [ "$_domain_note_emitted" = "false" ]; then
+        _emit_contextual_note "$dom" "$_last_array_base"
+        _domain_note_emitted=true
+      fi
+      if (( ${#_pending_comments[@]} > 0 )); then
+        for _pc in "${_pending_comments[@]}"; do
+          _log_kind "$kind" "Cmd: $_pc"
+        done
+        _pending_comments=()
+      fi
+      _mdm_path=$(mdm_plist_path "$plist_path")
+      pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
+      _log_kind "$kind" "Cmd: $pb_full"
+      continue
+    fi
+    # Metadata line — populate _SKIP_KEYS at every level the Python
+    # workers may have produced (top key, top:sub, base:idx:sub, etc.)
+    _last_array_base="$_array_base"
+    _SKIP_KEYS["$_array_base"]=1
+    if [ -n "$_array_idx" ]; then
+      _SKIP_KEYS[":${_array_base}:${_array_idx}"]=1
+    fi
+    if [ -n "$_array_keys" ]; then
+      IFS=',' read -rA _array_key_list <<< "$_array_keys"
+      for _k in "${_array_key_list[@]}"; do
+        [ -n "$_k" ] || continue
+        _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        [ -n "$_k" ] || continue
+        _SKIP_KEYS["$_k"]=1
+        _SKIP_KEYS["${_array_base}:${_k}"]=1
+        _SKIP_KEYS[":${_array_base}:${_k}"]=1
+        if [ -n "$_array_idx" ]; then
+          _SKIP_KEYS["${_array_base}:${_array_idx}:${_k}"]=1
+          _SKIP_KEYS[":${_array_base}:${_array_idx}:${_k}"]=1
+        fi
+      done
+    fi
+  done <<< "$meta_raw"
+}
+
 # ---------------------------------------
 # Diff Engine
 # ---------------------------------------
@@ -2495,8 +2582,8 @@ show_plist_diff() {
     fi
   fi
 
-  typeset -A _skip_keys
-  _skip_keys=()
+  typeset -gA _SKIP_KEYS
+  _SKIP_KEYS=()
   local _array_meta_raw=""
   local _has_array_additions=false
 
@@ -2519,70 +2606,7 @@ show_plist_diff() {
     fi
     if [ -n "$_array_meta_raw" ]; then
       _has_array_additions=true
-      typeset -A _noted_arrays=()
-      local _domain_note_emitted=false
-      local -a _pending_comments=()
-      local _last_array_base=""
-      while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
-        [ -n "$_array_base" ] || continue
-        # Handle PBCMD lines (PlistBuddy commands from Python)
-        if [ "$_array_base" = "PBCMD" ]; then
-          local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
-          if [[ "$_pb_cmd" == "#"* ]]; then
-            _pending_comments+=("$_pb_cmd")
-            continue
-          fi
-          # Filter noisy key paths in PlistBuddy commands
-          is_noisy_pbcmd "$_dom" "$_pb_cmd" && continue
-          # Emit domain-level note before first non-filtered command (using tracked array_base)
-          if [ "$_domain_note_emitted" = "false" ]; then
-            _emit_contextual_note "$_dom" "$_last_array_base"
-            _domain_note_emitted=true
-          fi
-          # Flush buffered comments now that we have a real command
-          if (( ${#_pending_comments[@]} > 0 )); then
-            for _pc in "${_pending_comments[@]}"; do
-              case "$kind" in
-                USER) log_user "Cmd: $_pc" ;;
-                SYSTEM) log_system "Cmd: $_pc" ;;
-                *) log_line "Cmd: $_pc" ;;
-              esac
-            done
-            _pending_comments=()
-          fi
-          local _mdm_path=$(mdm_plist_path "$path")
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
-          case "$kind" in
-            USER) log_user "Cmd: $pb_full" ;;
-            SYSTEM) log_system "Cmd: $pb_full" ;;
-            *) log_line "Cmd: $pb_full" ;;
-          esac
-          continue
-        fi
-        # Metadata line: populate _skip_keys and track array_base for deferred note
-        _last_array_base="$_array_base"
-        _skip_keys["$_array_base"]=1
-        if [ -n "$_array_idx" ]; then
-          _skip_keys[":${_array_base}:${_array_idx}"]=1
-        fi
-        if [ -n "$_array_keys" ]; then
-          typeset -a _array_key_list
-          IFS=',' read -rA _array_key_list <<< "$_array_keys"
-          for _k in "${_array_key_list[@]}"; do
-            [ -n "$_k" ] || continue
-            _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            [ -n "$_k" ] || continue
-            _skip_keys["$_k"]=1
-            _skip_keys["${_array_base}:${_k}"]=1
-            _skip_keys[":${_array_base}:${_k}"]=1
-            if [ -n "$_array_idx" ]; then
-              _skip_keys["${_array_base}:${_array_idx}:${_k}"]=1
-              _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
-            fi
-          done
-        fi
-      done <<< "$_array_meta_raw"
+      _process_py_meta "$kind" "$_dom" "$_array_meta_raw" "$path"
     fi
 
     emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json" "$_py_del"
@@ -2599,7 +2623,7 @@ show_plist_diff() {
       [ -n "$_ak" ] && _added_keys["$_ak"]=1
     done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
 
-    # Use process substitution (not pipe) so _skip_keys is accessible in while loop
+    # Use process substitution (not pipe) so _SKIP_KEYS is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
 
@@ -2615,7 +2639,7 @@ show_plist_diff() {
         keyname="${kv%%|*}"
         val="${kv#*|}"
 
-        if [ -n "${_skip_keys[$keyname]:-}" ]; then
+        if [ -n "${_SKIP_KEYS[$keyname]:-}" ]; then
           continue
         fi
 
@@ -2742,8 +2766,8 @@ show_domain_diff() {
   fi
 
   prev_json="$CACHE_DIR/${key}.prev.json"
-  typeset -A _skip_keys
-  _skip_keys=()
+  typeset -gA _SKIP_KEYS
+  _SKIP_KEYS=()
   local _array_meta_raw=""
   local _has_array_additions=false
 
@@ -2771,63 +2795,7 @@ show_domain_diff() {
       _has_array_additions=true
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
-      typeset -A _noted_arrays=()
-      local _domain_note_emitted=false
-      local -a _pending_comments=()
-      local _last_array_base=""
-      while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
-        [ -n "$_array_base" ] || continue
-        # Handle PBCMD lines (PlistBuddy commands from Python)
-        if [ "$_array_base" = "PBCMD" ]; then
-          local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
-          if [[ "$_pb_cmd" == "#"* ]]; then
-            _pending_comments+=("$_pb_cmd")
-            continue
-          fi
-          [ -n "$_pb_plist_path" ] || continue
-          # Filter noisy key paths in PlistBuddy commands
-          is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
-          # Emit domain-level note before first non-filtered command (using tracked array_base)
-          if [ "$_domain_note_emitted" = "false" ]; then
-            _emit_contextual_note "$dom" "$_last_array_base"
-            _domain_note_emitted=true
-          fi
-          # Flush buffered comments now that we have a real command
-          if (( ${#_pending_comments[@]} > 0 )); then
-            for _pc in "${_pending_comments[@]}"; do
-              log_line "Cmd: $_pc"
-            done
-            _pending_comments=()
-          fi
-          local _mdm_path=$(mdm_plist_path "$_pb_plist_path")
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
-          log_line "Cmd: $pb_full"
-          continue
-        fi
-        # Metadata line: populate _skip_keys and track array_base for deferred note
-        _last_array_base="$_array_base"
-        _skip_keys["$_array_base"]=1
-        if [ -n "$_array_idx" ]; then
-          _skip_keys[":${_array_base}:${_array_idx}"]=1
-        fi
-        if [ -n "$_array_keys" ]; then
-          typeset -a _array_key_list
-          IFS=',' read -rA _array_key_list <<< "$_array_keys"
-          for _k in "${_array_key_list[@]}"; do
-            [ -n "$_k" ] || continue
-            _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            [ -n "$_k" ] || continue
-            _skip_keys["$_k"]=1
-            _skip_keys["${_array_base}:${_k}"]=1
-            _skip_keys[":${_array_base}:${_k}"]=1
-            if [ -n "$_array_idx" ]; then
-              _skip_keys["${_array_base}:${_array_idx}:${_k}"]=1
-              _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
-            fi
-          done
-        fi
-      done <<< "$_array_meta_raw"
+      _process_py_meta DOMAIN "$dom" "$_array_meta_raw" "$_pb_plist_path"
     fi
   fi
 
@@ -2841,7 +2809,7 @@ show_domain_diff() {
       [ -n "$_ak" ] && _added_keys["$_ak"]=1
     done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
 
-    # Use process substitution (not pipe) so _skip_keys is accessible in while loop
+    # Use process substitution (not pipe) so _SKIP_KEYS is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
       log_line "Diff $dom: $dline"
@@ -2852,7 +2820,7 @@ show_domain_diff() {
         keyname="${kv%%|*}"
         val="${kv#*|}"
 
-        if [ -n "${_skip_keys[$keyname]:-}" ]; then
+        if [ -n "${_SKIP_KEYS[$keyname]:-}" ]; then
           continue
         fi
 
