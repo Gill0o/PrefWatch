@@ -1883,6 +1883,101 @@ _process_py_meta() {
   done <<< "$meta_raw"
 }
 
+# Parse the unified diff between two plutil-text snapshots and emit a
+# defaults write (for +) or defaults delete (for -) for each surviving
+# changed key. "Surviving" means: not in _SKIP_KEYS (covered by a PBCMD),
+# not matched by is_noisy_key, not the print-preset flat-delete special
+# case, and — for deletes — actually gone from $curr (not just changed).
+#
+# Both top-of-loop emissions (Diff/Key/Item) and the final defaults
+# command go through _log_kind / _emit_cmd, so the helper is kind-agnostic
+# and works for USER, SYSTEM, and DOMAIN paths.
+#
+# Args:
+#   $1 kind        USER | SYSTEM | DOMAIN
+#   $2 dom         domain for is_noisy_key + print-preset check + NOTE
+#   $3 hostflag    "-currentHost" for ByHost plists, "" otherwise
+#   $4 prev        previous plutil-text snapshot path
+#   $5 curr        current plutil-text snapshot path
+#   $6 type_src    plist file used by _build_defaults_write_cmd for
+#                  type-detection plutil fallback (real plist for
+#                  show_plist_diff, exported tmpplist for show_domain_diff)
+#   $7 diff_label  string used in the "Diff <label>: <line>" diagnostic
+#                  (path for plist diff, domain for domain diff)
+#
+# Reads globals: _SKIP_KEYS, _HAS_ARRAY_ADDITIONS.
+_process_diff_lines() {
+  local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7"
+  [ -s "$prev" ] || return 0
+
+  typeset -A _added_keys
+  _added_keys=()
+  local _aline _ak
+  while IFS= read -r _aline; do
+    _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
+    [ -n "$_ak" ] && _added_keys["$_ak"]=1
+  done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
+
+  local dline kv keyname val snippet pretty_key array_meta array_name array_idx trimmed cmd delete_cmd
+  while IFS= read -r dline; do
+    [ -n "$dline" ] || continue
+
+    _log_kind "$kind" "Diff $diff_label: $dline"
+
+    array_meta="" array_name="" array_idx=""
+    kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
+    [ -n "$kv" ] || continue
+
+    keyname="${kv%%|*}"
+    val="${kv#*|}"
+
+    [ -n "${_SKIP_KEYS[$keyname]:-}" ] && continue
+
+    # Secondary filter: PBCMD-driven runs may leak sub-keys of dict
+    # additions into the top-level diff text. Detect & drop them.
+    if [ "${_HAS_ARRAY_ADDITIONS:-false}" = "true" ] && [[ "$keyname" != *":"* ]]; then
+      if [[ "$keyname" == *" "* ]] || \
+         [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-data|file-label|bundle-identifier|_CFURLString).*$ ]]; then
+        continue
+      fi
+    fi
+
+    is_noisy_key "$dom" "$keyname" && continue
+
+    if array_meta=$(parse_array_index_key "$keyname" 2>/dev/null); then
+      array_name="${array_meta%% *}"
+      array_idx="${array_meta##* }"
+      pretty_key="${array_name}[${array_idx}]"
+    else
+      pretty_key="$keyname"
+    fi
+
+    snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
+    _log_kind "$kind" "Key: ${pretty_key} | Item: ${snippet}"
+
+    case "$dline" in
+      +*)
+        [ -n "$array_name" ] && continue
+        [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]] && continue
+        trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "$hostflag" "$type_src")
+        _emit_cmd "$kind" "$cmd" "$dom" false
+        ;;
+      -*)
+        [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]] && continue
+        [ -n "${_added_keys[$keyname]:-}" ] && continue
+        [[ "$dom" == com.apple.print.custompresets* ]] && continue
+        # Verify key is truly gone (not just value-changed) by re-scanning $curr
+        if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
+          continue
+        fi
+        delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
+        _emit_cmd "$kind" "$delete_cmd" "$dom" true
+        ;;
+    esac
+  done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/')
+}
+
 # ---------------------------------------
 # Diff Engine
 # ---------------------------------------
@@ -2584,8 +2679,8 @@ show_plist_diff() {
 
   typeset -gA _SKIP_KEYS
   _SKIP_KEYS=()
+  typeset -g _HAS_ARRAY_ADDITIONS=false
   local _array_meta_raw=""
-  local _has_array_additions=false
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     # Run the 3 Python diff invocations in parallel (each ~60-100ms)
@@ -2605,7 +2700,7 @@ show_plist_diff() {
       fi
     fi
     if [ -n "$_array_meta_raw" ]; then
-      _has_array_additions=true
+      _HAS_ARRAY_ADDITIONS=true
       _process_py_meta "$kind" "$_dom" "$_array_meta_raw" "$path"
     fi
 
@@ -2613,120 +2708,14 @@ show_plist_diff() {
     /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
   fi
 
-  if [ -s "$prev" ] && [ "$silent" != "true" ]; then
-    # Pre-collect keys from + lines to identify value changes (not deletions)
-    typeset -A _added_keys
-    _added_keys=()
-    while IFS= read -r _aline; do
-      local _ak
-      _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
-      [ -n "$_ak" ] && _added_keys["$_ak"]=1
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
-
-    # Use process substitution (not pipe) so _SKIP_KEYS is accessible in while loop
-    while IFS= read -r dline; do
-      [ -n "$dline" ] || continue
-
-      if [ "$kind" = "USER" ]; then
-        log_user "Diff $path: $dline"
-      else
-        log_system "Diff $path: $dline"
-      fi
-
-      local kv keyname val snippet pretty_key array_meta="" array_name="" array_idx="" array_cmd=""
-      kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
-      if [ -n "$kv" ]; then
-        keyname="${kv%%|*}"
-        val="${kv#*|}"
-
-        if [ -n "${_SKIP_KEYS[$keyname]:-}" ]; then
-          continue
-        fi
-
-        # Additional filtering: if we had array additions, skip any top-level key
-        # that looks like it's part of a dictionary (contains space or common dict key patterns)
-        if [ "$_has_array_additions" = "true" ] && [[ "$keyname" != *":"* ]]; then
-          # Skip keys that are likely dictionary sub-keys (contain spaces or match common patterns)
-          if [[ "$keyname" == *" "* ]] || [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-data|file-label|bundle-identifier|_CFURLString).*$ ]]; then
-            continue
-          fi
-        fi
-
-        if is_noisy_key "$_dom" "$keyname"; then
-          continue
-        fi
-
-        if array_meta=$(parse_array_index_key "$keyname" 2>/dev/null); then
-          array_name="${array_meta%% *}"
-          array_idx="${array_meta##* }"
-          pretty_key="${array_name}[${array_idx}]"
-        else
-          pretty_key="$keyname"
-        fi
-
-        snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
-        if [ "$kind" = "USER" ]; then
-          log_user "Key: ${pretty_key} | Item: ${snippet}"
-        else
-          log_system "Key: ${pretty_key} | Item: ${snippet}"
-        fi
-
-        case "$dline" in
-          +*)
-            if [ -n "$array_name" ]; then
-              continue
-            fi
-            # Skip nested keys (indent ≥ 4 spaces in diff = sub-dict values)
-            if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-            local base dom hostflag cmd trimmed
-            base="$(/usr/bin/basename "$path")"
-            dom="${base%.plist}"
-            hostflag=""
-            if [[ "$path" == *"/ByHost/"* ]]; then
-              hostflag="-currentHost"
-              dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
-            fi
-            trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "$hostflag" "$path")
-
-            _emit_cmd "$kind" "$cmd" "$_dom" false
-            ;;
-          -*)
-            # Skip nested keys (same logic as + case above)
-            if [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-            # Skip value changes (key exists in both - and + lines = changed, not deleted)
-            if [ -n "${_added_keys[$keyname]:-}" ]; then
-              continue
-            fi
-            # Skip flat key deletes for print presets (array deletion covers all sub-keys)
-            if [[ "$_dom" == com.apple.print.custompresets* ]]; then
-              continue
-            fi
-            # Verify key is truly deleted by checking the current snapshot
-            # If the key still exists in $curr, it's a value change not a deletion
-            if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
-              continue
-            fi
-            local base dom hostflag delete_cmd
-            base="$(/usr/bin/basename "$path")"
-            dom="${base%.plist}"
-            hostflag=""
-            if [[ "$path" == *"/ByHost/"* ]]; then
-              hostflag="-currentHost"
-              dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
-            fi
-            delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
-            _emit_cmd "$kind" "$delete_cmd" "$_dom" true
-            ;;
-        esac
-      fi
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/')
-  else
-    :
+  if [ "$silent" != "true" ]; then
+    local _base="$(/usr/bin/basename "$path")"
+    local _emit_dom="${_base%.plist}" _emit_hostflag=""
+    if [[ "$path" == *"/ByHost/"* ]]; then
+      _emit_hostflag="-currentHost"
+      _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
+    fi
+    _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -2768,8 +2757,8 @@ show_domain_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   typeset -gA _SKIP_KEYS
   _SKIP_KEYS=()
+  typeset -g _HAS_ARRAY_ADDITIONS=false
   local _array_meta_raw=""
-  local _has_array_additions=false
 
   if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     # Run the 3 Python diff invocations in parallel
@@ -2792,106 +2781,14 @@ show_domain_diff() {
     fi
 
     if [ -n "$_array_meta_raw" ]; then
-      _has_array_additions=true
+      _HAS_ARRAY_ADDITIONS=true
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
       _process_py_meta DOMAIN "$dom" "$_array_meta_raw" "$_pb_plist_path"
     fi
   fi
 
-  if [ -s "$prev" ]; then
-    # Pre-collect keys from + lines to identify value changes (not deletions)
-    typeset -A _added_keys
-    _added_keys=()
-    while IFS= read -r _aline; do
-      local _ak
-      _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
-      [ -n "$_ak" ] && _added_keys["$_ak"]=1
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
-
-    # Use process substitution (not pipe) so _SKIP_KEYS is accessible in while loop
-    while IFS= read -r dline; do
-      [ -n "$dline" ] || continue
-      log_line "Diff $dom: $dline"
-
-      local kv keyname val snippet pretty_key array_meta="" array_name="" array_idx="" array_cmd=""
-      kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
-      if [ -n "$kv" ]; then
-        keyname="${kv%%|*}"
-        val="${kv#*|}"
-
-        if [ -n "${_SKIP_KEYS[$keyname]:-}" ]; then
-          continue
-        fi
-
-        # Additional filtering: if we had array additions, skip any top-level key
-        # that looks like it's part of a dictionary (contains space or common dict key patterns)
-        if [ "$_has_array_additions" = "true" ] && [[ "$keyname" != *":"* ]]; then
-          # Skip keys that are likely dictionary sub-keys (contain spaces or match common patterns)
-          if [[ "$keyname" == *" "* ]] || [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-data|file-label|bundle-identifier|_CFURLString).*$ ]]; then
-            continue
-          fi
-        fi
-
-        if is_noisy_key "$dom" "$keyname"; then
-          continue
-        fi
-
-        if array_meta=$(parse_array_index_key "$keyname" 2>/dev/null); then
-          array_name="${array_meta%% *}"
-          array_idx="${array_meta##* }"
-          pretty_key="${array_name}[${array_idx}]"
-        else
-          pretty_key="$keyname"
-        fi
-
-        snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
-        log_line "Key: ${pretty_key} | Item: ${snippet}"
-
-        case "$dline" in
-          +*)
-            if [ -n "$array_name" ]; then
-              continue
-            fi
-            # Skip nested keys (indent ≥ 4 spaces in diff = sub-dict values)
-            if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-
-            local trimmed cmd
-            trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "" "$tmpplist")
-
-            _emit_cmd DOMAIN "$cmd" "$dom" false
-            ;;
-          -*)
-            # Skip nested keys (same logic as + case above)
-            if [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-            # Skip value changes (key exists in both - and + lines = changed, not deleted)
-            if [ -n "${_added_keys[$keyname]:-}" ]; then
-              continue
-            fi
-            # Skip flat key deletes for print presets (array deletion covers all sub-keys)
-            if [[ "$dom" == com.apple.print.custompresets* ]]; then
-              continue
-            fi
-            # Verify key is truly deleted by checking the current snapshot
-            # If the key still exists in $curr, it's a value change not a deletion
-            if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
-              continue
-            fi
-            local delete_cmd
-            delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "")
-            _emit_cmd DOMAIN "$delete_cmd" "$dom" true
-            ;;
-        esac
-      fi
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/')
-  else
-    :
-  fi
+  _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
   /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
