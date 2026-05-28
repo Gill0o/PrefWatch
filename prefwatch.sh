@@ -1732,6 +1732,70 @@ _build_defaults_delete_cmd() {
   fi
 }
 
+# Internal: route a log line through the right wrapper by kind.
+_log_kind() {
+  case "$1" in
+    USER)   log_user   "$2" ;;
+    SYSTEM) log_system "$2" ;;
+    *)      log_line   "$2" ;;
+  esac
+}
+
+# Central emit function used by show_plist_diff / show_domain_diff after a
+# defaults command (write or delete) has been built. Applies all filters,
+# the per-kind ALL_MODE/ONLY_CMDS gate (DOMAIN only), contextual NOTE
+# emission (write only — deletes are quieter by convention), and finally
+# routes to log_user / log_system / log_line via _log_kind. For deletes,
+# tries PlistBuddy conversion via convert_delete_to_plistbuddy first and
+# emits each resulting line (comments preserve the `# WARNING:` prefix
+# without the `Cmd: ` marker so they don't get fed back to defaults).
+#
+# Args:
+#   $1 kind       USER | SYSTEM | DOMAIN — selects the logger
+#   $2 cmd        constructed `defaults …` command (empty cmd = silent skip)
+#   $3 note_dom   domain key fed to _emit_contextual_note (ignored for deletes)
+#   $4 is_delete  "true" | "false"
+_emit_cmd() {
+  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4"
+
+  [ -n "$cmd" ] || return 0
+  is_noisy_command "$cmd" && return 0
+
+  # Write path: re-check exclusion via the cmd-extracted domain (covers
+  # ByHost suffix variations) and emit the NOTE for this domain once per
+  # session (_emit_contextual_note dedupes internally via _NOTED_DOMAIN).
+  if [ "$is_delete" != "true" ]; then
+    local _cmd_dom
+    _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+    [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom" && return 0
+    _emit_contextual_note "$note_dom" ""
+  fi
+
+  # DOMAIN-only gate: in ALL_MODE with ONLY_CMDS, the catch-all domain
+  # diff is a redundant fallback to the per-plist diff — skip its output
+  # but allow the note + filters above to run normally.
+  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+    return 0
+  fi
+
+  if [ "$is_delete" = "true" ]; then
+    local pb_delete pb_line
+    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" 2>/dev/null); then
+      while IFS= read -r pb_line; do
+        [ -n "$pb_line" ] || continue
+        case "$pb_line" in
+          "#"*) _log_kind "$kind" "$pb_line" ;;
+          *)    _log_kind "$kind" "Cmd: $pb_line" ;;
+        esac
+      done <<< "$pb_delete"
+    else
+      _log_kind "$kind" "Cmd: $cmd"
+    fi
+  else
+    _log_kind "$kind" "Cmd: $cmd"
+  fi
+}
+
 # ---------------------------------------
 # Diff Engine
 # ---------------------------------------
@@ -2535,8 +2599,6 @@ show_plist_diff() {
       [ -n "$_ak" ] && _added_keys["$_ak"]=1
     done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
 
-    typeset -A _noted_dom=()
-
     # Use process substitution (not pipe) so _skip_keys is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
@@ -2605,25 +2667,7 @@ show_plist_diff() {
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
             cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "$hostflag" "$path")
 
-            if [ -n "$cmd" ]; then
-              local _cmd_dom
-              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-                :
-              elif is_noisy_command "$cmd"; then
-                :
-              else
-                if [ -z "${_noted_dom[$_dom]:-}" ]; then
-                  _emit_contextual_note "$_dom" ""
-                  _noted_dom[$_dom]=1
-                fi
-                if [ "$kind" = "USER" ]; then
-                  log_user "Cmd: $cmd"
-                else
-                  log_system "Cmd: $cmd"
-                fi
-              fi
-            fi
+            _emit_cmd "$kind" "$cmd" "$_dom" false
             ;;
           -*)
             # Skip nested keys (same logic as + case above)
@@ -2652,38 +2696,7 @@ show_plist_diff() {
               dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
             fi
             delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
-
-            if is_noisy_command "$delete_cmd"; then
-              :
-            elif [ "$kind" = "USER" ]; then
-              local pb_delete
-              if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
-                while IFS= read -r pb_line; do
-                  [ -n "$pb_line" ] || continue
-                  if [[ "$pb_line" == "#"* ]]; then
-                    log_user "$pb_line"
-                  else
-                    log_user "Cmd: $pb_line"
-                  fi
-                done <<< "$pb_delete"
-              else
-                log_user "Cmd: $delete_cmd"
-              fi
-            else
-              local pb_delete
-              if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
-                while IFS= read -r pb_line; do
-                  [ -n "$pb_line" ] || continue
-                  if [[ "$pb_line" == "#"* ]]; then
-                    log_system "$pb_line"
-                  else
-                    log_system "Cmd: $pb_line"
-                  fi
-                done <<< "$pb_delete"
-              else
-                log_system "Cmd: $delete_cmd"
-              fi
-            fi
+            _emit_cmd "$kind" "$delete_cmd" "$_dom" true
             ;;
         esac
       fi
@@ -2828,8 +2841,6 @@ show_domain_diff() {
       [ -n "$_ak" ] && _added_keys["$_ak"]=1
     done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
 
-    typeset -A _noted_dom=()
-
     # Use process substitution (not pipe) so _skip_keys is accessible in while loop
     while IFS= read -r dline; do
       [ -n "$dline" ] || continue
@@ -2883,25 +2894,7 @@ show_domain_diff() {
             trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
             cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "" "$tmpplist")
 
-            if [ -n "$cmd" ]; then
-              local _cmd_dom
-              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-                :
-              elif is_noisy_command "$cmd"; then
-                :
-              else
-                if [ -z "${_noted_dom[$dom]:-}" ]; then
-                  _emit_contextual_note "$dom" ""
-                  _noted_dom[$dom]=1
-                fi
-                if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
-                  :
-                else
-                  log_line "Cmd: $cmd"
-                fi
-              fi
-            fi
+            _emit_cmd DOMAIN "$cmd" "$dom" false
             ;;
           -*)
             # Skip nested keys (same logic as + case above)
@@ -2923,26 +2916,7 @@ show_domain_diff() {
             fi
             local delete_cmd
             delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "")
-
-            if is_noisy_command "$delete_cmd"; then
-              :
-            elif [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
-              :
-            else
-              local pb_delete
-              if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
-                while IFS= read -r pb_line; do
-                  [ -n "$pb_line" ] || continue
-                  if [[ "$pb_line" == "#"* ]]; then
-                    log_line "$pb_line"
-                  else
-                    log_line "Cmd: $pb_line"
-                  fi
-                done <<< "$pb_delete"
-              else
-                log_line "Cmd: $delete_cmd"
-              fi
-            fi
+            _emit_cmd DOMAIN "$delete_cmd" "$dom" true
             ;;
         esac
       fi
