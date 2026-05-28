@@ -3171,6 +3171,79 @@ while True:
         done
   }
 
+  # Poll /var/db/com.apple.xpc.launchd/disabled.plist + disabled.<UID>.plist
+  # every 2s. macOS Tahoe System Settings flips most sharing services via
+  # pure XPC to launchd — no exec event fires — but the persistent disabled
+  # state still lands in these files. Emit `launchctl enable/disable
+  # <domain>/<service>` for each on/off transition (true = disabled, false
+  # = enabled). Requires root + Python3 (for JSON diff).
+  launchd_state_watch() {
+    [ -n "$PYTHON3_BIN" ] || return 0
+    local sys_plist="/var/db/com.apple.xpc.launchd/disabled.plist"
+    local user_plist="" console_uid=""
+    if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+      console_uid=$(id -u "$CONSOLE_USER" 2>/dev/null) || console_uid=""
+      [ -n "$console_uid" ] && user_plist="/var/db/com.apple.xpc.launchd/disabled.${console_uid}.plist"
+    fi
+    log_line "Cmd: # launchd_state_watch active (polling /var/db/com.apple.xpc.launchd/disabled*.plist)"
+
+    local sys_prev="$PREFWATCH_TMPDIR/launchd.sys.json"
+    local user_prev="$PREFWATCH_TMPDIR/launchd.user.json"
+    [ -f "$sys_plist" ] && /usr/bin/plutil -convert json -o "$sys_prev" "$sys_plist" 2>/dev/null || true
+    [ -n "$user_plist" ] && [ -f "$user_plist" ] && /usr/bin/plutil -convert json -o "$user_prev" "$user_plist" 2>/dev/null || true
+
+    _emit_launchd_diff() {
+      local prev="$1" curr="$2" domain="$3"
+      "$PYTHON3_BIN" - "$prev" "$curr" "$domain" 2>/dev/null <<'PY'
+import json, sys
+prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
+def load(p):
+    try:
+        with open(p) as f: return json.load(f)
+    except Exception:
+        return {}
+prev = load(prev_path)
+curr = load(curr_path)
+for k in sorted(set(prev) | set(curr)):
+    pv, cv = prev.get(k), curr.get(k)
+    if pv == cv:
+        continue
+    if cv is False or cv is None:  # newly enabled, or removed from disabled list
+        print(f"/bin/launchctl enable {domain}/{k}")
+    elif cv is True:
+        print(f"/bin/launchctl disable {domain}/{k}")
+PY
+    }
+
+    while true; do
+      /bin/sleep 2
+      if [ -f "$sys_plist" ]; then
+        local sys_curr="$PREFWATCH_TMPDIR/launchd.sys.curr.json"
+        /usr/bin/plutil -convert json -o "$sys_curr" "$sys_plist" 2>/dev/null || true
+        if [ -s "$sys_curr" ] && ! /usr/bin/cmp -s "$sys_prev" "$sys_curr" 2>/dev/null; then
+          _emit_launchd_diff "$sys_prev" "$sys_curr" "system" | while IFS= read -r cmd; do
+            [ -n "$cmd" ] && log_line "Cmd: $cmd"
+          done
+          /bin/mv -f "$sys_curr" "$sys_prev" 2>/dev/null || true
+        else
+          /bin/rm -f "$sys_curr" 2>/dev/null || true
+        fi
+      fi
+      if [ -n "$user_plist" ] && [ -f "$user_plist" ]; then
+        local user_curr="$PREFWATCH_TMPDIR/launchd.user.curr.json"
+        /usr/bin/plutil -convert json -o "$user_curr" "$user_plist" 2>/dev/null || true
+        if [ -s "$user_curr" ] && ! /usr/bin/cmp -s "$user_prev" "$user_curr" 2>/dev/null; then
+          _emit_launchd_diff "$user_prev" "$user_curr" "gui/${console_uid}" | while IFS= read -r cmd; do
+            [ -n "$cmd" ] && log_line "Cmd: $cmd"
+          done
+          /bin/mv -f "$user_curr" "$user_prev" 2>/dev/null || true
+        else
+          /bin/rm -f "$user_curr" 2>/dev/null || true
+        fi
+      fi
+    done
+  }
+
   # Monitor energy/battery settings via pmset
   pmset_watch() {
     # Human-readable labels for known pmset values
@@ -3277,13 +3350,15 @@ while True:
   local CUPS_PID=$!
   pmset_watch &
   local PMSET_PID=$!
-  local SHARING_EXEC_PID=""
+  local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
     SHARING_EXEC_PID=$!
+    launchd_state_watch &
+    LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
