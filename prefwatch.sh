@@ -3068,6 +3068,12 @@ start_watch_all() {
     cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
     cups_current="$PREFWATCH_TMPDIR/cups.curr"
 
+    # Printer Sharing toggle state (cupsctl _share_printers). Tahoe System
+    # Settings flips this without forking cupsctl, so eslogger misses it.
+    # Read the current value directly from `cupsctl` (which queries cupsd).
+    local share_snap=""
+    share_snap=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
+
     # Initial snapshot of installed printers
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
 
@@ -3107,6 +3113,20 @@ start_watch_all() {
         log_line "Cmd: # CUPS: printer removed — $printer"
         log_line "Cmd: lpadmin -x \"$printer\""
       done
+
+      # Detect Printer Sharing toggle (cupsctl _share_printers transition)
+      local share_curr=""
+      share_curr=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
+      if [ -n "$share_curr" ] && [ "$share_curr" != "$share_snap" ]; then
+        if [ "$share_curr" = "1" ]; then
+          log_line "Cmd: # CUPS: Printer Sharing enabled"
+          log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
+        else
+          log_line "Cmd: # CUPS: Printer Sharing disabled"
+          log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+        fi
+        share_snap="$share_curr"
+      fi
 
       # Update snapshot
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
