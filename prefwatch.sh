@@ -3063,56 +3063,49 @@ start_watch_all() {
   }
 
   # CUPS printer monitoring function
+  # Printer Sharing toggle — independent watcher in its own sub-shell so
+  # the lpstat 5s debounce (which fires whenever cupsd DNS-SD-(un)publishes)
+  # never blocks sharing detection. Parses /etc/cups/cupsd.conf's Browsing
+  # directive directly (written instantly by writeconfig, before cupsd
+  # reloads — so no cupsd-runtime lag).
+  cups_sharing_watch() {
+    local cupsdconf="/etc/cups/cupsd.conf"
+    [ -f "$cupsdconf" ] || return 0
+    local share_snap
+    share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
+    [ -z "$share_snap" ] && share_snap="off"
+
+    while true; do
+      /bin/sleep 0.5
+      [ -f "$cupsdconf" ] || continue
+      local share_curr
+      share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
+      [ -z "$share_curr" ] && share_curr="off"
+      [ "$share_curr" = "$share_snap" ] && continue
+      case "$share_curr" in
+        on|yes)
+          log_line "Cmd: # CUPS: Printer Sharing enabled"
+          log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
+          ;;
+        *)
+          log_line "Cmd: # CUPS: Printer Sharing disabled"
+          log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+          ;;
+      esac
+      share_snap="$share_curr"
+    done
+  }
+
   cups_watch() {
     local cups_snapshot cups_current
     cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
     cups_current="$PREFWATCH_TMPDIR/cups.curr"
 
-    # Printer Sharing toggle state — parsed directly from /etc/cups/cupsd.conf
-    # (which System Settings writes immediately via writeconfig). Reading
-    # cupsctl instead would lag by 1-3s while cupsd reloads. The Browsing
-    # directive is Off/On; absent = default Off.
-    local cupsdconf="/etc/cups/cupsd.conf"
-    local cupsdconf_mtime="" share_snap=""
-    if [ -f "$cupsdconf" ]; then
-      cupsdconf_mtime=$(/usr/bin/stat -f %m "$cupsdconf" 2>/dev/null || echo "")
-      share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
-      [ -z "$share_snap" ] && share_snap="off"
-    fi
-
     # Initial snapshot of installed printers
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
 
     while true; do
-      /bin/sleep 0.5
-
-      # Detect Printer Sharing toggle via cupsd.conf mtime + Browsing
-      # directive — fires the instant System Settings writes the file
-      # (before cupsd reloads). Independent of lpstat below.
-      if [ -f "$cupsdconf" ]; then
-        local curr_mtime=""
-        curr_mtime=$(/usr/bin/stat -f %m "$cupsdconf" 2>/dev/null || echo "")
-        if [ -n "$curr_mtime" ] && [ "$curr_mtime" != "$cupsdconf_mtime" ]; then
-          local share_curr=""
-          share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
-          [ -z "$share_curr" ] && share_curr="off"
-          if [ "$share_curr" != "$share_snap" ]; then
-            case "$share_curr" in
-              on|yes)
-                log_line "Cmd: # CUPS: Printer Sharing enabled"
-                log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
-                ;;
-              *)
-                log_line "Cmd: # CUPS: Printer Sharing disabled"
-                log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
-                ;;
-            esac
-            share_snap="$share_curr"
-          fi
-          cupsdconf_mtime="$curr_mtime"
-        fi
-      fi
-
+      /bin/sleep 1
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
 
       # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
@@ -3416,6 +3409,8 @@ PY
   local POLL_PID=$!
   cups_watch &
   local CUPS_PID=$!
+  cups_sharing_watch &
+  local CUPS_SHARING_PID=$!
   pmset_watch &
   local PMSET_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
@@ -3426,7 +3421,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
