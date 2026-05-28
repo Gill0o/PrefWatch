@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — unreleased
+
+### Feature
+- _placeholder — `sharing_watch`: detect toggles in System Settings → Sharing (Screen Sharing, File Sharing, Remote Login/SSH, Remote Management/ARD, AirPlay Receiver, Bluetooth Sharing) and emit the matching CLI (kickstart / systemsetup / launchctl load -w)._
+
+
 ## 1.3.0 — unreleased
 
 ### Refactor
