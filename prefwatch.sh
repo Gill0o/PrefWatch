@@ -1623,9 +1623,6 @@ extract_type_value_with_plutil() {
 
 # Convert a defaults delete command to PlistBuddy
 convert_delete_to_plistbuddy() {
-  # Disable xtrace to prevent debug output leaking
-  { set +x; } 2>/dev/null
-
   local cmd="$1"
 
   local domain target
