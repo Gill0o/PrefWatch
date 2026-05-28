@@ -3085,7 +3085,7 @@ start_watch_all() {
       [ -z "$share_curr" ] && share_curr="off"
       if [ "$share_curr" != "$share_snap" ]; then
         if [ "$tahoe_note_emitted" = "false" ]; then
-          log_line "Cmd: # NOTE: Tahoe quirk — Printer Sharing disable may not surface until you re-toggle (cupsd.conf rewrite happens lazily on next state change)"
+          log_line "Cmd: # NOTE: Tahoe quirk — Printer Sharing toggle (enable or disable) may need a re-toggle to surface (cupsd.conf rewrites lazily on next state change)"
           tahoe_note_emitted=true
         fi
         case "$share_curr" in
