@@ -3087,7 +3087,10 @@ start_watch_all() {
       local share_curr=""
       share_curr=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
       if [ -n "$share_curr" ] && [ "$share_curr" != "$share_snap" ]; then
-        if [ "$share_curr" = "1" ]; then
+        # NOTE: on macOS Tahoe, _share_printers semantics is inverted from
+        # the open-source CUPS: UI Printer Sharing ON ↔ _share_printers=0
+        # (confirmed empirically). Map accordingly.
+        if [ "$share_curr" = "0" ]; then
           log_line "Cmd: # CUPS: Printer Sharing enabled"
           log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
         else
