@@ -3075,6 +3075,7 @@ start_watch_all() {
     share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
     [ -z "$share_snap" ] && share_snap="off"
     log_line "Cmd: # cups_sharing_watch active (initial: $share_snap)"
+    log_line "Cmd: # NOTE: Tahoe quirk — Printer Sharing disable may not surface until you re-toggle (cupsd.conf rewrite happens lazily on next state change)"
 
     while true; do
       /bin/sleep 0.5 || true
