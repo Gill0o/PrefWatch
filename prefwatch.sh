@@ -3068,11 +3068,17 @@ start_watch_all() {
     cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
     cups_current="$PREFWATCH_TMPDIR/cups.curr"
 
-    # Printer Sharing toggle state (cupsctl _share_printers). Tahoe System
-    # Settings flips this without forking cupsctl, so eslogger misses it.
-    # Read the current value directly from `cupsctl` (which queries cupsd).
-    local share_snap=""
-    share_snap=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
+    # Printer Sharing toggle state — parsed directly from /etc/cups/cupsd.conf
+    # (which System Settings writes immediately via writeconfig). Reading
+    # cupsctl instead would lag by 1-3s while cupsd reloads. The Browsing
+    # directive is Off/On; absent = default Off.
+    local cupsdconf="/etc/cups/cupsd.conf"
+    local cupsdconf_mtime="" share_snap=""
+    if [ -f "$cupsdconf" ]; then
+      cupsdconf_mtime=$(/usr/bin/stat -f %m "$cupsdconf" 2>/dev/null || echo "")
+      share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
+      [ -z "$share_snap" ] && share_snap="off"
+    fi
 
     # Initial snapshot of installed printers
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
@@ -3080,21 +3086,31 @@ start_watch_all() {
     while true; do
       /bin/sleep 0.5
 
-      # Detect Printer Sharing toggle FIRST — independent of lpstat (the
-      # printer-list debounce path below would otherwise delay this by 5s
-      # since enabling sharing causes cupsd to re-publish via Bonjour and
-      # the lpstat output transiently changes).
-      local share_curr=""
-      share_curr=$(/usr/sbin/cupsctl 2>/dev/null | /usr/bin/awk -F= '/^_share_printers=/{print $2; exit}')
-      if [ -n "$share_curr" ] && [ "$share_curr" != "$share_snap" ]; then
-        if [ "$share_curr" = "1" ]; then
-          log_line "Cmd: # CUPS: Printer Sharing enabled"
-          log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
-        else
-          log_line "Cmd: # CUPS: Printer Sharing disabled"
-          log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+      # Detect Printer Sharing toggle via cupsd.conf mtime + Browsing
+      # directive — fires the instant System Settings writes the file
+      # (before cupsd reloads). Independent of lpstat below.
+      if [ -f "$cupsdconf" ]; then
+        local curr_mtime=""
+        curr_mtime=$(/usr/bin/stat -f %m "$cupsdconf" 2>/dev/null || echo "")
+        if [ -n "$curr_mtime" ] && [ "$curr_mtime" != "$cupsdconf_mtime" ]; then
+          local share_curr=""
+          share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | head -1 | /usr/bin/awk '{print tolower($2)}')
+          [ -z "$share_curr" ] && share_curr="off"
+          if [ "$share_curr" != "$share_snap" ]; then
+            case "$share_curr" in
+              on|yes)
+                log_line "Cmd: # CUPS: Printer Sharing enabled"
+                log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
+                ;;
+              *)
+                log_line "Cmd: # CUPS: Printer Sharing disabled"
+                log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+                ;;
+            esac
+            share_snap="$share_curr"
+          fi
+          cupsdconf_mtime="$curr_mtime"
         fi
-        share_snap="$share_curr"
       fi
 
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
