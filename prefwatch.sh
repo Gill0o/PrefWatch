@@ -665,9 +665,14 @@ if [ -z "$PYTHON3_BIN" ]; then
   _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
-# Temp directory — all temp files under one directory for clean /tmp
+# Temp directory — all temp files under one directory for clean /tmp.
+# EXIT trap guarantees cleanup on every exit path (incl. "Aborted" pre-flight,
+# set -e firing before start_watch* subshell registers its TERM/INT trap, or
+# kill -9 on MAIN alone). Watch subshells still install their own traps to
+# tear down workers before MAIN's EXIT trap fires.
 PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
 /bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
+trap '/bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true' EXIT
 
 # Cache initialization
 typeset -A _EXCLUSION_CACHE  # Cache for domain exclusion checks
