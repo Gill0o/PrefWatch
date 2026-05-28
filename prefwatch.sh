@@ -245,15 +245,10 @@ mdm_plist_path() {
   fi
 }
 
-# Always disable xtrace to prevent noisy variable assignments (kv=, keyname=, etc.)
-# This prevents debug output from appearing even with -v/--verbose flag
-# Users can still see all output via log files with timestamps
-# Use multiple methods to ensure xtrace is disabled regardless of shell state
-set +x 2>/dev/null || true
-set +v 2>/dev/null || true
-unsetopt xtrace 2>/dev/null || true
-unsetopt verbose 2>/dev/null || true
-{ set +o xtrace; } 2>/dev/null || true
+# Disable xtrace/verbose so -v/--verbose only enables our own logging, not
+# shell trace of every variable assignment. zsh unsetopt covers both bash
+# (`set -x`/`set -v`) and zsh-native equivalents in one call.
+unsetopt xtrace verbose 2>/dev/null || true
 
 # ============================================================================
 # EXCLUSIONS
