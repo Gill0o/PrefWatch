@@ -280,13 +280,14 @@ typeset -a HOT_DOMAINS=(
   com.apple.universalaccess
   com.apple.Spotlight
   com.apple.sound
-  # Lock screen / wallpaper / software update
+  # Lock screen / software update
   com.apple.screensaver
-  com.apple.wallpaper
   com.apple.SoftwareUpdate
   # Deliberately NOT hot: com.apple.bluetooth (daemon rewrites device/battery
-  # state continuously), windowserver/displays (chatty), energy (pmset_watch),
-  # sharing (dedicated watchers), network (SystemConfiguration, system path).
+  # state continuously), com.apple.wallpaper (wallpaper agent rewrites it and a
+  # read can stall cfprefsd → observed loop freeze), windowserver/displays
+  # (chatty), energy (pmset_watch), sharing (dedicated watchers), network
+  # (SystemConfiguration, system path).
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
   if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then
@@ -3075,23 +3076,26 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          # Parallel flush: each XPC round-trip is ~20-50ms. Issue both the bare
-          # and -currentHost reads so ByHost-backed prefs (trackpad, Bluetooth,
-          # screensaver) get flushed too — the bare read only syncs the standard
-          # plist. The extra read is a cheap no-op for non-ByHost domains.
+          # Parallel flush: each XPC round-trip is ~20-50ms. One bare read per
+          # active domain. We do NOT also issue `-currentHost read` here: it
+          # doubled the per-cycle fork count (and thus the chance one read hangs
+          # cfprefsd and freezes the loop until the watchdog fires). ByHost prefs
+          # are still flushed where the path is known: show_plist_diff's retry
+          # loop and fs_watch both add -currentHost for /ByHost/ files.
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
-          _pids+=($!)
-          "${RUN_AS_USER[@]}" /usr/bin/defaults -currentHost read "$_adom" >/dev/null 2>&1 &
           _pids+=($!)
         done
         # Watchdog: cfprefsd occasionally hangs on a specific domain; without
-        # this bound, `wait` would freeze the polling loop indefinitely and no
-        # further changes would be reported. Kill stragglers after 3s.
+        # this bound, `wait` would freeze the polling loop until the read
+        # returns and no further changes would be reported. A normal read is
+        # ~20-50ms, so kill stragglers aggressively: TERM after 1s, KILL after
+        # 1.5s. Worst-case loop freeze is ~1.5s (was 4s); missing one flush hint
+        # is harmless — the next cycle re-flushes.
         if (( ${#_pids[@]} > 0 )); then
           (
-            /bin/sleep 3
-            for _p in "${_pids[@]}"; do /bin/kill -TERM "$_p" 2>/dev/null; done
             /bin/sleep 1
+            for _p in "${_pids[@]}"; do /bin/kill -TERM "$_p" 2>/dev/null; done
+            /bin/sleep 0.5
             for _p in "${_pids[@]}"; do /bin/kill -KILL "$_p" 2>/dev/null; done
           ) &
           _watchdog=$!
