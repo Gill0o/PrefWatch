@@ -4,8 +4,9 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Full command coverage** — `defaults`, `PlistBuddy`, `pmset`, `lpadmin`
+- **Full command coverage** — `defaults`, `PlistBuddy`, `pmset`, `lpadmin`, `launchctl`, `cupsctl`
 - **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
+- **Sharing-panel capture** (ALL + root) — File Sharing, SSH, Screen Sharing, Remote Management, Printer Sharing toggles via `eslogger exec` + `/var/db/com.apple.xpc.launchd/disabled.plist` polling + `cupsd.conf` watch
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
 - **Noise filtering** — 350+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
@@ -44,7 +45,7 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), and printer configuration (CUPS). Preferences stored outside plist files won't be detected — notably **Safari, Mail, and Calendar**, which since recent macOS releases keep most of their settings in internal app databases.
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and Sharing-panel toggles (via process exec + launchd disabled state — root required). Preferences stored elsewhere won't be detected — notably **Safari, Mail, and Calendar**, which since recent macOS releases keep most of their settings in internal app databases.
 
 For detected changes that require extra steps to apply (logout/login, `killall`, settings that write but don't take effect, etc.), PrefWatch emits inline `# NOTE:` comments in the output.
 
