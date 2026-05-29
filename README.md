@@ -36,7 +36,7 @@ sudo ./prefwatch.sh -v
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
-| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | `com.apple.finder,.GlobalPreferences` |
+| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | finder, .GlobalPreferences, dock, controlcenter, WindowManager, systemsettings |
 | `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
@@ -52,7 +52,7 @@ For detected changes that require extra steps to apply (logout/login, `killall`,
 ## Notes
 
 - ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
-- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, frequently-touched domains (`com.apple.finder`, `.GlobalPreferences` by default) are kept "hot" and flushed preemptively every 0.5s, typically surfacing changes within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
+- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, "hot" domains (the common interactive panels — Finder, Dock, Control Center, Window Manager, System Settings, `.GlobalPreferences` — by default) are flushed preemptively every 0.5s and re-diffed from `cfprefsd` state every ~2s, typically surfacing changes within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected, non-hot) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
 
 ## Security
 

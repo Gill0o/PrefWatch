@@ -50,8 +50,9 @@
 #          variable in PlistBuddy commands for MDM deployment (default: false)
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
-#          round-trip. Defaults: com.apple.finder, .GlobalPreferences.
-#          Pass "NONE" to disable.
+#          round-trip. Defaults: com.apple.finder, .GlobalPreferences,
+#          com.apple.dock, com.apple.controlcenter, com.apple.WindowManager,
+#          com.apple.systemsettings. Pass "NONE" to disable.
 # ============================================================================
 
 # ============================================================================
@@ -82,9 +83,9 @@ Options:
   -q, --only-cmds       Show only executable commands (default)
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   --hot-domains <list>  Comma-separated list of domains kept permanently active
-                        for instant first-change detection (default:
-                        com.apple.finder,.GlobalPreferences).
-                        Pass "NONE" to disable.
+                        for instant first-change detection (default: finder,
+                        .GlobalPreferences, dock, controlcenter, WindowManager,
+                        systemsettings). Pass "NONE" to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
                         \$loggedInUser variable in PlistBuddy commands
@@ -253,12 +254,18 @@ unsetopt xtrace verbose 2>/dev/null || true
 # ============================================================================
 
 # "Hot" domains kept permanently marked active so their very first change is
-# detected without waiting for fs_usage→poll round-trip. Kept intentionally
-# small — organic marking handles the rest. Override via --hot-domains CLI flag
-# or Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
+# detected without waiting for the fs_usage→poll round-trip (cfprefsd can buffer
+# a write for several seconds before it hits disk; hot domains are flushed +
+# re-diffed every cycle so their changes surface in ~1-2s). Curated to the most
+# commonly-tweaked interactive panels. Override via --hot-domains CLI flag or
+# Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
 typeset -a HOT_DOMAINS=(
   com.apple.finder
   .GlobalPreferences
+  com.apple.dock
+  com.apple.controlcenter
+  com.apple.WindowManager
+  com.apple.systemsettings
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
   if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then
