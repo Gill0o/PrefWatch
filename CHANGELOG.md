@@ -3,25 +3,22 @@
 ## 1.3.0 — unreleased
 
 ### Feature
-- New `sharing_exec_watch` background subshell in ALL mode: streams `eslogger exec` (macOS Ventura+ Endpoint Security CLI) filtered to sharing-related binaries (`kickstart`, `systemsetup`, `sharing`, `networksetup`, `launchctl`) and emits the exact `<exe> <args…>` invocation as it fires. Captures the path-based launchctl form used by macOS Tahoe System Settings via the private `writeconfig` XPC (e.g. `launchctl unload -w /System/Library/LaunchDaemons/com.apple.smbd.plist` for File Sharing). Output is MDM-replay-faithful via `shlex.quote`. Subcommand filter on `launchctl` keeps only state-changing forms (`load`/`unload`/`enable`/`disable`/`bootstrap`/`bootout`/`kickstart`).
-- New `launchd_state_watch` background subshell in ALL mode: polls `/var/db/com.apple.xpc.launchd/disabled.plist` (system) and `disabled.<UID>.plist` (gui domain) every 2s. macOS Tahoe flips most Sharing services (SSH, Screen Sharing, Remote Management, etc.) via pure XPC to launchd — no exec event fires — but the persistent disabled-state still lands in these files. Diffs the JSON snapshot against the previous one and emits `/bin/launchctl enable system/<service>` or `/bin/launchctl disable system/<service>` (and `gui/<UID>/<service>` for per-user services) on each transition. A one-shot contextual NOTE is emitted when the same service surfaces as both a `launchctl load/unload -w <path>` (from `sharing_exec_watch`) and a `launchctl enable/disable system/<svc>` (from this watcher), so MDM users know either form is replay-equivalent.
-- New `cups_sharing_watch` background subshell in ALL mode: dedicated poller (0.5s) on `/etc/cups/cupsd.conf`'s `Browsing` directive to detect Printer Sharing toggles. Separated from `cups_watch` so the 5s DNS-SD/Bonjour debounce on the printer list never blocks sharing-state detection. Emits `sudo /usr/sbin/cupsctl --share-printers` / `--no-share-printers` on transition. A one-shot NOTE warns about a macOS Tahoe quirk where `cupsd.conf` rewrites lazily, so a toggle may need a subsequent re-toggle to surface.
+- `sharing_exec_watch` (ALL/root): eslogger exec stream filtered to sharing CLI binaries (`kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl`) — emits the exact invocation, capturing Tahoe `writeconfig`-driven `launchctl load/unload -w PATH` (File Sharing).
+- `launchd_state_watch` (ALL): polls `/var/db/com.apple.xpc.launchd/disabled*.plist` every 2s, emits `launchctl enable/disable system/<svc>` on transition. Catches XPC-only toggles (SSH, Screen Sharing, ARD) that exec watch can't see.
+- `cups_sharing_watch` (ALL): dedicated 0.5s poll on `cupsd.conf` `Browsing`, decoupled from `cups_watch`'s 5s DNS-SD debounce. Emits `sudo cupsctl --share-printers` / `--no-share-printers`.
 
 ### Refactor
-- **Robustness (T1):** `MAIN` now installs an `EXIT` trap that always clears `$PREFWATCH_TMPDIR` (previously only `TERM/INT` traps inside `start_watch*` cleaned up — so "Aborted" pre-flight and `set -e` exits leaked the dir). Startup sweeps `/tmp/prefwatch.<PID>.*/` for dirs whose owning PID is no longer alive (`kill -0` probe). `show_plist_diff` reclaims `<hash>.lock/` directories older than 10s before waiting on the mkdir mutex, ending the silent-skip-forever failure mode after a `kill -9`.
-- **Cleanup (T2):** the 5-layer xtrace defense (`set +x` × 2, `unsetopt xtrace verbose`, `set +o xtrace`) collapses to a single `unsetopt xtrace verbose`. The local guard inside `convert_delete_to_plistbuddy` also drops — nothing in the script re-enables xtrace after startup, so it was dead weight.
-- **Command builders (T3):** the `defaults read-type → plutil -extract → fallback` cascade and the `defaults [-currentHost] delete dom "target"` construction each lived twice (in `show_plist_diff` with ByHost `hostflag`, in `show_domain_diff` without). Extracted to `_build_defaults_write_cmd` and `_build_defaults_delete_cmd`. A new `_emit_cmd` + `_log_kind` pair centralises domain exclusion, `is_noisy_command` filter, ALL_MODE/ONLY_CMDS gate for `DOMAIN` kind, contextual NOTE emission (deduped via `_NOTED_DOMAIN`), and PlistBuddy conversion for deletes — eliminating the USER/SYSTEM block triplication inside `show_plist_diff`.
-- **Loop bodies (T4):** the two meta-stream loops (PBCMD dispatch + `_SKIP_KEYS` population) and the two text-diff loops are now `_process_py_meta` and `_process_diff_lines`. Shared state moves to global `_SKIP_KEYS` / `_HAS_ARRAY_ADDITIONS` (zsh 5.9 lacks `typeset -n` nameref for associative arrays) reset per call so nothing leaks between successive diffs.
-- Zero functional change. One commit per sub-task (`refactor: T<n.m> — …`) on `dev` for clean `git bisect`.
+- `show_plist_diff` / `show_domain_diff` duplicated logic extracted into 5 helpers — `_build_defaults_write_cmd`, `_build_defaults_delete_cmd`, `_emit_cmd` + `_log_kind`, `_process_py_meta`, `_process_diff_lines`. Zero functional change; one commit per sub-task on `dev` for `git bisect`.
+- MAIN gains `EXIT` trap + startup sweep of orphan `/tmp/prefwatch.<PID>.*/` + lock-orphan reclaim. xtrace 5-layer defense collapses to a single `unsetopt xtrace verbose`.
 
 ### Noise
-- `com.surteesstudios.Bartender`: filter `TerminationReasons` (timestamped exit-reason log, grows each launch).
-- `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID / USB engine path / virtual-device name).
-- `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build `Updates:Attempts:N` counters and `Status:Build:Last` / `Status:Version:Last` rewritten on each menubar update).
-- `com.apple.cloud.quota`: filter `_ICQ*` (iCloud Quota offer cache + server-driven retrieval timestamps).
-- Exclude `com.apple.facetime.bag` (FaceTime service config bag — `CacheTime` TTL + `Date` refresh timestamp, server-controlled; same pattern as the already-excluded `com.apple.imessage.bag`).
-- Exclude `com.apple.gridDataServices` (background daemon — `balAuthFetchDate` auth-token refresh timestamps).
-- `com.apple.AssetCache`: filter `SavedCacheDetails` / `SavedCacheSize` / `SavedCacheUsedSize` (Content Caching daemon runtime cache stats updated continuously; keeps `Activated` which is the real user-toggleable enable flag).
+- `com.surteesstudios.Bartender`: filter `TerminationReasons`.
+- `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID).
+- `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build counters).
+- `com.apple.cloud.quota`: filter `_ICQ*` (iCloud offer cache).
+- Exclude `com.apple.facetime.bag` (config bag — same pattern as `com.apple.imessage.bag`).
+- Exclude `com.apple.gridDataServices` (daemon auth-token refresh timestamps).
+- `com.apple.AssetCache`: filter `SavedCacheDetails`/`SavedCacheSize`/`SavedCacheUsedSize` (runtime stats; keeps `Activated`).
 
 
 ## 1.2.1 — 2026-05-14
