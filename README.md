@@ -9,7 +9,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **Sharing-panel capture** (ALL + root) — File Sharing, SSH, Screen Sharing, Remote Management, Printer Sharing toggles via `eslogger exec` + `/var/db/com.apple.xpc.launchd/disabled.plist` polling + `cupsd.conf` watch
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
-- **Noise filtering** — 350+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
+- **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
 - **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
 
 ## Quick Start
