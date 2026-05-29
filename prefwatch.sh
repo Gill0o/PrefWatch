@@ -927,7 +927,8 @@ is_noisy_key() {
       return 0 ;;
 
     # Analytics & telemetry counters    # Note: keeps opt-in toggles like AnalyticsEnabled, SendAnalytics, TelemetryEnabled
-    *AnalyticsQueue*|*AnalyticsSession*|*AnalyticsEvent*|*TelemetryEvent*|*TelemetrySession*|*TelemetryQueue*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*)
+    # *-analytics-stamp: daemon-written analytics timestamp (dock, screencapture, systemuiserver, …)
+    *AnalyticsQueue*|*AnalyticsSession*|*AnalyticsEvent*|*TelemetryEvent*|*TelemetrySession*|*TelemetryQueue*|*BootstrapTime*|*lastBootstrap*|*HeartbeatDate*|*SKPurchaseIntent*|*-analytics-stamp)
       return 0 ;;
 
     # Device/Library/Session IDs (change per device)
@@ -1066,7 +1067,7 @@ is_noisy_key() {
     com.apple.dock)
       case "$keyname" in
         # Noisy: workspace IDs, counts, expose gestures, trash state, recent apps
-        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|last-analytics-stamp|lastShowIndicatorTime|trash-full|recent-apps)
+        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
           return 0 ;;
         # Noisy: internal tile metadata (reorder noise)
         GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
