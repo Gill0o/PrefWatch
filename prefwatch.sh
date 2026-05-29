@@ -2626,11 +2626,15 @@ show_plist_diff() {
   # Skip expensive dump_plist when file mtime is unchanged (fast-path skip).
   if [ -s "$prev" ] && [ -s "$curr" ] && /usr/bin/cmp -s "$prev" "$curr" 2>/dev/null; then
     local _retry_delay _retry_changed=false _last_mtime _cur_mtime
+    # ByHost prefs live in ByHost/<dom>.<UUID>.plist; the bare `defaults read`
+    # only syncs the standard plist, so flush the ByHost variant when relevant.
+    local _flush_hostflag=""
+    [[ "$path" == *"/ByHost/"* ]] && _flush_hostflag="-currentHost"
     _last_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
     for _retry_delay in 0.1 0.2 0.3 0.5 0.7; do
       /bin/sleep "$_retry_delay"
       # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
-      "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_dom" >/dev/null 2>&1 || true
+      "${RUN_AS_USER[@]}" /usr/bin/defaults ${_flush_hostflag:+$_flush_hostflag} read "$_dom" >/dev/null 2>&1 || true
       _cur_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
       # Last retry: always dump — stat %m has 1-second granularity so
       # same-second cfprefsd flushes are invisible to the mtime check.
@@ -2995,7 +2999,12 @@ start_watch_all() {
         /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
         # Preemptive flush: hint cfprefsd to sync pending writes now so
         # show_plist_diff's retry loop catches the change on its first iteration.
-        "${RUN_AS_USER[@]}" /usr/bin/defaults read "$dom" >/dev/null 2>&1 &
+        # Use -currentHost for ByHost paths (the bare read syncs the standard plist).
+        if [[ "$plist" == *"/ByHost/"* ]]; then
+          "${RUN_AS_USER[@]}" /usr/bin/defaults -currentHost read "$dom" >/dev/null 2>&1 &
+        else
+          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$dom" >/dev/null 2>&1 &
+        fi
       fi
       if [ "$cat_type" = "USER" ]; then
         log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
@@ -3008,6 +3017,7 @@ start_watch_all() {
   # Polling monitoring function
   poll_watch() {
     local marker_user marker_sys active_dir
+    local _reddiff_tick=0
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     active_dir="$PREFWATCH_TMPDIR/active-domains"
@@ -3026,8 +3036,9 @@ start_watch_all() {
           /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
         done
         local _af _adom _p _watchdog
-        local -a _pids
+        local -a _pids _active_doms
         _pids=()
+        _active_doms=()
         typeset -A _st
         for _af in "$active_dir"/*(N); do
           [ -f "$_af" ] || continue
@@ -3037,8 +3048,14 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          # Parallel flush: each XPC round-trip is ~20-50ms
+          _active_doms+=("$_adom")
+          # Parallel flush: each XPC round-trip is ~20-50ms. Issue both the bare
+          # and -currentHost reads so ByHost-backed prefs (trackpad, Bluetooth,
+          # screensaver) get flushed too — the bare read only syncs the standard
+          # plist. The extra read is a cheap no-op for non-ByHost domains.
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
+          _pids+=($!)
+          "${RUN_AS_USER[@]}" /usr/bin/defaults -currentHost read "$_adom" >/dev/null 2>&1 &
           _pids+=($!)
         done
         # Watchdog: cfprefsd occasionally hangs on a specific domain; without
@@ -3055,6 +3072,21 @@ start_watch_all() {
           for _p in "${_pids[@]}"; do wait "$_p" 2>/dev/null || true; done
           /bin/kill -TERM "$_watchdog" 2>/dev/null || true
           wait "$_watchdog" 2>/dev/null || true
+        fi
+
+        # Authoritative re-diff every 4th iteration (~2s): show_domain_diff reads
+        # cfprefsd directly via `defaults export`, so a change that landed in the
+        # same wall-clock second as the find-newer marker (and was therefore
+        # skipped) still surfaces here instead of waiting for the next write.
+        # Full mode (skip_arrays unset) covers flat keys AND array/dict (Dock,
+        # keyboard). Mirrors start_watch's proven forced-tick. No-op when idle.
+        _reddiff_tick=$(( _reddiff_tick + 1 ))
+        if (( _reddiff_tick >= 4 )) && (( ${#_active_doms[@]} > 0 )); then
+          _reddiff_tick=0
+          local _rd
+          for _rd in "${_active_doms[@]}"; do
+            show_domain_diff "$_rd"
+          done
         fi
       fi
 

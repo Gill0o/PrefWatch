@@ -35,6 +35,8 @@
 ### Fix
 - DEFAULT_EXCLUSIONS: `com.apple.inputAnalytics*` and `com.apple.appstored` were stuck inside comment lines and never applied. Moved to their own lines so they take effect.
 - Guard two bare pipeline assignments under `set -e -o pipefail` (console-user home resolution via `dscl`, version extraction via `grep`) with `|| true` — a non-zero exit from the pipeline killed the script before the next-line fallback could run (fallback was unreachable). The `dscl` one could abort init under Jamf/root.
+- Responsiveness: changes to a domain could surface seconds late, or "only when you change another setting." `poll_watch` detected solely via `find -newer` against a marker touched to *now*, and `stat -f %m` is 1-second granular — a cfprefsd flush landing in the same wall-clock second as the marker was never `-newer`, so it was skipped until a later-second write. Fix: every 4th poll iteration (~2s) `poll_watch` now re-diffs each recently-active domain via `show_domain_diff` (full mode), which reads cfprefsd directly via `defaults export` — independent of the disk-mtime race. Mirrors `start_watch`'s existing forced-tick. No-op when idle.
+- ByHost flush: the cfprefsd flush hints used the bare domain, which only syncs the standard plist — ByHost-backed prefs (trackpad, Bluetooth, screensaver) stayed buffered. The active-domains flush, the `show_plist_diff` retry loop, and the `fs_watch` preemptive flush now issue `defaults -currentHost read` for ByHost so the right file syncs.
 
 ### Noise (cont.)
 - Filter `DDMPersisted*` globally (Declarative Device Management persisted error/state keys — daemon-managed across many domains, surfaced in `com.apple.SoftwareUpdate`).
