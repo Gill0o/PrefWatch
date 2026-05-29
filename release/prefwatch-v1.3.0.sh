@@ -245,15 +245,8 @@ mdm_plist_path() {
   fi
 }
 
-# Always disable xtrace to prevent noisy variable assignments (kv=, keyname=, etc.)
-# This prevents debug output from appearing even with -v/--verbose flag
-# Users can still see all output via log files with timestamps
-# Use multiple methods to ensure xtrace is disabled regardless of shell state
-set +x 2>/dev/null || true
-set +v 2>/dev/null || true
-unsetopt xtrace 2>/dev/null || true
-unsetopt verbose 2>/dev/null || true
-{ set +o xtrace; } 2>/dev/null || true
+# Disable shell trace so -v/--verbose only toggles our own logging.
+unsetopt xtrace verbose 2>/dev/null || true
 
 # ============================================================================
 # EXCLUSIONS
@@ -300,6 +293,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
   "com.apple.imessage.bag"
+  "com.apple.facetime.bag"
+  "com.apple.gridDataServices"
   "com.apple.CloudSubscriptionFeatures*"
   "com.apple.AudioAccessory"
   "com.apple.systemsettings.extensions*"
@@ -665,9 +660,21 @@ if [ -z "$PYTHON3_BIN" ]; then
   _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
-# Temp directory — all temp files under one directory for clean /tmp
+# Temp directory + EXIT trap — covers every MAIN exit path (sub-shells
+# still arm their own TERM/INT traps to kill workers before EXIT fires).
 PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
 /bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
+trap '/bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true' EXIT
+
+# Reclaim tmpdirs from crashed prior runs (kill -0 → PID gone).
+for _stale in /tmp/prefwatch.[0-9]*(N/); do
+  _stale_pid="${${_stale:t}#prefwatch.}"
+  _stale_pid="${_stale_pid%%.*}"
+  [ "$_stale_pid" = "$$" ] && continue
+  /bin/kill -0 "$_stale_pid" 2>/dev/null && continue
+  /bin/rm -rf "$_stale" 2>/dev/null || true
+done
+unset _stale _stale_pid
 
 # Cache initialization
 typeset -A _EXCLUSION_CACHE  # Cache for domain exclusion checks
@@ -1331,6 +1338,14 @@ is_noisy_key() {
       esac
       ;;
 
+    # Content Caching daemon: Filter cache size/details (runtime counters),
+    # keep Activated (the user-toggleable enable flag)
+    com.apple.AssetCache)
+      case "$keyname" in
+        SavedCacheDetails|SavedCacheSize|SavedCacheUsedSize) return 0 ;;
+      esac
+      ;;
+
   esac
 
   return 1
@@ -1611,9 +1626,6 @@ extract_type_value_with_plutil() {
 
 # Convert a defaults delete command to PlistBuddy
 convert_delete_to_plistbuddy() {
-  # Disable xtrace to prevent debug output leaking
-  { set +x; } 2>/dev/null
-
   local cmd="$1"
 
   local domain target
@@ -1638,6 +1650,265 @@ convert_delete_to_plistbuddy() {
   local _mdm_path=$(mdm_plist_path "$plist_path")
   printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$_mdm_path"
   return 0
+}
+
+# Build `defaults write …` for dom/keyname/trimmed via type cascade.
+# Stdout = command, or empty for array/dict (not flat-writable).
+# Args: dom keyname trimmed hostflag plist_path
+_build_defaults_write_cmd() {
+  local dom="$1" keyname="$2" trimmed="$3" hostflag="$4" plist_path="$5"
+  local actual_type="" type_val noquotes str cmd=""
+  local plutil_result plutil_type plutil_value
+
+  actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" ${hostflag:+$hostflag} 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+
+  if [ "$actual_type" = "float" ]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+  elif [ "$actual_type" = "integer" ]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+  elif [ "$actual_type" = "boolean" ]; then
+    type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+  elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
+    noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
+    str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
+  elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
+    type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+  elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
+    type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+  elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+  elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
+    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+  else
+    if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
+      plutil_type="${plutil_result%%|*}"
+      plutil_value="${plutil_result#*|}"
+      case "$plutil_type" in
+        string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${plutil_value}\"" ;;
+        bool)   cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
+        int)    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
+        float)  cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
+        array|dict) cmd="" ;;
+        *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
+      esac
+    else
+      cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>"
+    fi
+  fi
+
+  printf '%s' "$cmd"
+}
+
+# Build `defaults [hostflag] delete dom "target"`. Target is :array:idx
+# when array_name is set, else keyname. Args: dom keyname array_name array_idx hostflag
+_build_defaults_delete_cmd() {
+  local dom="$1" keyname="$2" array_name="$3" array_idx="$4" hostflag="$5"
+  local target
+  if [ -n "$array_name" ]; then
+    target=":${array_name}:${array_idx}"
+  else
+    target="$keyname"
+  fi
+  if [ -n "$hostflag" ]; then
+    printf 'defaults %s delete %s "%s"' "$hostflag" "$dom" "$target"
+  else
+    printf 'defaults delete %s "%s"' "$dom" "$target"
+  fi
+}
+
+# Internal: route a log line through the right wrapper by kind.
+_log_kind() {
+  case "$1" in
+    USER)   log_user   "$2" ;;
+    SYSTEM) log_system "$2" ;;
+    *)      log_line   "$2" ;;
+  esac
+}
+
+# Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
+# Deletes go through convert_delete_to_plistbuddy.
+# Args: kind cmd note_dom is_delete
+_emit_cmd() {
+  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4"
+
+  [ -n "$cmd" ] || return 0
+  is_noisy_command "$cmd" && return 0
+
+  if [ "$is_delete" != "true" ]; then
+    local _cmd_dom
+    _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+    [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom" && return 0
+    _emit_contextual_note "$note_dom" ""
+  fi
+
+  # ALL_MODE+ONLY_CMDS skips DOMAIN output (covered by per-plist diff).
+  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+    return 0
+  fi
+
+  if [ "$is_delete" = "true" ]; then
+    local pb_delete pb_line
+    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" 2>/dev/null); then
+      while IFS= read -r pb_line; do
+        [ -n "$pb_line" ] || continue
+        case "$pb_line" in
+          "#"*) _log_kind "$kind" "$pb_line" ;;
+          *)    _log_kind "$kind" "Cmd: $pb_line" ;;
+        esac
+      done <<< "$pb_delete"
+    else
+      _log_kind "$kind" "Cmd: $cmd"
+    fi
+  else
+    _log_kind "$kind" "Cmd: $cmd"
+  fi
+}
+
+# Consume the tab-separated stream from emit_array_additions +
+# emit_nested_dict_changes. PBCMD lines → PlistBuddy emit via _log_kind;
+# metadata lines → populate global _SKIP_KEYS. Empty plist_path skips
+# PBCMDs but still populates _SKIP_KEYS.
+# Args: kind dom meta_raw plist_path
+_process_py_meta() {
+  local kind="$1" dom="$2" meta_raw="$3" plist_path="$4"
+  [ -n "$meta_raw" ] || return 0
+
+  local _domain_note_emitted=false _last_array_base=""
+  local -a _pending_comments=()
+  local _array_base _array_idx _array_keys _pb_cmd _pc _k _mdm_path pb_full
+  local -a _array_key_list
+
+  while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
+    [ -n "$_array_base" ] || continue
+    if [ "$_array_base" = "PBCMD" ]; then
+      _pb_cmd="$_array_idx"
+      # Buffer comments until a real command makes it through filtering
+      if [[ "$_pb_cmd" == "#"* ]]; then
+        _pending_comments+=("$_pb_cmd")
+        continue
+      fi
+      [ -n "$plist_path" ] || continue
+      is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
+      if [ "$_domain_note_emitted" = "false" ]; then
+        _emit_contextual_note "$dom" "$_last_array_base"
+        _domain_note_emitted=true
+      fi
+      if (( ${#_pending_comments[@]} > 0 )); then
+        for _pc in "${_pending_comments[@]}"; do
+          _log_kind "$kind" "Cmd: $_pc"
+        done
+        _pending_comments=()
+      fi
+      _mdm_path=$(mdm_plist_path "$plist_path")
+      pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
+      _log_kind "$kind" "Cmd: $pb_full"
+      continue
+    fi
+    # Metadata line — populate _SKIP_KEYS at every level the Python
+    # workers may have produced (top key, top:sub, base:idx:sub, etc.)
+    _last_array_base="$_array_base"
+    _SKIP_KEYS["$_array_base"]=1
+    if [ -n "$_array_idx" ]; then
+      _SKIP_KEYS[":${_array_base}:${_array_idx}"]=1
+    fi
+    if [ -n "$_array_keys" ]; then
+      IFS=',' read -rA _array_key_list <<< "$_array_keys"
+      for _k in "${_array_key_list[@]}"; do
+        [ -n "$_k" ] || continue
+        _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        [ -n "$_k" ] || continue
+        _SKIP_KEYS["$_k"]=1
+        _SKIP_KEYS["${_array_base}:${_k}"]=1
+        _SKIP_KEYS[":${_array_base}:${_k}"]=1
+        if [ -n "$_array_idx" ]; then
+          _SKIP_KEYS["${_array_base}:${_array_idx}:${_k}"]=1
+          _SKIP_KEYS[":${_array_base}:${_array_idx}:${_k}"]=1
+        fi
+      done
+    fi
+  done <<< "$meta_raw"
+}
+
+# Walk the unified diff(prev,curr) and emit write/delete via _emit_cmd
+# for each key not pre-handled by _SKIP_KEYS / is_noisy_key. type_src is
+# the plist used by _build_defaults_write_cmd for plutil-fallback;
+# diff_label tags the "Diff <label>:" log lines.
+# Args: kind dom hostflag prev curr type_src diff_label
+# Reads: _SKIP_KEYS, _HAS_ARRAY_ADDITIONS.
+_process_diff_lines() {
+  local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7"
+  [ -s "$prev" ] || return 0
+
+  typeset -A _added_keys
+  _added_keys=()
+  local _aline _ak
+  while IFS= read -r _aline; do
+    _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
+    [ -n "$_ak" ] && _added_keys["$_ak"]=1
+  done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
+
+  local dline kv keyname val snippet pretty_key array_meta array_name array_idx trimmed cmd delete_cmd
+  while IFS= read -r dline; do
+    [ -n "$dline" ] || continue
+
+    _log_kind "$kind" "Diff $diff_label: $dline"
+
+    array_meta="" array_name="" array_idx=""
+    kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
+    [ -n "$kv" ] || continue
+
+    keyname="${kv%%|*}"
+    val="${kv#*|}"
+
+    [ -n "${_SKIP_KEYS[$keyname]:-}" ] && continue
+
+    # Secondary filter: PBCMD-driven runs may leak sub-keys of dict
+    # additions into the top-level diff text. Detect & drop them.
+    if [ "${_HAS_ARRAY_ADDITIONS:-false}" = "true" ] && [[ "$keyname" != *":"* ]]; then
+      if [[ "$keyname" == *" "* ]] || \
+         [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-data|file-label|bundle-identifier|_CFURLString).*$ ]]; then
+        continue
+      fi
+    fi
+
+    is_noisy_key "$dom" "$keyname" && continue
+
+    if array_meta=$(parse_array_index_key "$keyname" 2>/dev/null); then
+      array_name="${array_meta%% *}"
+      array_idx="${array_meta##* }"
+      pretty_key="${array_name}[${array_idx}]"
+    else
+      pretty_key="$keyname"
+    fi
+
+    snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
+    _log_kind "$kind" "Key: ${pretty_key} | Item: ${snippet}"
+
+    case "$dline" in
+      +*)
+        [ -n "$array_name" ] && continue
+        [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]] && continue
+        trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "$hostflag" "$type_src")
+        _emit_cmd "$kind" "$cmd" "$dom" false
+        ;;
+      -*)
+        [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]] && continue
+        [ -n "${_added_keys[$keyname]:-}" ] && continue
+        [[ "$dom" == com.apple.print.custompresets* ]] && continue
+        # Verify key is truly gone (not just value-changed) by re-scanning $curr
+        if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
+          continue
+        fi
+        delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
+        _emit_cmd "$kind" "$delete_cmd" "$dom" true
+        ;;
+    esac
+  done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/')
 }
 
 # ---------------------------------------
@@ -2274,9 +2545,16 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
-  # Lock to prevent fs_watch + poll_watch processing the same file simultaneously.
-  # Wait up to 3s for the lock (chained events would otherwise be dropped).
+  # Mutex for fs_watch ↔ poll_watch on the same plist (wait up to 3s).
+  # Reclaim lockdirs > 10s old — owning process was killed before rmdir.
   local lockdir="$CACHE_DIR/${key}.lock"
+  if [ -d "$lockdir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+    typeset -A _lockstat
+    if zstat -H _lockstat "$lockdir" 2>/dev/null && \
+       (( EPOCHSECONDS - ${_lockstat[mtime]:-0} > 10 )); then
+      /bin/rmdir "$lockdir" 2>/dev/null || true
+    fi
+  fi
   local _wait_attempts=0
   while ! /bin/mkdir "$lockdir" 2>/dev/null; do
     _wait_attempts=$((_wait_attempts + 1))
@@ -2329,10 +2607,10 @@ show_plist_diff() {
     fi
   fi
 
-  typeset -A _skip_keys
-  _skip_keys=()
+  typeset -gA _SKIP_KEYS
+  _SKIP_KEYS=()
+  typeset -g _HAS_ARRAY_ADDITIONS=false
   local _array_meta_raw=""
-  local _has_array_additions=false
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     # Run the 3 Python diff invocations in parallel (each ~60-100ms)
@@ -2352,294 +2630,22 @@ show_plist_diff() {
       fi
     fi
     if [ -n "$_array_meta_raw" ]; then
-      _has_array_additions=true
-      typeset -A _noted_arrays=()
-      local _domain_note_emitted=false
-      local -a _pending_comments=()
-      local _last_array_base=""
-      while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
-        [ -n "$_array_base" ] || continue
-        # Handle PBCMD lines (PlistBuddy commands from Python)
-        if [ "$_array_base" = "PBCMD" ]; then
-          local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
-          if [[ "$_pb_cmd" == "#"* ]]; then
-            _pending_comments+=("$_pb_cmd")
-            continue
-          fi
-          # Filter noisy key paths in PlistBuddy commands
-          is_noisy_pbcmd "$_dom" "$_pb_cmd" && continue
-          # Emit domain-level note before first non-filtered command (using tracked array_base)
-          if [ "$_domain_note_emitted" = "false" ]; then
-            _emit_contextual_note "$_dom" "$_last_array_base"
-            _domain_note_emitted=true
-          fi
-          # Flush buffered comments now that we have a real command
-          if (( ${#_pending_comments[@]} > 0 )); then
-            for _pc in "${_pending_comments[@]}"; do
-              case "$kind" in
-                USER) log_user "Cmd: $_pc" ;;
-                SYSTEM) log_system "Cmd: $_pc" ;;
-                *) log_line "Cmd: $_pc" ;;
-              esac
-            done
-            _pending_comments=()
-          fi
-          local _mdm_path=$(mdm_plist_path "$path")
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
-          case "$kind" in
-            USER) log_user "Cmd: $pb_full" ;;
-            SYSTEM) log_system "Cmd: $pb_full" ;;
-            *) log_line "Cmd: $pb_full" ;;
-          esac
-          continue
-        fi
-        # Metadata line: populate _skip_keys and track array_base for deferred note
-        _last_array_base="$_array_base"
-        _skip_keys["$_array_base"]=1
-        if [ -n "$_array_idx" ]; then
-          _skip_keys[":${_array_base}:${_array_idx}"]=1
-        fi
-        if [ -n "$_array_keys" ]; then
-          typeset -a _array_key_list
-          IFS=',' read -rA _array_key_list <<< "$_array_keys"
-          for _k in "${_array_key_list[@]}"; do
-            [ -n "$_k" ] || continue
-            _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            [ -n "$_k" ] || continue
-            _skip_keys["$_k"]=1
-            _skip_keys["${_array_base}:${_k}"]=1
-            _skip_keys[":${_array_base}:${_k}"]=1
-            if [ -n "$_array_idx" ]; then
-              _skip_keys["${_array_base}:${_array_idx}:${_k}"]=1
-              _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
-            fi
-          done
-        fi
-      done <<< "$_array_meta_raw"
+      _HAS_ARRAY_ADDITIONS=true
+      _process_py_meta "$kind" "$_dom" "$_array_meta_raw" "$path"
     fi
 
     emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json" "$_py_del"
     /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
   fi
 
-  if [ -s "$prev" ] && [ "$silent" != "true" ]; then
-    # Pre-collect keys from + lines to identify value changes (not deletions)
-    typeset -A _added_keys
-    _added_keys=()
-    while IFS= read -r _aline; do
-      local _ak
-      _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
-      [ -n "$_ak" ] && _added_keys["$_ak"]=1
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
-
-    typeset -A _noted_dom=()
-
-    # Use process substitution (not pipe) so _skip_keys is accessible in while loop
-    while IFS= read -r dline; do
-      [ -n "$dline" ] || continue
-
-      if [ "$kind" = "USER" ]; then
-        log_user "Diff $path: $dline"
-      else
-        log_system "Diff $path: $dline"
-      fi
-
-      local kv keyname val snippet pretty_key array_meta="" array_name="" array_idx="" array_cmd=""
-      kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
-      if [ -n "$kv" ]; then
-        keyname="${kv%%|*}"
-        val="${kv#*|}"
-
-        if [ -n "${_skip_keys[$keyname]:-}" ]; then
-          continue
-        fi
-
-        # Additional filtering: if we had array additions, skip any top-level key
-        # that looks like it's part of a dictionary (contains space or common dict key patterns)
-        if [ "$_has_array_additions" = "true" ] && [[ "$keyname" != *":"* ]]; then
-          # Skip keys that are likely dictionary sub-keys (contain spaces or match common patterns)
-          if [[ "$keyname" == *" "* ]] || [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-data|file-label|bundle-identifier|_CFURLString).*$ ]]; then
-            continue
-          fi
-        fi
-
-        if is_noisy_key "$_dom" "$keyname"; then
-          continue
-        fi
-
-        if array_meta=$(parse_array_index_key "$keyname" 2>/dev/null); then
-          array_name="${array_meta%% *}"
-          array_idx="${array_meta##* }"
-          pretty_key="${array_name}[${array_idx}]"
-        else
-          pretty_key="$keyname"
-        fi
-
-        snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
-        if [ "$kind" = "USER" ]; then
-          log_user "Key: ${pretty_key} | Item: ${snippet}"
-        else
-          log_system "Key: ${pretty_key} | Item: ${snippet}"
-        fi
-
-        case "$dline" in
-          +*)
-            if [ -n "$array_name" ]; then
-              continue
-            fi
-            # Skip nested keys (indent ≥ 4 spaces in diff = sub-dict values)
-            if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-            local base dom hostflag cmd trimmed type_val noquotes str
-            base="$(/usr/bin/basename "$path")"
-            dom="${base%.plist}"
-            hostflag=""
-            if [[ "$path" == *"/ByHost/"* ]]; then
-              hostflag="-currentHost"
-              dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
-            fi
-            trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-
-            # Check actual plist type first to avoid misdetection (e.g., float "1" detected as bool/int)
-            local actual_type=""
-            actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" ${hostflag:+$hostflag} 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
-
-            # Use actual plist type when available for numeric/bool values to avoid misdetection
-            if [ "$actual_type" = "float" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
-            elif [ "$actual_type" = "integer" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
-            elif [ "$actual_type" = "boolean" ]; then
-              type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
-            elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
-              noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
-              str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
-            elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
-              type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
-            elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
-              type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
-            elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
-            elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
-            else
-              local plutil_result plutil_type plutil_value
-              if plutil_result=$(extract_type_value_with_plutil "$path" "$keyname" 2>/dev/null); then
-                plutil_type="${plutil_result%%|*}"
-                plutil_value="${plutil_result#*|}"
-                case "$plutil_type" in
-                  string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${plutil_value}\"" ;;
-                  bool) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
-                  int) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
-                  float) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
-                  array|dict) cmd="" ;;
-                  *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
-                esac
-              else
-                cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>"
-              fi
-            fi
-
-            if [ -n "$cmd" ]; then
-              local _cmd_dom
-              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-                :
-              elif is_noisy_command "$cmd"; then
-                :
-              else
-                if [ -z "${_noted_dom[$_dom]:-}" ]; then
-                  _emit_contextual_note "$_dom" ""
-                  _noted_dom[$_dom]=1
-                fi
-                if [ "$kind" = "USER" ]; then
-                  log_user "Cmd: $cmd"
-                else
-                  log_system "Cmd: $cmd"
-                fi
-              fi
-            fi
-            ;;
-          -*)
-            # Skip nested keys (same logic as + case above)
-            if [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-            # Skip value changes (key exists in both - and + lines = changed, not deleted)
-            if [ -n "${_added_keys[$keyname]:-}" ]; then
-              continue
-            fi
-            # Skip flat key deletes for print presets (array deletion covers all sub-keys)
-            if [[ "$_dom" == com.apple.print.custompresets* ]]; then
-              continue
-            fi
-            # Verify key is truly deleted by checking the current snapshot
-            # If the key still exists in $curr, it's a value change not a deletion
-            if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
-              continue
-            fi
-            local base dom hostflag target delete_cmd
-            base="$(/usr/bin/basename "$path")"
-            dom="${base%.plist}"
-            hostflag=""
-            if [[ "$path" == *"/ByHost/"* ]]; then
-              hostflag="-currentHost"
-              dom="$(printf '%s' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
-            fi
-            if [ -n "$array_name" ]; then
-              target=":${array_name}:${array_idx}"
-            else
-              target="$keyname"
-            fi
-            delete_cmd="defaults"
-            if [ -n "$hostflag" ]; then
-              delete_cmd="${delete_cmd} ${hostflag}"
-            fi
-            delete_cmd="${delete_cmd} delete ${dom} \"${target}\""
-
-            if is_noisy_command "$delete_cmd"; then
-              :
-            elif [ "$kind" = "USER" ]; then
-              local pb_delete
-              if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
-                while IFS= read -r pb_line; do
-                  [ -n "$pb_line" ] || continue
-                  if [[ "$pb_line" == "#"* ]]; then
-                    log_user "$pb_line"
-                  else
-                    log_user "Cmd: $pb_line"
-                  fi
-                done <<< "$pb_delete"
-              else
-                log_user "Cmd: $delete_cmd"
-              fi
-            else
-              local pb_delete
-              if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
-                while IFS= read -r pb_line; do
-                  [ -n "$pb_line" ] || continue
-                  if [[ "$pb_line" == "#"* ]]; then
-                    log_system "$pb_line"
-                  else
-                    log_system "Cmd: $pb_line"
-                  fi
-                done <<< "$pb_delete"
-              else
-                log_system "Cmd: $delete_cmd"
-              fi
-            fi
-            ;;
-        esac
-      fi
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/')
-  else
-    :
+  if [ "$silent" != "true" ]; then
+    local _base="$(/usr/bin/basename "$path")"
+    local _emit_dom="${_base%.plist}" _emit_hostflag=""
+    if [[ "$path" == *"/ByHost/"* ]]; then
+      _emit_hostflag="-currentHost"
+      _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
+    fi
+    _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -2679,10 +2685,10 @@ show_domain_diff() {
   fi
 
   prev_json="$CACHE_DIR/${key}.prev.json"
-  typeset -A _skip_keys
-  _skip_keys=()
+  typeset -gA _SKIP_KEYS
+  _SKIP_KEYS=()
+  typeset -g _HAS_ARRAY_ADDITIONS=false
   local _array_meta_raw=""
-  local _has_array_additions=false
 
   if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     # Run the 3 Python diff invocations in parallel
@@ -2705,249 +2711,14 @@ show_domain_diff() {
     fi
 
     if [ -n "$_array_meta_raw" ]; then
-      _has_array_additions=true
+      _HAS_ARRAY_ADDITIONS=true
       local _pb_plist_path
       _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
-      typeset -A _noted_arrays=()
-      local _domain_note_emitted=false
-      local -a _pending_comments=()
-      local _last_array_base=""
-      while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
-        [ -n "$_array_base" ] || continue
-        # Handle PBCMD lines (PlistBuddy commands from Python)
-        if [ "$_array_base" = "PBCMD" ]; then
-          local _pb_cmd="$_array_idx"
-          # Comments from Python (e.g. # Dock: AppName, # NOTE:) — buffer until a real command passes filtering
-          if [[ "$_pb_cmd" == "#"* ]]; then
-            _pending_comments+=("$_pb_cmd")
-            continue
-          fi
-          [ -n "$_pb_plist_path" ] || continue
-          # Filter noisy key paths in PlistBuddy commands
-          is_noisy_pbcmd "$dom" "$_pb_cmd" && continue
-          # Emit domain-level note before first non-filtered command (using tracked array_base)
-          if [ "$_domain_note_emitted" = "false" ]; then
-            _emit_contextual_note "$dom" "$_last_array_base"
-            _domain_note_emitted=true
-          fi
-          # Flush buffered comments now that we have a real command
-          if (( ${#_pending_comments[@]} > 0 )); then
-            for _pc in "${_pending_comments[@]}"; do
-              log_line "Cmd: $_pc"
-            done
-            _pending_comments=()
-          fi
-          local _mdm_path=$(mdm_plist_path "$_pb_plist_path")
-          local pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
-          log_line "Cmd: $pb_full"
-          continue
-        fi
-        # Metadata line: populate _skip_keys and track array_base for deferred note
-        _last_array_base="$_array_base"
-        _skip_keys["$_array_base"]=1
-        if [ -n "$_array_idx" ]; then
-          _skip_keys[":${_array_base}:${_array_idx}"]=1
-        fi
-        if [ -n "$_array_keys" ]; then
-          typeset -a _array_key_list
-          IFS=',' read -rA _array_key_list <<< "$_array_keys"
-          for _k in "${_array_key_list[@]}"; do
-            [ -n "$_k" ] || continue
-            _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            [ -n "$_k" ] || continue
-            _skip_keys["$_k"]=1
-            _skip_keys["${_array_base}:${_k}"]=1
-            _skip_keys[":${_array_base}:${_k}"]=1
-            if [ -n "$_array_idx" ]; then
-              _skip_keys["${_array_base}:${_array_idx}:${_k}"]=1
-              _skip_keys[":${_array_base}:${_array_idx}:${_k}"]=1
-            fi
-          done
-        fi
-      done <<< "$_array_meta_raw"
+      _process_py_meta DOMAIN "$dom" "$_array_meta_raw" "$_pb_plist_path"
     fi
   fi
 
-  if [ -s "$prev" ]; then
-    # Pre-collect keys from + lines to identify value changes (not deletions)
-    typeset -A _added_keys
-    _added_keys=()
-    while IFS= read -r _aline; do
-      local _ak
-      _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
-      [ -n "$_ak" ] && _added_keys["$_ak"]=1
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/')
-
-    typeset -A _noted_dom=()
-
-    # Use process substitution (not pipe) so _skip_keys is accessible in while loop
-    while IFS= read -r dline; do
-      [ -n "$dline" ] || continue
-      log_line "Diff $dom: $dline"
-
-      local kv keyname val snippet pretty_key array_meta="" array_name="" array_idx="" array_cmd=""
-      kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
-      if [ -n "$kv" ]; then
-        keyname="${kv%%|*}"
-        val="${kv#*|}"
-
-        if [ -n "${_skip_keys[$keyname]:-}" ]; then
-          continue
-        fi
-
-        # Additional filtering: if we had array additions, skip any top-level key
-        # that looks like it's part of a dictionary (contains space or common dict key patterns)
-        if [ "$_has_array_additions" = "true" ] && [[ "$keyname" != *":"* ]]; then
-          # Skip keys that are likely dictionary sub-keys (contain spaces or match common patterns)
-          if [[ "$keyname" == *" "* ]] || [[ "$keyname" =~ ^(InputSourceKind|KeyboardLayout|tile-data|file-data|file-label|bundle-identifier|_CFURLString).*$ ]]; then
-            continue
-          fi
-        fi
-
-        if is_noisy_key "$dom" "$keyname"; then
-          continue
-        fi
-
-        if array_meta=$(parse_array_index_key "$keyname" 2>/dev/null); then
-          array_name="${array_meta%% *}"
-          array_idx="${array_meta##* }"
-          pretty_key="${array_name}[${array_idx}]"
-        else
-          pretty_key="$keyname"
-        fi
-
-        snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
-        log_line "Key: ${pretty_key} | Item: ${snippet}"
-
-        case "$dline" in
-          +*)
-            if [ -n "$array_name" ]; then
-              continue
-            fi
-            # Skip nested keys (indent ≥ 4 spaces in diff = sub-dict values)
-            if [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-
-            local trimmed type_val str noquotes cmd
-            trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-
-            # Check actual plist type first to avoid misdetection (e.g., float "1" detected as bool/int)
-            local actual_type=""
-            actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
-
-            # Use actual plist type when available for numeric/bool values to avoid misdetection
-            if [ "$actual_type" = "float" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" -float ${trimmed}"
-            elif [ "$actual_type" = "integer" ]; then
-              cmd="defaults write ${dom} \"${keyname}\" -int ${trimmed}"
-            elif [ "$actual_type" = "boolean" ]; then
-              type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
-            elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
-              noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
-              str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
-              cmd="defaults write ${dom} \"${keyname}\" -string \"${str}\""
-            elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
-              type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
-            elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
-              type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-              cmd="defaults write ${dom} \"${keyname}\" -bool ${type_val}"
-            elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" -int ${trimmed}"
-            elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-              cmd="defaults write ${dom} \"${keyname}\" -float ${trimmed}"
-            else
-              local plutil_result plutil_type plutil_value
-              if [ -f "$tmpplist" ] && plutil_result=$(extract_type_value_with_plutil "$tmpplist" "$keyname" 2>/dev/null); then
-                plutil_type="${plutil_result%%|*}"
-                plutil_value="${plutil_result#*|}"
-                case "$plutil_type" in
-                  string) cmd="defaults write ${dom} \"${keyname}\" -string \"${plutil_value}\"" ;;
-                  bool) cmd="defaults write ${dom} \"${keyname}\" -bool ${plutil_value}" ;;
-                  int) cmd="defaults write ${dom} \"${keyname}\" -int ${plutil_value}" ;;
-                  float) cmd="defaults write ${dom} \"${keyname}\" -float ${plutil_value}" ;;
-                  array|dict) cmd="" ;;
-                  *) cmd="defaults write ${dom} \"${keyname}\" <type> <value>" ;;
-                esac
-              else
-                cmd="defaults write ${dom} \"${keyname}\" <type> <value>"
-              fi
-            fi
-
-            if [ -n "$cmd" ]; then
-              local _cmd_dom
-              _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
-              if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
-                :
-              elif is_noisy_command "$cmd"; then
-                :
-              else
-                if [ -z "${_noted_dom[$dom]:-}" ]; then
-                  _emit_contextual_note "$dom" ""
-                  _noted_dom[$dom]=1
-                fi
-                if [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
-                  :
-                else
-                  log_line "Cmd: $cmd"
-                fi
-              fi
-            fi
-            ;;
-          -*)
-            # Skip nested keys (same logic as + case above)
-            if [[ "$dline" =~ ^[-][[:space:]]{4,}\" ]]; then
-              continue
-            fi
-            # Skip value changes (key exists in both - and + lines = changed, not deleted)
-            if [ -n "${_added_keys[$keyname]:-}" ]; then
-              continue
-            fi
-            # Skip flat key deletes for print presets (array deletion covers all sub-keys)
-            if [[ "$dom" == com.apple.print.custompresets* ]]; then
-              continue
-            fi
-            # Verify key is truly deleted by checking the current snapshot
-            # If the key still exists in $curr, it's a value change not a deletion
-            if [ -z "$array_name" ] && /usr/bin/grep -qF "\"$keyname\" =>" "$curr" 2>/dev/null; then
-              continue
-            fi
-            local target delete_cmd
-            if [ -n "$array_name" ]; then
-              target=":${array_name}:${array_idx}"
-            else
-              target="$keyname"
-            fi
-            delete_cmd="defaults delete ${dom} \"${target}\""
-
-            if is_noisy_command "$delete_cmd"; then
-              :
-            elif [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
-              :
-            else
-              local pb_delete
-              if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
-                while IFS= read -r pb_line; do
-                  [ -n "$pb_line" ] || continue
-                  if [[ "$pb_line" == "#"* ]]; then
-                    log_line "$pb_line"
-                  else
-                    log_line "Cmd: $pb_line"
-                  fi
-                done <<< "$pb_delete"
-              else
-                log_line "Cmd: $delete_cmd"
-              fi
-            fi
-            ;;
-        esac
-      fi
-    done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/')
-  else
-    :
-  fi
+  _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
   /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
@@ -3302,6 +3073,46 @@ start_watch_all() {
   }
 
   # CUPS printer monitoring function
+  # Printer Sharing toggle — independent watcher in its own sub-shell so
+  # the lpstat 5s debounce (which fires whenever cupsd DNS-SD-(un)publishes)
+  # never blocks sharing detection. Parses /etc/cups/cupsd.conf's Browsing
+  # directive directly (written instantly by writeconfig, before cupsd
+  # reloads — so no cupsd-runtime lag).
+  cups_sharing_watch() {
+    local cupsdconf="/etc/cups/cupsd.conf"
+    [ -f "$cupsdconf" ] || { log_line "Cmd: # cups_sharing_watch DISABLED: $cupsdconf not present"; return 0; }
+    local share_snap=""
+    share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
+    [ -z "$share_snap" ] && share_snap="off"
+    log_line "Cmd: # cups_sharing_watch active (initial: $share_snap)"
+    local tahoe_note_emitted=false
+
+    while true; do
+      /bin/sleep 0.5 || true
+      [ -f "$cupsdconf" ] || continue
+      local share_curr=""
+      share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
+      [ -z "$share_curr" ] && share_curr="off"
+      if [ "$share_curr" != "$share_snap" ]; then
+        if [ "$tahoe_note_emitted" = "false" ]; then
+          log_line "Cmd: # NOTE: Tahoe quirk — Printer Sharing toggle (enable or disable) may need a re-toggle to surface (cupsd.conf rewrites lazily on next state change)"
+          tahoe_note_emitted=true
+        fi
+        case "$share_curr" in
+          on|yes)
+            log_line "Cmd: # CUPS: Printer Sharing enabled"
+            log_line "Cmd: sudo /usr/sbin/cupsctl --share-printers"
+            ;;
+          *)
+            log_line "Cmd: # CUPS: Printer Sharing disabled"
+            log_line "Cmd: sudo /usr/sbin/cupsctl --no-share-printers"
+            ;;
+        esac
+        share_snap="$share_curr"
+      fi
+    done
+  }
+
   cups_watch() {
     local cups_snapshot cups_current
     cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
@@ -3311,7 +3122,7 @@ start_watch_all() {
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
 
     while true; do
-      /bin/sleep 2
+      /bin/sleep 1
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
 
       # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
@@ -3349,6 +3160,165 @@ start_watch_all() {
 
       # Update snapshot
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
+    done
+  }
+
+  # Stream eslogger exec events for sharing-related CLI binaries and emit
+  # the reconstructed command line. Catches kickstart / systemsetup / sharing
+  # / networksetup invocations (UI toggles for Remote Management, SSH, File
+  # Sharing, Network Sharing, etc.) — these tools modify state outside
+  # /Library/Preferences/ so the regular fs_usage path can't capture them.
+  # Requires root + eslogger (Ventura+) + Python3.
+  sharing_exec_watch() {
+    if [ ! -x /usr/bin/eslogger ]; then
+      log_line "Cmd: # sharing_exec_watch DISABLED: /usr/bin/eslogger not executable"
+      return 0
+    fi
+    if [ -z "$PYTHON3_BIN" ]; then
+      log_line "Cmd: # sharing_exec_watch DISABLED: Python3 unavailable"
+      return 0
+    fi
+    log_line "Cmd: # sharing_exec_watch active"
+    /bin/mkdir -p "$PREFWATCH_TMPDIR/sharing_recent" 2>/dev/null || true
+
+    # Python reads stdin via readline() in a loop to avoid block-buffering
+    # on the pipe — `for line in sys.stdin` defers to a large internal
+    # buffer and would never fire on sparse event streams (one toggle every
+    # few minutes). -u also forces unbuffered stdout.
+    /usr/bin/eslogger exec 2>/dev/null \
+      | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' -e '/launchctl"' \
+      | "$PYTHON3_BIN" -u -c '
+import json, sys, shlex
+# Direct sharing-toolkit binaries — any invocation is relevant
+DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
+# launchctl is the universal worker macOS Tahoe System Settings calls via
+# the writeconfig XPC service. Filter to subcommands that change state —
+# drop noisy kill / list / print / dumpstate.
+LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    try:
+        d = json.loads(line)
+        ev = d.get("event", {}).get("exec", {})
+        tgt = ev.get("target", {})
+        exe = tgt.get("executable", {}).get("path", "")
+        if not exe:
+            continue
+        basename = exe.rsplit("/", 1)[-1]
+        args = ev.get("args", []) or []
+        if basename in DIRECT_BINS:
+            tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
+            print((exe + " " + tail).rstrip(), flush=True)
+        elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
+            tail = " ".join(shlex.quote(a) for a in args[1:])
+            print(exe + " " + tail, flush=True)
+    except Exception:
+        pass
+' 2>/dev/null \
+      | while IFS= read -r cmd; do
+          [ -n "$cmd" ] || continue
+          log_line "Cmd: $cmd"
+          # Drop a timestamped marker per service so launchd_state_watch can
+          # detect when it's about to emit an equivalent form and add a NOTE.
+          # Match: launchctl <verb> -w <…/com.apple.<svc>.plist>
+          if [[ "$cmd" =~ launchctl[[:space:]]+(load|unload)[[:space:]]+-w[[:space:]]+[^[:space:]]+/([^/]+)\.plist ]]; then
+            /usr/bin/touch "$PREFWATCH_TMPDIR/sharing_recent/${match[2]}" 2>/dev/null || true
+          fi
+        done
+  }
+
+  # Poll /var/db/com.apple.xpc.launchd/disabled.plist + disabled.<UID>.plist
+  # every 2s. macOS Tahoe System Settings flips most sharing services via
+  # pure XPC to launchd — no exec event fires — but the persistent disabled
+  # state still lands in these files. Emit `launchctl enable/disable
+  # <domain>/<service>` for each on/off transition (true = disabled, false
+  # = enabled). Requires root + Python3 (for JSON diff).
+  launchd_state_watch() {
+    [ -n "$PYTHON3_BIN" ] || return 0
+    local sys_plist="/var/db/com.apple.xpc.launchd/disabled.plist"
+    local user_plist="" console_uid=""
+    if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+      console_uid=$(id -u "$CONSOLE_USER" 2>/dev/null) || console_uid=""
+      [ -n "$console_uid" ] && user_plist="/var/db/com.apple.xpc.launchd/disabled.${console_uid}.plist"
+    fi
+    log_line "Cmd: # launchd_state_watch active"
+
+    local sys_prev="$PREFWATCH_TMPDIR/launchd.sys.json"
+    local user_prev="$PREFWATCH_TMPDIR/launchd.user.json"
+    [ -f "$sys_plist" ] && /usr/bin/plutil -convert json -o "$sys_prev" "$sys_plist" 2>/dev/null || true
+    [ -n "$user_plist" ] && [ -f "$user_plist" ] && /usr/bin/plutil -convert json -o "$user_prev" "$user_plist" 2>/dev/null || true
+
+    _emit_launchd_diff() {
+      local prev="$1" curr="$2" domain="$3"
+      "$PYTHON3_BIN" - "$prev" "$curr" "$domain" 2>/dev/null <<'PY'
+import json, sys
+prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
+def load(p):
+    try:
+        with open(p) as f: return json.load(f)
+    except Exception:
+        return {}
+prev = load(prev_path)
+curr = load(curr_path)
+for k in sorted(set(prev) | set(curr)):
+    pv, cv = prev.get(k), curr.get(k)
+    if pv == cv:
+        continue
+    if cv is False or cv is None:  # newly enabled, or removed from disabled list
+        print(f"/bin/launchctl enable {domain}/{k}")
+    elif cv is True:
+        print(f"/bin/launchctl disable {domain}/{k}")
+PY
+    }
+
+    # Wrap each emitted command: if sharing_exec_watch dropped a marker for
+    # the same service in the last 10s, prepend a one-shot NOTE so the
+    # reader knows the two forms are equivalent.
+    _emit_with_dup_note() {
+      local cmd="$1" recent_dir="$PREFWATCH_TMPDIR/sharing_recent"
+      [ -n "$cmd" ] || return 0
+      if [ -d "$recent_dir" ] && [[ "$cmd" =~ launchctl[[:space:]]+(enable|disable)[[:space:]]+[^[:space:]]+/([^[:space:]]+)$ ]]; then
+        local svc="${match[2]}" marker
+        marker="$recent_dir/$svc"
+        if [ -f "$marker" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+          typeset -A _mst
+          if zstat -H _mst "$marker" 2>/dev/null && (( EPOCHSECONDS - ${_mst[mtime]:-0} < 10 )); then
+            log_line "Cmd: # NOTE: equivalent to the launchctl load/unload above"
+            /bin/rm -f "$marker" 2>/dev/null || true
+          fi
+        fi
+      fi
+      log_line "Cmd: $cmd"
+    }
+
+    while true; do
+      /bin/sleep 2
+      if [ -f "$sys_plist" ]; then
+        local sys_curr="$PREFWATCH_TMPDIR/launchd.sys.curr.json"
+        /usr/bin/plutil -convert json -o "$sys_curr" "$sys_plist" 2>/dev/null || true
+        if [ -s "$sys_curr" ] && ! /usr/bin/cmp -s "$sys_prev" "$sys_curr" 2>/dev/null; then
+          _emit_launchd_diff "$sys_prev" "$sys_curr" "system" | while IFS= read -r cmd; do
+            _emit_with_dup_note "$cmd"
+          done
+          /bin/mv -f "$sys_curr" "$sys_prev" 2>/dev/null || true
+        else
+          /bin/rm -f "$sys_curr" 2>/dev/null || true
+        fi
+      fi
+      if [ -n "$user_plist" ] && [ -f "$user_plist" ]; then
+        local user_curr="$PREFWATCH_TMPDIR/launchd.user.curr.json"
+        /usr/bin/plutil -convert json -o "$user_curr" "$user_plist" 2>/dev/null || true
+        if [ -s "$user_curr" ] && ! /usr/bin/cmp -s "$user_prev" "$user_curr" 2>/dev/null; then
+          _emit_launchd_diff "$user_prev" "$user_curr" "gui/${console_uid}" | while IFS= read -r cmd; do
+            _emit_with_dup_note "$cmd"
+          done
+          /bin/mv -f "$user_curr" "$user_prev" 2>/dev/null || true
+        else
+          /bin/rm -f "$user_curr" 2>/dev/null || true
+        fi
+      fi
     done
   }
 
@@ -3456,10 +3426,19 @@ start_watch_all() {
   local POLL_PID=$!
   cups_watch &
   local CUPS_PID=$!
+  cups_sharing_watch &
+  local CUPS_SHARING_PID=$!
   pmset_watch &
   local PMSET_PID=$!
+  local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
+  if [ "$(id -u)" -eq 0 ]; then
+    sharing_exec_watch &
+    SHARING_EXEC_PID=$!
+    launchd_state_watch &
+    LAUNCHD_STATE_PID=$!
+  fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $PMSET_PID 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 

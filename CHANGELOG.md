@@ -1,14 +1,11 @@
 # Changelog
 
-## 1.4.0 — unreleased
+## 1.3.0 — unreleased
 
 ### Feature
 - New `sharing_exec_watch` background subshell in ALL mode: streams `eslogger exec` (macOS Ventura+ Endpoint Security CLI) filtered to sharing-related binaries (`kickstart`, `systemsetup`, `sharing`, `networksetup`, `launchctl`) and emits the exact `<exe> <args…>` invocation as it fires. Captures the path-based launchctl form used by macOS Tahoe System Settings via the private `writeconfig` XPC (e.g. `launchctl unload -w /System/Library/LaunchDaemons/com.apple.smbd.plist` for File Sharing). Output is MDM-replay-faithful via `shlex.quote`. Subcommand filter on `launchctl` keeps only state-changing forms (`load`/`unload`/`enable`/`disable`/`bootstrap`/`bootout`/`kickstart`).
-- New `launchd_state_watch` background subshell in ALL mode: polls `/var/db/com.apple.xpc.launchd/disabled.plist` (system) and `disabled.<UID>.plist` (gui domain) every 2s. macOS Tahoe flips most Sharing services (SSH, Screen Sharing, Remote Management, etc.) via pure XPC to launchd — no exec event fires — but the persistent disabled-state still lands in these files. Diffs the JSON snapshot against the previous one and emits `/bin/launchctl enable system/<service>` or `/bin/launchctl disable system/<service>` (and `gui/<UID>/<service>` for per-user services) on each transition. Catches every toggle that `sharing_exec_watch` misses on Tahoe.
-- `cups_watch` extended to detect Printer Sharing toggle: polls `cupsctl _share_printers` value and emits `sudo /usr/sbin/cupsctl --share-printers` (or `--no-share-printers`) on transition. Printer Sharing on Tahoe bypasses both `launchctl` (cupsd is permanent) and `defaults`; only `cupsctl`/`cupsd.conf` mutate.
-
-
-## 1.3.0 — unreleased
+- New `launchd_state_watch` background subshell in ALL mode: polls `/var/db/com.apple.xpc.launchd/disabled.plist` (system) and `disabled.<UID>.plist` (gui domain) every 2s. macOS Tahoe flips most Sharing services (SSH, Screen Sharing, Remote Management, etc.) via pure XPC to launchd — no exec event fires — but the persistent disabled-state still lands in these files. Diffs the JSON snapshot against the previous one and emits `/bin/launchctl enable system/<service>` or `/bin/launchctl disable system/<service>` (and `gui/<UID>/<service>` for per-user services) on each transition. A one-shot contextual NOTE is emitted when the same service surfaces as both a `launchctl load/unload -w <path>` (from `sharing_exec_watch`) and a `launchctl enable/disable system/<svc>` (from this watcher), so MDM users know either form is replay-equivalent.
+- New `cups_sharing_watch` background subshell in ALL mode: dedicated poller (0.5s) on `/etc/cups/cupsd.conf`'s `Browsing` directive to detect Printer Sharing toggles. Separated from `cups_watch` so the 5s DNS-SD/Bonjour debounce on the printer list never blocks sharing-state detection. Emits `sudo /usr/sbin/cupsctl --share-printers` / `--no-share-printers` on transition. A one-shot NOTE warns about a macOS Tahoe quirk where `cupsd.conf` rewrites lazily, so a toggle may need a subsequent re-toggle to surface.
 
 ### Refactor
 - **Robustness (T1):** `MAIN` now installs an `EXIT` trap that always clears `$PREFWATCH_TMPDIR` (previously only `TERM/INT` traps inside `start_watch*` cleaned up — so "Aborted" pre-flight and `set -e` exits leaked the dir). Startup sweeps `/tmp/prefwatch.<PID>.*/` for dirs whose owning PID is no longer alive (`kill -0` probe). `show_plist_diff` reclaims `<hash>.lock/` directories older than 10s before waiting on the mkdir mutex, ending the silent-skip-forever failure mode after a `kill -9`.
@@ -17,12 +14,9 @@
 - **Loop bodies (T4):** the two meta-stream loops (PBCMD dispatch + `_SKIP_KEYS` population) and the two text-diff loops are now `_process_py_meta` and `_process_diff_lines`. Shared state moves to global `_SKIP_KEYS` / `_HAS_ARRAY_ADDITIONS` (zsh 5.9 lacks `typeset -n` nameref for associative arrays) reset per call so nothing leaks between successive diffs.
 - Zero functional change. One commit per sub-task (`refactor: T<n.m> — …`) on `dev` for clean `git bisect`.
 
-
-## 1.2.2 — unreleased
-
 ### Noise
 - `com.surteesstudios.Bartender`: filter `TerminationReasons` (timestamped exit-reason log, grows each launch).
-- `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID / USB engine path / virtual-device name.
+- `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID / USB engine path / virtual-device name).
 - `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build `Updates:Attempts:N` counters and `Status:Build:Last` / `Status:Version:Last` rewritten on each menubar update).
 - `com.apple.cloud.quota`: filter `_ICQ*` (iCloud Quota offer cache + server-driven retrieval timestamps).
 - Exclude `com.apple.facetime.bag` (FaceTime service config bag — `CacheTime` TTL + `Date` refresh timestamp, server-controlled; same pattern as the already-excluded `com.apple.imessage.bag`).
