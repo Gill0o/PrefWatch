@@ -3024,7 +3024,6 @@ start_watch_all() {
   # Polling monitoring function
   poll_watch() {
     local marker_user marker_sys active_dir
-    local _reddiff_tick=0
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     active_dir="$PREFWATCH_TMPDIR/active-domains"
@@ -3043,9 +3042,8 @@ start_watch_all() {
           /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
         done
         local _af _adom _p _watchdog
-        local -a _pids _active_doms
+        local -a _pids
         _pids=()
-        _active_doms=()
         typeset -A _st
         for _af in "$active_dir"/*(N); do
           [ -f "$_af" ] || continue
@@ -3055,7 +3053,6 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          _active_doms+=("$_adom")
           # Parallel flush: each XPC round-trip is ~20-50ms. Issue both the bare
           # and -currentHost reads so ByHost-backed prefs (trackpad, Bluetooth,
           # screensaver) get flushed too — the bare read only syncs the standard
@@ -3079,21 +3076,6 @@ start_watch_all() {
           for _p in "${_pids[@]}"; do wait "$_p" 2>/dev/null || true; done
           /bin/kill -TERM "$_watchdog" 2>/dev/null || true
           wait "$_watchdog" 2>/dev/null || true
-        fi
-
-        # Authoritative re-diff every 4th iteration (~2s): show_domain_diff reads
-        # cfprefsd directly via `defaults export`, so a change that landed in the
-        # same wall-clock second as the find-newer marker (and was therefore
-        # skipped) still surfaces here instead of waiting for the next write.
-        # Full mode (skip_arrays unset) covers flat keys AND array/dict (Dock,
-        # keyboard). Mirrors start_watch's proven forced-tick. No-op when idle.
-        _reddiff_tick=$(( _reddiff_tick + 1 ))
-        if (( _reddiff_tick >= 4 )) && (( ${#_active_doms[@]} > 0 )); then
-          _reddiff_tick=0
-          local _rd
-          for _rd in "${_active_doms[@]}"; do
-            show_domain_diff "$_rd"
-          done
         fi
       fi
 
