@@ -50,9 +50,9 @@
 #          variable in PlistBuddy commands for MDM deployment (default: false)
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
-#          round-trip. Defaults: com.apple.finder, .GlobalPreferences,
-#          com.apple.dock, com.apple.controlcenter, com.apple.WindowManager,
-#          com.apple.systemsettings. Pass "NONE" to disable.
+#          round-trip. Defaults: the common System Settings panels (Finder,
+#          Dock, Control Center, keyboard/trackpad/mouse, Accessibility,
+#          Spotlight, etc. — see HOT_DOMAINS array). Pass "NONE" to disable.
 # ============================================================================
 
 # ============================================================================
@@ -83,9 +83,10 @@ Options:
   -q, --only-cmds       Show only executable commands (default)
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   --hot-domains <list>  Comma-separated list of domains kept permanently active
-                        for instant first-change detection (default: finder,
-                        .GlobalPreferences, dock, controlcenter, WindowManager,
-                        systemsettings). Pass "NONE" to disable.
+                        for instant first-change detection. Default: the common
+                        System Settings panels (Finder, Dock, Control Center,
+                        keyboard/trackpad/mouse, Accessibility, Spotlight, …).
+                        Pass "NONE" to disable.
   -h, --help            Show this help message
   --mdm                 MDM deployment mode: replace user home path with
                         \$loggedInUser variable in PlistBuddy commands
@@ -260,12 +261,32 @@ unsetopt xtrace verbose 2>/dev/null || true
 # commonly-tweaked interactive panels. Override via --hot-domains CLI flag or
 # Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
 typeset -a HOT_DOMAINS=(
+  # Shell / appearance
   com.apple.finder
   .GlobalPreferences
   com.apple.dock
   com.apple.controlcenter
   com.apple.WindowManager
   com.apple.systemsettings
+  com.apple.menuextra.clock
+  # Input — keyboard / trackpad / mouse (BT variants are ByHost)
+  com.apple.HIToolbox
+  com.apple.AppleMultitouchTrackpad
+  com.apple.driver.AppleBluetoothMultitouch.trackpad
+  com.apple.AppleMultitouchMouse
+  com.apple.driver.AppleBluetoothMultitouch.mouse
+  com.apple.touchbar
+  # Accessibility / search / media
+  com.apple.universalaccess
+  com.apple.Spotlight
+  com.apple.sound
+  # Lock screen / wallpaper / software update
+  com.apple.screensaver
+  com.apple.wallpaper
+  com.apple.SoftwareUpdate
+  # Deliberately NOT hot: com.apple.bluetooth (daemon rewrites device/battery
+  # state continuously), windowserver/displays (chatty), energy (pmset_watch),
+  # sharing (dedicated watchers), network (SystemConfiguration, system path).
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
   if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then

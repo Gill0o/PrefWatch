@@ -6,7 +6,7 @@
 - Sharing-panel capture (ALL/root): `sharing_exec_watch` (eslogger exec → the exact `kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl` invocation), `launchd_state_watch` (polls `disabled*.plist` → `launchctl enable/disable` for XPC-only toggles: SSH, Screen Sharing, ARD), `cups_sharing_watch` (cupsd.conf `Browsing` → `cupsctl --[no-]share-printers`).
 
 ### Fix
-- Responsiveness: widened the default hot domains (added `com.apple.dock`, `controlcenter`, `WindowManager`, `systemsettings`) so common panels surface in ~1-2s instead of ~10s — non-hot domains stay cold because cfprefsd buffers writes; use `--hot-domains` for others.
+- Responsiveness: the default hot-domain set now covers the common System Settings panels (Finder, Dock, Control Center, Window Manager, keyboard/trackpad/mouse, Accessibility, Spotlight, clock, sound, screensaver, wallpaper, Software Update, …). Hot domains are flushed every 0.5s so their changes surface in ~1-2s instead of ~10s (cfprefsd buffers cold-domain writes). The flush runs in parallel (≈0.15s/cycle even for ~20 domains) so display latency is unaffected; cost is just fork volume. Use `--hot-domains` to override.
 - ByHost flush: flush hints now issue `defaults -currentHost read` so ByHost prefs (trackpad, Bluetooth, screensaver) sync promptly instead of staying buffered.
 - Guard two `set -e -o pipefail` pipeline assignments (`dscl` home, version header) with `|| true` — a non-zero exit aborted the script before the fallback ran (the `dscl` one could kill init under Jamf/root).
 - `com.apple.inputAnalytics*` and `com.apple.appstored` exclusions were trapped inside comment lines and never applied.
