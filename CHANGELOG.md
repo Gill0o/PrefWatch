@@ -27,6 +27,7 @@
 - `com.apple.RemoteDesktop`: filter `RSAKeySize` and `DOCAllowRemoteConnections` (daemon-set init values that don't reflect user toggle state).
 - `sharing_exec_watch`: dedupe identical commands within a 1s window (filters back-to-back `launchctl unload` pairs fired on hostname change / SMB reload).
 - `com.apple.dock`: filter `last-analytics-stamp` (internal analytics timestamp).
+- Filter `CKPerBootTasks` globally (CloudKit per-boot cache-reset bookkeeping — appears in any CK-using domain).
 
 
 ## 1.2.1 — 2026-05-14

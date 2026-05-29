@@ -992,7 +992,7 @@ is_noisy_key() {
       return 0 ;;
 
     # CloudKit account cache (hash-keyed entries, daemon-managed)
-    CloudKitAccountInfoCache|*CloudKitAccountInfo*)
+    CloudKitAccountInfoCache|*CloudKitAccountInfo*|CKPerBootTasks)
       return 0 ;;
 
     # WebKit internal state (set when opening Settings panels that use WebKit views)
