@@ -19,6 +19,7 @@
 - Exclude `com.apple.facetime.bag` (config bag — same pattern as `com.apple.imessage.bag`).
 - Exclude `com.apple.gridDataServices` (daemon auth-token refresh timestamps).
 - `com.apple.AssetCache`: filter `SavedCacheDetails`/`SavedCacheSize`/`SavedCacheUsedSize` (runtime stats; keeps `Activated`).
+- Exclude `com.adobe.AdobeGenuineService` (licensing/consent daemon — French consent strings contain apostrophes that break the PlistBuddy single-quote wrapping).
 
 
 ## 1.2.1 — 2026-05-14

@@ -489,6 +489,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # VirtualBuddy (VM app window state, UI settings)
   "codes.rambo.VirtualBuddy"
 
+  # Adobe Genuine Service (licensing/consent daemon — consent strings contain
+  # French apostrophes that break PlistBuddy single-quote escaping anyway)
+  "com.adobe.AdobeGenuineService"
+
   # Spotlight knowledge daemon (internal sync counters, timestamps)
   "com.apple.spotlightknowledged.pipeline"
 
