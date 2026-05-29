@@ -10,6 +10,7 @@
 - Flush-loop freeze: a `defaults read` that hangs cfprefsd no longer freezes the poll loop for up to 4s — the straggler watchdog now fires at 1s/1.5s (was 3s/4s), capping any freeze at ~1.5s. The active-domain flush issues a single bare read per domain (the `-currentHost` variant is added only by `show_plist_diff`/`fs_watch` for actual `/ByHost/` plists) to keep the per-cycle fork count — and thus the hang surface — low. `com.apple.wallpaper` is excluded from the hot set for the same reason (its agent rewrites the domain and a read can stall).
 - Guard two `set -e -o pipefail` pipeline assignments (`dscl` home, version header) with `|| true` — a non-zero exit aborted the script before the fallback ran (the `dscl` one could kill init under Jamf/root).
 - `com.apple.inputAnalytics*` and `com.apple.appstored` exclusions were trapped inside comment lines and never applied.
+- Stray `_hd=…`/`_adom=…` lines leaked to the terminal once per poll cycle: `local` declarations sat inside `poll_watch`'s `while` loop and zsh (TYPESET_SILENT off) prints `name=value` when `local` re-runs on a variable that already holds a value. Hoisted them out of the loop; gave the same treatment to `emit_array_deletions`/`pmset_watch`.
 
 ### Refactor
 - Deduplicated `show_plist_diff`/`show_domain_diff` emission into shared helpers (no output change).

@@ -2330,7 +2330,7 @@ emit_array_deletions() {
     elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
       :
     else
-      local pb_delete
+      local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
@@ -3047,6 +3047,13 @@ start_watch_all() {
   # Polling monitoring function
   poll_watch() {
     local marker_user marker_sys active_dir
+    # Flush-block locals — declared ONCE here, not inside the while loop.
+    # zsh has TYPESET_SILENT off by default, so re-running `local foo` on a
+    # variable that already holds a value prints `foo=value` to stdout; doing
+    # it every iteration spammed the output with `_hd=…`/`_adom=…` lines.
+    local _hd _af _adom _p _watchdog
+    local -a _pids
+    local -A _st
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     active_dir="$PREFWATCH_TMPDIR/active-domains"
@@ -3060,14 +3067,10 @@ start_watch_all() {
       # `defaults read` forces cfprefsd to sync pending writes for that domain.
       if [ -d "$active_dir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
         # Refresh hot markers so they never expire via the 30s cleanup below
-        local _hd
         for _hd in "${HOT_DOMAINS[@]}"; do
           /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
         done
-        local _af _adom _p _watchdog
-        local -a _pids
         _pids=()
-        typeset -A _st
         for _af in "$active_dir"/*(N); do
           [ -f "$_af" ] || continue
           zstat -H _st "$_af" 2>/dev/null || continue
@@ -3458,7 +3461,7 @@ PY
       # Quick check — skip parsing if nothing changed
       if ! /usr/bin/cmp -s "$pmset_snapshot" "$pmset_current"; then
         # Parse both snapshots into "section|key|value" lines and diff
-        local snap_parsed curr_parsed
+        local snap_parsed="" curr_parsed=""  # init: re-`local` in this loop would print the vars
         snap_parsed=$(/usr/bin/awk '/^[A-Z]/{sec=$0; sub(/:$/,"",sec); next} NF>=2{val=$NF; key=""; for(i=1;i<NF;i++){if(i>1)key=key" "; key=key$i}; gsub(/^[[:space:]]+|[[:space:]]+$/,"",key); print sec "|" key "|" val}' "$pmset_snapshot")
         curr_parsed=$(/usr/bin/awk '/^[A-Z]/{sec=$0; sub(/:$/,"",sec); next} NF>=2{val=$NF; key=""; for(i=1;i<NF;i++){if(i>1)key=key" "; key=key$i}; gsub(/^[[:space:]]+|[[:space:]]+$/,"",key); print sec "|" key "|" val}' "$pmset_current")
 
