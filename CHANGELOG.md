@@ -12,7 +12,7 @@
 - `com.apple.inputAnalytics*` and `com.apple.appstored` exclusions were trapped inside comment lines and never applied.
 
 ### Refactor
-- Deduplicated `show_plist_diff`/`show_domain_diff` into shared helpers (`_build_defaults_write_cmd`, `_build_defaults_delete_cmd`, `_emit_cmd`/`_log_kind`, `_process_py_meta`, `_process_diff_lines`, `_run_py_diff_workers`). No output change.
+- Deduplicated `show_plist_diff`/`show_domain_diff` emission into shared helpers (no output change).
 - MAIN: `EXIT` trap + startup sweep of orphan tmpdirs + lock-orphan reclaim; xtrace disable collapsed to one `unsetopt`.
 
 ### Noise
