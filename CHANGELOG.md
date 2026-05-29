@@ -30,6 +30,14 @@
 - Filter `CKPerBootTasks` globally (CloudKit per-boot cache-reset bookkeeping — appears in any CK-using domain).
 - Consolidated 3 watcher startup lines (`sharing_exec_watch active`, `launchd_state_watch active`, `cups_sharing_watch active (initial: …)`) into a single `# Watchers active: …` line, emitted just before the post-snapshot NOTE.
 
+### Fix
+- DEFAULT_EXCLUSIONS: `com.apple.inputAnalytics*` and `com.apple.appstored` were stuck inside comment lines and never applied. Moved to their own lines so they take effect.
+
+### Noise (cont.)
+- Filter `DDMPersisted*` globally (Declarative Device Management persisted error/state keys — daemon-managed across many domains, surfaced in `com.apple.SoftwareUpdate`).
+- `launchd_state_watch`: skip `com.apple.ManagedClient*` (MDM enrollagent auto-disabled by macOS after enrollment completes).
+- Exclude `com.apple.weather*` (daemon-managed; user prefs in internal DB since Sonoma — same pattern as Safari/Mail/Calendar).
+
 
 ## 1.2.1 — 2026-05-14
 

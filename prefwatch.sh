@@ -336,7 +336,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Graphics internals (updates on every window change)
   "com.apple.CoreGraphics"
 
-  # App store internals  "com.apple.appstored"
+  # App store internals
+  "com.apple.appstored"
   "com.apple.AppStore"
   "com.apple.AppleMediaServices*"
 
@@ -344,7 +345,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.gamed"
   "com.apple.gamecenter"
 
-  # Input analytics / telemetry  "com.apple.inputAnalytics*"
+  # Input analytics / telemetry
+  "com.apple.inputAnalytics*"
   "com.apple.appleintelligencereporting"
   "com.apple.GenerativeFunctions*"
 
@@ -420,6 +422,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Find My app & framework (UI state, window geometry, precision flags)
   "com.apple.findmy*"
   "com.apple.icloud.searchpartyuseragent"
+
+  # Weather framework (daemon-managed; user prefs live in internal DB since Sonoma)
+  "com.apple.weather*"
 
   # AirPlay/Handoff proximity daemon (pruning timestamps, internal state)
   "com.apple.rapport"
@@ -993,6 +998,11 @@ is_noisy_key() {
 
     # CloudKit account cache (hash-keyed entries, daemon-managed)
     CloudKitAccountInfoCache|*CloudKitAccountInfo*|CKPerBootTasks)
+      return 0 ;;
+
+    # Declarative Device Management persisted state (DDMPersistedErrorKey,
+    # DDMPersistedStateKey, etc. — daemon-managed across many domains)
+    DDMPersisted*)
       return 0 ;;
 
     # WebKit internal state (set when opening Settings panels that use WebKit views)
@@ -3306,11 +3316,12 @@ prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
 # Third-party VM / container helpers that auto-toggle their own launchd
 # state in the user gui session — not user-driven preference changes.
 NOISE_PATTERNS = (
-    "codes.rambo.*",      # VirtualBuddy
-    "com.parallels.*",    # Parallels Desktop
-    "com.vmware.*",       # VMware Fusion
-    "org.virtualbox.*",   # VirtualBox
-    "com.docker.*",       # Docker Desktop
+    "codes.rambo.*",                  # VirtualBuddy
+    "com.parallels.*",                # Parallels Desktop
+    "com.vmware.*",                   # VMware Fusion
+    "org.virtualbox.*",               # VirtualBox
+    "com.docker.*",                   # Docker Desktop
+    "com.apple.ManagedClient*",       # MDM enrollagent auto-disable post-enrollment
 )
 def is_noisy(svc):
     return any(fnmatch.fnmatchcase(svc, p) for p in NOISE_PATTERNS)
