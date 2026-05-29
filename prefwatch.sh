@@ -284,10 +284,11 @@ typeset -a HOT_DOMAINS=(
   com.apple.screensaver
   com.apple.SoftwareUpdate
   # Deliberately NOT hot: com.apple.bluetooth (daemon rewrites device/battery
-  # state continuously), com.apple.wallpaper (wallpaper agent rewrites it and a
-  # read can stall cfprefsd → observed loop freeze), windowserver/displays
-  # (chatty), energy (pmset_watch), sharing (dedicated watchers), network
-  # (SystemConfiguration, system path).
+  # state continuously), com.apple.wallpaper (the real wallpaper config lives in
+  # ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist, outside
+  # the monitored Preferences dirs — the .plist barely changes, so hot-ing it is
+  # pointless), windowserver/displays (chatty), energy (pmset_watch), sharing
+  # (dedicated watchers), network (SystemConfiguration, system path).
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
   if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then

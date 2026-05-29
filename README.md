@@ -45,7 +45,7 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (root required — see *Beyond plist monitoring* above). Preferences stored elsewhere won't be detected — notably **Safari, Mail, and Calendar**, which since recent macOS releases keep most of their settings in internal app databases.
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (root required — see *Beyond plist monitoring* above). Preferences stored elsewhere won't be detected — notably **Safari, Mail, and Calendar** (internal app databases since recent macOS releases) and the **Desktop wallpaper**, whose real config lives in `~/Library/Application Support/com.apple.wallpaper/Store/` rather than the `com.apple.wallpaper` plist.
 
 For detected changes that require extra steps to apply (logout/login, `killall`, settings that write but don't take effect, etc.), PrefWatch emits inline `# NOTE:` comments in the output.
 
