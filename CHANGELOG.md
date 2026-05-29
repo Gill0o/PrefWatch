@@ -3,8 +3,8 @@
 ## 1.3.0 — unreleased
 
 ### Feature
-- `sharing_exec_watch` (ALL/root): eslogger exec stream filtered to sharing CLI binaries (`kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl`) — emits the exact invocation, capturing Tahoe `writeconfig`-driven `launchctl load/unload -w PATH` (File Sharing).
-- `launchd_state_watch` (ALL): polls `/var/db/com.apple.xpc.launchd/disabled*.plist` every 2s, emits `launchctl enable/disable system/<svc>` on transition. Catches XPC-only toggles (SSH, Screen Sharing, ARD) that exec watch can't see.
+- `sharing_exec_watch` (ALL/root): eslogger exec stream filtered to sharing CLI binaries (`kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl`) — emits the exact invocation. Captures the path-based launchctl form (e.g. `launchctl unload -w /System/Library/LaunchDaemons/com.apple.smbd.plist` for File Sharing).
+- `launchd_state_watch` (ALL): polls `/var/db/com.apple.xpc.launchd/disabled*.plist` every 2s, emits `launchctl enable/disable system/<svc>` on transition. Catches XPC-only toggles (SSH, Screen Sharing, ARD) that don't fork a CLI tool.
 - `cups_sharing_watch` (ALL): dedicated 0.5s poll on `cupsd.conf` `Browsing`, decoupled from `cups_watch`'s 5s DNS-SD debounce. Emits `sudo cupsctl --share-printers` / `--no-share-printers`.
 
 ### Refactor
