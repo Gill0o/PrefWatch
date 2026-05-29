@@ -1049,7 +1049,7 @@ is_noisy_key() {
     com.apple.dock)
       case "$keyname" in
         # Noisy: workspace IDs, counts, expose gestures, trash state, recent apps
-        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
+        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|last-analytics-stamp|lastShowIndicatorTime|trash-full|recent-apps)
           return 0 ;;
         # Noisy: internal tile metadata (reorder noise)
         GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
@@ -3203,7 +3203,7 @@ start_watch_all() {
     /usr/bin/eslogger exec 2>/dev/null \
       | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' -e '/launchctl"' \
       | "$PYTHON3_BIN" -u -c '
-import json, sys, shlex
+import json, sys, shlex, time
 # Direct sharing-toolkit binaries — any invocation is relevant
 DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
 # launchctl is the universal worker macOS Tahoe System Settings calls via
@@ -3220,6 +3220,16 @@ def is_readonly(basename, args):
         return True
     sub = args[1]
     return sub.startswith(READONLY_PREFIXES)
+# Dedup: macOS sometimes fires the same exec twice back-to-back
+# (eg smbd reload). Skip identical commands within 1s.
+DEDUP_WINDOW_S = 1.0
+last_seen = {}
+def emit(cmd):
+    now = time.time()
+    if cmd in last_seen and now - last_seen[cmd] < DEDUP_WINDOW_S:
+        return
+    last_seen[cmd] = now
+    print(cmd, flush=True)
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -3237,10 +3247,10 @@ while True:
             if is_readonly(basename, args):
                 continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
-            print((exe + " " + tail).rstrip(), flush=True)
+            emit((exe + " " + tail).rstrip())
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
             tail = " ".join(shlex.quote(a) for a in args[1:])
-            print(exe + " " + tail, flush=True)
+            emit(exe + " " + tail)
     except Exception:
         pass
 ' 2>/dev/null \

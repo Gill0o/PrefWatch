@@ -25,6 +25,8 @@
 - Exclude `com.apple.backgroundtaskmanagement*` (lowercase variant — zsh glob case-sensitivity let `com.apple.backgroundtaskmanagement.agent` slip through the existing `com.apple.BackgroundTaskManagement*` rule).
 - `com.apple.ARDAgent`: filter `ARDAdmin_AppStoreURL` (hardcoded App Store link rewritten by daemon on Remote Management activation).
 - `com.apple.RemoteDesktop`: filter `RSAKeySize` and `DOCAllowRemoteConnections` (daemon-set init values that don't reflect user toggle state).
+- `sharing_exec_watch`: dedupe identical commands within a 1s window (filters back-to-back `launchctl unload` pairs fired on hostname change / SMB reload).
+- `com.apple.dock`: filter `last-analytics-stamp` (internal analytics timestamp).
 
 
 ## 1.2.1 — 2026-05-14
