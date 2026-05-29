@@ -3,45 +3,24 @@
 ## 1.3.0 — unreleased
 
 ### Feature
-- `sharing_exec_watch` (ALL/root): eslogger exec stream filtered to sharing CLI binaries (`kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl`) — emits the exact invocation. Captures the path-based launchctl form (e.g. `launchctl unload -w /System/Library/LaunchDaemons/com.apple.smbd.plist` for File Sharing).
-- `launchd_state_watch` (ALL): polls `/var/db/com.apple.xpc.launchd/disabled*.plist` every 2s, emits `launchctl enable/disable system/<svc>` on transition. Catches XPC-only toggles (SSH, Screen Sharing, ARD) that don't fork a CLI tool.
-- `cups_sharing_watch` (ALL): dedicated 0.5s poll on `cupsd.conf` `Browsing`, decoupled from `cups_watch`'s 5s DNS-SD debounce. Emits `sudo cupsctl --share-printers` / `--no-share-printers`.
-
-### Refactor
-- `show_plist_diff` / `show_domain_diff` duplicated logic extracted into 5 helpers — `_build_defaults_write_cmd`, `_build_defaults_delete_cmd`, `_emit_cmd` + `_log_kind`, `_process_py_meta`, `_process_diff_lines`. Zero functional change; one commit per sub-task on `dev` for `git bisect`.
-- MAIN gains `EXIT` trap + startup sweep of orphan `/tmp/prefwatch.<PID>.*/` + lock-orphan reclaim. xtrace 5-layer defense collapses to a single `unsetopt xtrace verbose`.
-- `emit_array_deletions`: replaced 3 hand-rolled `case "$kind"` logger switches with `_log_kind` (the helper that already exists for exactly this). No output change.
-- Extracted the duplicated "spawn 3 Python workers → fold meta → emit deletions" block from `show_plist_diff` / `show_domain_diff` into `_run_py_diff_workers`. Single source of truth for emission order (additions/sets then deletions). Single-domain `show_domain_diff` now prints deletions after adds/sets (ALL mode unaffected — that path skips the array block).
-
-### Noise
-- `com.surteesstudios.Bartender`: filter `TerminationReasons`.
-- `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID).
-- `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build counters).
-- `com.apple.cloud.quota`: filter `_ICQ*` (iCloud offer cache).
-- Exclude `com.apple.facetime.bag` (config bag — same pattern as `com.apple.imessage.bag`).
-- Exclude `com.apple.gridDataServices` (daemon auth-token refresh timestamps).
-- `com.apple.AssetCache`: filter `SavedCacheDetails`/`SavedCacheSize`/`SavedCacheUsedSize` (runtime stats; keeps `Activated`).
-- Exclude `com.adobe.AdobeGenuineService` (licensing/consent daemon — French consent strings contain apostrophes that break the PlistBuddy single-quote wrapping).
-- `launchd_state_watch`: skip third-party VM / container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`) — they auto-toggle their own gui launchd state.
-- `sharing_exec_watch`: skip read-only `networksetup` / `systemsetup` invocations (`-get*`, `-list*`, `-print*`, `-show*`) — Wi-Fi menu / Network panel / time-sync daemons poll these constantly.
-- Exclude `com.apple.backgroundtaskmanagement*` (lowercase variant — zsh glob case-sensitivity let `com.apple.backgroundtaskmanagement.agent` slip through the existing `com.apple.BackgroundTaskManagement*` rule).
-- `com.apple.ARDAgent`: filter `ARDAdmin_AppStoreURL` (hardcoded App Store link rewritten by daemon on Remote Management activation).
-- `com.apple.RemoteDesktop`: filter `RSAKeySize` and `DOCAllowRemoteConnections` (daemon-set init values that don't reflect user toggle state).
-- `sharing_exec_watch`: dedupe identical commands within a 1s window (filters back-to-back `launchctl unload` pairs fired on hostname change / SMB reload).
-- `com.apple.dock`: filter `last-analytics-stamp` (internal analytics timestamp).
-- Filter `CKPerBootTasks` globally (CloudKit per-boot cache-reset bookkeeping — appears in any CK-using domain).
-- Consolidated 3 watcher startup lines (`sharing_exec_watch active`, `launchd_state_watch active`, `cups_sharing_watch active (initial: …)`) into a single `# Watchers active: …` line, emitted just before the post-snapshot NOTE.
+- Sharing-panel capture (ALL/root): `sharing_exec_watch` (eslogger exec → the exact `kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl` invocation), `launchd_state_watch` (polls `disabled*.plist` → `launchctl enable/disable` for XPC-only toggles: SSH, Screen Sharing, ARD), `cups_sharing_watch` (cupsd.conf `Browsing` → `cupsctl --[no-]share-printers`).
 
 ### Fix
-- DEFAULT_EXCLUSIONS: `com.apple.inputAnalytics*` and `com.apple.appstored` were stuck inside comment lines and never applied. Moved to their own lines so they take effect.
-- Guard two bare pipeline assignments under `set -e -o pipefail` (console-user home resolution via `dscl`, version extraction via `grep`) with `|| true` — a non-zero exit from the pipeline killed the script before the next-line fallback could run (fallback was unreachable). The `dscl` one could abort init under Jamf/root.
-- Responsiveness: common interactive panels surfaced changes ~10s late (e.g. adding/removing a Dock icon) because they weren't "hot" — cfprefsd buffers a write for several seconds before it hits disk, so no `fs_usage` event fires and the domain never enters the active set. Widened the default hot-domain set from `com.apple.finder,.GlobalPreferences` to also include `com.apple.dock`, `com.apple.controlcenter`, `com.apple.WindowManager`, `com.apple.systemsettings`. Hot domains are flushed (`defaults read`) every 0.5s, forcing cfprefsd to sync them promptly so `find -newer` + `show_plist_diff` catch the change in ~1-2s — the same mechanism that already kept Finder responsive. Override with `--hot-domains`.
-- ByHost flush: the cfprefsd flush hints used the bare domain, which only syncs the standard plist — ByHost-backed prefs (trackpad, Bluetooth, screensaver) stayed buffered. The active-domains flush, the `show_plist_diff` retry loop, and the `fs_watch` preemptive flush now issue `defaults -currentHost read` for ByHost so the right file syncs.
+- Responsiveness: widened the default hot domains (added `com.apple.dock`, `controlcenter`, `WindowManager`, `systemsettings`) so common panels surface in ~1-2s instead of ~10s — non-hot domains stay cold because cfprefsd buffers writes; use `--hot-domains` for others.
+- ByHost flush: flush hints now issue `defaults -currentHost read` so ByHost prefs (trackpad, Bluetooth, screensaver) sync promptly instead of staying buffered.
+- Guard two `set -e -o pipefail` pipeline assignments (`dscl` home, version header) with `|| true` — a non-zero exit aborted the script before the fallback ran (the `dscl` one could kill init under Jamf/root).
+- `com.apple.inputAnalytics*` and `com.apple.appstored` exclusions were trapped inside comment lines and never applied.
 
-### Noise (cont.)
-- Filter `DDMPersisted*` globally (Declarative Device Management persisted error/state keys — daemon-managed across many domains, surfaced in `com.apple.SoftwareUpdate`).
-- `launchd_state_watch`: skip `com.apple.ManagedClient*` (MDM enrollagent auto-disabled by macOS after enrollment completes).
-- Exclude `com.apple.weather*` (daemon-managed; user prefs in internal DB since Sonoma — same pattern as Safari/Mail/Calendar).
+### Refactor
+- Deduplicated `show_plist_diff`/`show_domain_diff` into shared helpers (`_build_defaults_write_cmd`, `_build_defaults_delete_cmd`, `_emit_cmd`/`_log_kind`, `_process_py_meta`, `_process_diff_lines`, `_run_py_diff_workers`). No output change.
+- MAIN: `EXIT` trap + startup sweep of orphan tmpdirs + lock-orphan reclaim; xtrace disable collapsed to one `unsetopt`.
+
+### Noise
+- Excluded domains: `com.apple.facetime.bag`, `com.apple.gridDataServices`, `com.adobe.AdobeGenuineService`, `com.apple.weather*`, `com.apple.backgroundtaskmanagement*` (lowercase variant).
+- Key filters: `CKPerBootTasks` and `DDMPersisted*` (global); Bartender `TerminationReasons`; AudioMIDISetup `audioDevice.selected`; iStat menubar `Updates`/`Status`; cloud.quota `_ICQ*`; AssetCache cache-size keys; dock `last-analytics-stamp`; ARDAgent `ARDAdmin_AppStoreURL`; RemoteDesktop `RSAKeySize`/`DOCAllowRemoteConnections`.
+- `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries; dedupe identical commands within 1s.
+- `launchd_state_watch`: skip third-party VM/container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`) and `com.apple.ManagedClient*`.
+- Consolidated the 3 watcher-active startup lines into one `# Watchers active: …` line.
 
 
 ## 1.2.1 — 2026-05-14
