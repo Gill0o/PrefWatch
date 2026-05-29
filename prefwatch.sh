@@ -293,6 +293,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.wallpaper.aerial"
   "com.apple.osprey"
   "com.apple.imessage.bag"
+  "com.apple.facetime.bag"
+  "com.apple.gridDataServices"
   "com.apple.CloudSubscriptionFeatures*"
   "com.apple.AudioAccessory"
   "com.apple.systemsettings.extensions*"
@@ -1333,6 +1335,14 @@ is_noisy_key() {
     com.apple.cloud.quota)
       case "$keyname" in
         _ICQ*) return 0 ;;
+      esac
+      ;;
+
+    # Content Caching daemon: Filter cache size/details (runtime counters),
+    # keep Activated (the user-toggleable enable flag)
+    com.apple.AssetCache)
+      case "$keyname" in
+        SavedCacheDetails|SavedCacheSize|SavedCacheUsedSize) return 0 ;;
       esac
       ;;
 

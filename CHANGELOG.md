@@ -25,6 +25,9 @@
 - `com.apple.audio.AudioMIDISetup`: filter `audioDevice.selected` (machine-specific UUID / USB engine path / virtual-device name.
 - `com.bjango.istatmenus.menubar.*`: extend filter to `Updates|Status` (per-build `Updates:Attempts:N` counters and `Status:Build:Last` / `Status:Version:Last` rewritten on each menubar update).
 - `com.apple.cloud.quota`: filter `_ICQ*` (iCloud Quota offer cache + server-driven retrieval timestamps).
+- Exclude `com.apple.facetime.bag` (FaceTime service config bag — `CacheTime` TTL + `Date` refresh timestamp, server-controlled; same pattern as the already-excluded `com.apple.imessage.bag`).
+- Exclude `com.apple.gridDataServices` (background daemon — `balAuthFetchDate` auth-token refresh timestamps).
+- `com.apple.AssetCache`: filter `SavedCacheDetails` / `SavedCacheSize` / `SavedCacheUsedSize` (Content Caching daemon runtime cache stats updated continuously; keeps `Activated` which is the real user-toggleable enable flag).
 
 
 ## 1.2.1 — 2026-05-14
