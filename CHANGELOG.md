@@ -32,6 +32,7 @@
 
 ### Fix
 - DEFAULT_EXCLUSIONS: `com.apple.inputAnalytics*` and `com.apple.appstored` were stuck inside comment lines and never applied. Moved to their own lines so they take effect.
+- Guard two bare pipeline assignments under `set -e -o pipefail` (console-user home resolution via `dscl`, version extraction via `grep`) with `|| true` — a non-zero exit from the pipeline killed the script before the next-line fallback could run (fallback was unreachable). The `dscl` one could abort init under Jamf/root.
 
 ### Noise (cont.)
 - Filter `DDMPersisted*` globally (Declarative Device Management persisted error/state keys — daemon-managed across many domains, surfaced in `com.apple.SoftwareUpdate`).

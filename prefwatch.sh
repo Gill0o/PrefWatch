@@ -620,7 +620,7 @@ fi
 # via dscl, with /Users/<user> as a fallback. In CLI mode $HOME is correct.
 TARGET_HOME="$HOME"
 if [ "$(id -u)" -eq 0 ] && [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
-  _resolved_home=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
+  _resolved_home=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}') || true
   if [ -n "$_resolved_home" ]; then
     TARGET_HOME="$_resolved_home"
   elif [ -d "/Users/$CONSOLE_USER" ]; then
@@ -695,7 +695,7 @@ DOMAIN_TAG="$DOMAIN"
 [ "$ALL_MODE" = "true" ] && DOMAIN_TAG="all"
 
 # Extract script version from header
-SCRIPT_VERSION=$(head -20 "$0" 2>/dev/null | /usr/bin/grep "^# Version:" | /usr/bin/sed -E 's/^# Version: //' | head -1)
+SCRIPT_VERSION=$(head -20 "$0" 2>/dev/null | /usr/bin/grep "^# Version:" | /usr/bin/sed -E 's/^# Version: //' | head -1) || true
 [ -z "$SCRIPT_VERSION" ] && SCRIPT_VERSION="unknown"
 
 # Log file configuration
