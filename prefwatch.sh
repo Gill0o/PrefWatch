@@ -2290,11 +2290,7 @@ emit_array_deletions() {
 
     # Dock: emit app name comment for readability
     if [ -n "$app_label" ]; then
-      case "$kind" in
-        USER) log_user "Cmd: # Dock: removed $app_label" ;;
-        SYSTEM) log_system "Cmd: # Dock: removed $app_label" ;;
-        *) log_line "Cmd: # Dock: removed $app_label" ;;
-      esac
+      _log_kind "$kind" "Cmd: # Dock: removed $app_label"
     fi
 
     local delete_cmd="defaults delete ${dom} \":${base}:${idx}\""
@@ -2308,20 +2304,10 @@ emit_array_deletions() {
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
-          case "$kind" in
-            USER) log_user "Cmd: $pb_line" ;;
-            SYSTEM) log_system "Cmd: $pb_line" ;;
-            DOMAIN) log_line "Cmd: $pb_line" ;;
-            *) log_line "Cmd: $pb_line" ;;
-          esac
+          _log_kind "$kind" "Cmd: $pb_line"
         done <<< "$pb_delete"
       else
-        case "$kind" in
-          USER) log_user "Cmd: $delete_cmd" ;;
-          SYSTEM) log_system "Cmd: $delete_cmd" ;;
-          DOMAIN) log_line "Cmd: $delete_cmd" ;;
-          *) log_line "Cmd: $delete_cmd" ;;
-        esac
+        _log_kind "$kind" "Cmd: $delete_cmd"
       fi
     fi
   done <<< "$py_output"
@@ -2555,6 +2541,38 @@ PY
   printf '%s\n' "$py_output"
 }
 
+# Run the 3 Python diff workers in parallel, fold their output into the
+# global _SKIP_KEYS / _HAS_ARRAY_ADDITIONS, and emit array deletions.
+# Shared by show_plist_diff and show_domain_diff. Canonical emission order:
+# additions/sets (via _process_py_meta) THEN deletions.
+# Args: kind dom prev_json curr_json pb_plist_path key
+# Reads/writes the globals _HAS_ARRAY_ADDITIONS and _SKIP_KEYS — do NOT
+# declare those local here.
+_run_py_diff_workers() {
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" pb_plist_path="$5" key="$6"
+  local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
+  emit_array_additions "$kind" "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
+  _py_deletions_raw "$dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
+  emit_nested_dict_changes "$kind" "$dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
+  wait
+  local _array_meta_raw _nested_raw
+  _array_meta_raw=$(< "$_py_add")
+  _nested_raw=$(< "$_py_nest")
+  if [ -n "$_nested_raw" ]; then
+    if [ -n "$_array_meta_raw" ]; then
+      _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
+    else
+      _array_meta_raw="$_nested_raw"
+    fi
+  fi
+  if [ -n "$_array_meta_raw" ]; then
+    _HAS_ARRAY_ADDITIONS=true
+    _process_py_meta "$kind" "$dom" "$_array_meta_raw" "$pb_plist_path"
+  fi
+  emit_array_deletions "$kind" "$dom" "$prev_json" "$curr_json" "$_py_del"
+  /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
+}
+
 # Display plist file diff
 show_plist_diff() {
   local kind="$1" path="$2" mode="${3:-normal}" silent="false"
@@ -2640,32 +2658,9 @@ show_plist_diff() {
   typeset -gA _SKIP_KEYS
   _SKIP_KEYS=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
-  local _array_meta_raw=""
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
-    # Run the 3 Python diff invocations in parallel (each ~60-100ms)
-    local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
-    emit_array_additions "$kind" "$_dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
-    _py_deletions_raw "$_dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
-    emit_nested_dict_changes "$kind" "$_dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
-    wait
-    _array_meta_raw=$(< "$_py_add")
-    local _nested_raw
-    _nested_raw=$(< "$_py_nest")
-    if [ -n "$_nested_raw" ]; then
-      if [ -n "$_array_meta_raw" ]; then
-        _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
-      else
-        _array_meta_raw="$_nested_raw"
-      fi
-    fi
-    if [ -n "$_array_meta_raw" ]; then
-      _HAS_ARRAY_ADDITIONS=true
-      _process_py_meta "$kind" "$_dom" "$_array_meta_raw" "$path"
-    fi
-
-    emit_array_deletions "$kind" "$_dom" "$prev_json" "$curr_json" "$_py_del"
-    /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
+    _run_py_diff_workers "$kind" "$_dom" "$prev_json" "$curr_json" "$path" "$key"
   fi
 
   if [ "$silent" != "true" ]; then
@@ -2718,34 +2713,9 @@ show_domain_diff() {
   typeset -gA _SKIP_KEYS
   _SKIP_KEYS=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
-  local _array_meta_raw=""
 
   if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
-    # Run the 3 Python diff invocations in parallel
-    local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
-    emit_array_additions DOMAIN "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
-    _py_deletions_raw "$dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
-    emit_nested_dict_changes DOMAIN "$dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
-    wait
-    _array_meta_raw=$(< "$_py_add")
-    emit_array_deletions DOMAIN "$dom" "$prev_json" "$curr_json" "$_py_del"
-    local _nested_raw
-    _nested_raw=$(< "$_py_nest")
-    /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
-    if [ -n "$_nested_raw" ]; then
-      if [ -n "$_array_meta_raw" ]; then
-        _array_meta_raw="${_array_meta_raw}"$'\n'"${_nested_raw}"
-      else
-        _array_meta_raw="$_nested_raw"
-      fi
-    fi
-
-    if [ -n "$_array_meta_raw" ]; then
-      _HAS_ARRAY_ADDITIONS=true
-      local _pb_plist_path
-      _pb_plist_path="$(get_plist_path "$dom" 2>/dev/null)"
-      _process_py_meta DOMAIN "$dom" "$_array_meta_raw" "$_pb_plist_path"
-    fi
+    _run_py_diff_workers DOMAIN "$dom" "$prev_json" "$curr_json" "$(get_plist_path "$dom" 2>/dev/null)" "$key"
   fi
 
   _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"

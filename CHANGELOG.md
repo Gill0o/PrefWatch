@@ -10,6 +10,8 @@
 ### Refactor
 - `show_plist_diff` / `show_domain_diff` duplicated logic extracted into 5 helpers — `_build_defaults_write_cmd`, `_build_defaults_delete_cmd`, `_emit_cmd` + `_log_kind`, `_process_py_meta`, `_process_diff_lines`. Zero functional change; one commit per sub-task on `dev` for `git bisect`.
 - MAIN gains `EXIT` trap + startup sweep of orphan `/tmp/prefwatch.<PID>.*/` + lock-orphan reclaim. xtrace 5-layer defense collapses to a single `unsetopt xtrace verbose`.
+- `emit_array_deletions`: replaced 3 hand-rolled `case "$kind"` logger switches with `_log_kind` (the helper that already exists for exactly this). No output change.
+- Extracted the duplicated "spawn 3 Python workers → fold meta → emit deletions" block from `show_plist_diff` / `show_domain_diff` into `_run_py_diff_workers`. Single source of truth for emission order (additions/sets then deletions). Single-domain `show_domain_diff` now prints deletions after adds/sets (ALL mode unaffected — that path skips the array block).
 
 ### Noise
 - `com.surteesstudios.Bartender`: filter `TerminationReasons`.
