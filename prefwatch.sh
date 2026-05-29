@@ -267,28 +267,29 @@ typeset -a HOT_DOMAINS=(
   com.apple.dock
   com.apple.controlcenter
   com.apple.WindowManager
-  com.apple.systemsettings
-  com.apple.menuextra.clock
-  # Input — keyboard / trackpad / mouse (BT variants are ByHost)
+  com.apple.menuextra.clock                            # menu-bar clock format (ShowAMPM/Date/DayOfWeek)
+  # Input — keyboard / trackpad / mouse (all standard plists here, not ByHost)
   com.apple.HIToolbox
   com.apple.AppleMultitouchTrackpad
   com.apple.driver.AppleBluetoothMultitouch.trackpad
   com.apple.AppleMultitouchMouse
   com.apple.driver.AppleBluetoothMultitouch.mouse
-  com.apple.touchbar
-  # Accessibility / search / media
+  # Accessibility / search
   com.apple.universalaccess
   com.apple.Spotlight
-  com.apple.sound
   # Lock screen / software update
-  com.apple.screensaver
+  com.apple.screensaver                                # idle timing lives in ByHost (caught by fs_watch)
   com.apple.SoftwareUpdate
-  # Deliberately NOT hot: com.apple.bluetooth (daemon rewrites device/battery
-  # state continuously), com.apple.wallpaper (the real wallpaper config lives in
-  # ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist, outside
-  # the monitored Preferences dirs — the .plist barely changes, so hot-ing it is
-  # pointless), windowserver/displays (chatty), energy (pmset_watch), sharing
-  # (dedicated watchers), network (SystemConfiguration, system path).
+  # Deliberately NOT hot — verified empty/elsewhere, hot would be a no-op:
+  #   com.apple.sound          → not a real domain; sound prefs are
+  #                              com.apple.sound.beep.* inside .GlobalPreferences (already hot)
+  #   com.apple.systemsettings → 0 readable keys (System Settings window state only)
+  #   com.apple.touchbar       → absent on non-Touch-Bar Macs
+  #   com.apple.wallpaper      → real config in ~/Library/Application Support/com.apple.wallpaper/Store/
+  #                              (outside monitored dirs; plist is stale)
+  # Also not hot (chatty/covered elsewhere): com.apple.bluetooth (daemon-churned
+  # device state), windowserver/displays (chatty), energy (pmset_watch),
+  # sharing (dedicated watchers), network (SystemConfiguration, system path).
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
   if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then
