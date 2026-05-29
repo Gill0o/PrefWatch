@@ -2959,6 +2959,20 @@ start_watch_all() {
 
   if [ "${SNAPSHOT_READY:-false}" = "true" ]; then
     snapshot_notice "Initial snapshots processed — you can now make your changes"
+    # Consolidated watcher status — one brief line summarizing what's active
+    local -a _watch_active=()
+    if [ "$(id -u)" -eq 0 ] && [ -x /usr/bin/eslogger ] && [ -n "$PYTHON3_BIN" ]; then
+      _watch_active+=("sharing_exec")
+    fi
+    if [ "$(id -u)" -eq 0 ] && [ -n "$PYTHON3_BIN" ]; then
+      _watch_active+=("launchd_state")
+    fi
+    if [ -f /etc/cups/cupsd.conf ]; then
+      _watch_active+=("cups_sharing")
+    fi
+    if (( ${#_watch_active[@]} > 0 )); then
+      log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
+    fi
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
@@ -3104,7 +3118,6 @@ start_watch_all() {
     local share_snap=""
     share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
     [ -z "$share_snap" ] && share_snap="off"
-    log_line "Cmd: # cups_sharing_watch active (initial: $share_snap)"
 
     while true; do
       /bin/sleep 0.5 || true
@@ -3193,7 +3206,6 @@ start_watch_all() {
       log_line "Cmd: # sharing_exec_watch DISABLED: Python3 unavailable"
       return 0
     fi
-    log_line "Cmd: # sharing_exec_watch active"
     /bin/mkdir -p "$PREFWATCH_TMPDIR/sharing_recent" 2>/dev/null || true
 
     # Python reads stdin via readline() in a loop to avoid block-buffering
@@ -3280,7 +3292,6 @@ while True:
       console_uid=$(id -u "$CONSOLE_USER" 2>/dev/null) || console_uid=""
       [ -n "$console_uid" ] && user_plist="/var/db/com.apple.xpc.launchd/disabled.${console_uid}.plist"
     fi
-    log_line "Cmd: # launchd_state_watch active"
 
     local sys_prev="$PREFWATCH_TMPDIR/launchd.sys.json"
     local user_prev="$PREFWATCH_TMPDIR/launchd.user.json"

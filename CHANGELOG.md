@@ -28,6 +28,7 @@
 - `sharing_exec_watch`: dedupe identical commands within a 1s window (filters back-to-back `launchctl unload` pairs fired on hostname change / SMB reload).
 - `com.apple.dock`: filter `last-analytics-stamp` (internal analytics timestamp).
 - Filter `CKPerBootTasks` globally (CloudKit per-boot cache-reset bookkeeping — appears in any CK-using domain).
+- Consolidated 3 watcher startup lines (`sharing_exec_watch active`, `launchd_state_watch active`, `cups_sharing_watch active (initial: …)`) into a single `# Watchers active: …` line, emitted just before the post-snapshot NOTE.
 
 
 ## 1.2.1 — 2026-05-14
