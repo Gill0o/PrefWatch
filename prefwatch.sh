@@ -3485,7 +3485,7 @@ PY
 }
 
 # ============================================================================
-# MAIN
+# MAIN — pre-flight, logging setup, launch
 # ============================================================================
 
 # Pre-flight banner + conditional confirmation. The y/n prompt only appears
