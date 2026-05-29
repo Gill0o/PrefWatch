@@ -367,7 +367,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Power management internals (constant battery updates)
   "com.apple.PowerManagement*"
-  "com.apple.BackgroundTaskManagement*"
+  "com.apple.BackgroundTaskManagement*"  # zsh globs are case-sensitive
+  "com.apple.backgroundtaskmanagement*"
 
   # Audio internals (device routing state)
   "com.apple.audio.SystemSettings"
@@ -1347,6 +1348,21 @@ is_noisy_key() {
     com.apple.AssetCache)
       case "$keyname" in
         SavedCacheDetails|SavedCacheSize|SavedCacheUsedSize) return 0 ;;
+      esac
+      ;;
+
+    # ARD Agent: Filter hardcoded App Store URL (daemon-rewritten on activation)
+    com.apple.ARDAgent)
+      case "$keyname" in
+        ARDAdmin_AppStoreURL) return 0 ;;
+      esac
+      ;;
+
+    # Remote Desktop: Filter daemon-set initialization values (rewritten on
+    # every Remote Management activation; values don't reflect user intent)
+    com.apple.RemoteDesktop)
+      case "$keyname" in
+        RSAKeySize|DOCAllowRemoteConnections) return 0 ;;
       esac
       ;;
 
@@ -3089,7 +3105,6 @@ start_watch_all() {
     share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
     [ -z "$share_snap" ] && share_snap="off"
     log_line "Cmd: # cups_sharing_watch active (initial: $share_snap)"
-    local tahoe_note_emitted=false
 
     while true; do
       /bin/sleep 0.5 || true
@@ -3098,10 +3113,6 @@ start_watch_all() {
       share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
       [ -z "$share_curr" ] && share_curr="off"
       if [ "$share_curr" != "$share_snap" ]; then
-        if [ "$tahoe_note_emitted" = "false" ]; then
-          log_line "Cmd: # NOTE: Tahoe quirk — Printer Sharing toggle (enable or disable) may need a re-toggle to surface (cupsd.conf rewrites lazily on next state change)"
-          tahoe_note_emitted=true
-        fi
         case "$share_curr" in
           on|yes)
             log_line "Cmd: # CUPS: Printer Sharing enabled"
@@ -3199,6 +3210,16 @@ DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
 # the writeconfig XPC service. Filter to subcommands that change state —
 # drop noisy kill / list / print / dumpstate.
 LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
+# networksetup / systemsetup are heavily polled by macOS daemons in read-only
+# mode (Wi-Fi menu refresh, Network panel scan, time sync). Drop pure queries.
+READONLY_PREFIXES = ("-get", "-list", "-print", "-show")
+def is_readonly(basename, args):
+    if basename not in ("networksetup", "systemsetup"):
+        return False
+    if len(args) < 2:
+        return True
+    sub = args[1]
+    return sub.startswith(READONLY_PREFIXES)
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -3213,6 +3234,8 @@ while True:
         basename = exe.rsplit("/", 1)[-1]
         args = ev.get("args", []) or []
         if basename in DIRECT_BINS:
+            if is_readonly(basename, args):
+                continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
             print((exe + " " + tail).rstrip(), flush=True)
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
@@ -3257,8 +3280,19 @@ while True:
     _emit_launchd_diff() {
       local prev="$1" curr="$2" domain="$3"
       "$PYTHON3_BIN" - "$prev" "$curr" "$domain" 2>/dev/null <<'PY'
-import json, sys
+import json, sys, fnmatch
 prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
+# Third-party VM / container helpers that auto-toggle their own launchd
+# state in the user gui session — not user-driven preference changes.
+NOISE_PATTERNS = (
+    "codes.rambo.*",      # VirtualBuddy
+    "com.parallels.*",    # Parallels Desktop
+    "com.vmware.*",       # VMware Fusion
+    "org.virtualbox.*",   # VirtualBox
+    "com.docker.*",       # Docker Desktop
+)
+def is_noisy(svc):
+    return any(fnmatch.fnmatchcase(svc, p) for p in NOISE_PATTERNS)
 def load(p):
     try:
         with open(p) as f: return json.load(f)
@@ -3267,6 +3301,8 @@ def load(p):
 prev = load(prev_path)
 curr = load(curr_path)
 for k in sorted(set(prev) | set(curr)):
+    if is_noisy(k):
+        continue
     pv, cv = prev.get(k), curr.get(k)
     if pv == cv:
         continue

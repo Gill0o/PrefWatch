@@ -20,6 +20,11 @@
 - Exclude `com.apple.gridDataServices` (daemon auth-token refresh timestamps).
 - `com.apple.AssetCache`: filter `SavedCacheDetails`/`SavedCacheSize`/`SavedCacheUsedSize` (runtime stats; keeps `Activated`).
 - Exclude `com.adobe.AdobeGenuineService` (licensing/consent daemon — French consent strings contain apostrophes that break the PlistBuddy single-quote wrapping).
+- `launchd_state_watch`: skip third-party VM / container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`) — they auto-toggle their own gui launchd state.
+- `sharing_exec_watch`: skip read-only `networksetup` / `systemsetup` invocations (`-get*`, `-list*`, `-print*`, `-show*`) — Wi-Fi menu / Network panel / time-sync daemons poll these constantly.
+- Exclude `com.apple.backgroundtaskmanagement*` (lowercase variant — zsh glob case-sensitivity let `com.apple.backgroundtaskmanagement.agent` slip through the existing `com.apple.BackgroundTaskManagement*` rule).
+- `com.apple.ARDAgent`: filter `ARDAdmin_AppStoreURL` (hardcoded App Store link rewritten by daemon on Remote Management activation).
+- `com.apple.RemoteDesktop`: filter `RSAKeySize` and `DOCAllowRemoteConnections` (daemon-set init values that don't reflect user toggle state).
 
 
 ## 1.2.1 — 2026-05-14
