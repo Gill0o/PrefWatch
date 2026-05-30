@@ -254,12 +254,9 @@ unsetopt xtrace verbose 2>/dev/null || true
 # EXCLUSIONS
 # ============================================================================
 
-# "Hot" domains kept permanently marked active so their very first change is
-# detected without waiting for the fs_usage→poll round-trip (cfprefsd can buffer
-# a write for several seconds before it hits disk; hot domains are flushed +
-# re-diffed every cycle so their changes surface in ~1-2s). Curated to the most
-# commonly-tweaked interactive panels. Override via --hot-domains CLI flag or
-# Jamf $10 parameter (comma-separated list); pass "NONE" to disable.
+# "Hot" domains stay marked active so their first change is caught without the
+# fs_usage→poll round-trip (cfprefsd can buffer writes for seconds; hot ones are
+# flushed every cycle → ~1-2s). Override via --hot-domains / Jamf $10; "NONE" disables.
 typeset -a HOT_DOMAINS=(
   # Shell / appearance
   com.apple.finder
@@ -285,17 +282,9 @@ typeset -a HOT_DOMAINS=(
   # Lock screen / software update
   com.apple.screensaver                                # idle timing lives in ByHost (caught by fs_watch)
   com.apple.SoftwareUpdate
-  # Deliberately NOT hot — verified empty/elsewhere, hot would be a no-op:
-  #   com.apple.sound          → not a real domain; sound prefs are
-  #                              com.apple.sound.beep.* inside .GlobalPreferences (already hot)
-  #   com.apple.systemsettings → 0 readable keys (System Settings window state only)
-  #   com.apple.touchbar       → absent on non-Touch-Bar Macs
-  #   com.apple.wallpaper      → real config in ~/Library/Application Support/com.apple.wallpaper/Store/
-  #                              (outside monitored dirs; plist is stale)
-  # Also not hot (chatty/covered elsewhere): com.apple.ncprefs (Notifications —
-  # huge + daemon-churned, domain-excluded), com.apple.bluetooth (daemon-churned
-  # device state), windowserver/displays (chatty), energy (pmset_watch),
-  # sharing (dedicated watchers), network (SystemConfiguration, system path).
+  # NOT hot: sound/systemsettings/touchbar are no-ops here (empty or absent),
+  # wallpaper lives in a Store outside Preferences; ncprefs/bluetooth/windowserver
+  # are daemon-churned; energy/sharing/network have their own watchers.
 )
 if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
   if [ "$HOT_DOMAINS_RAW" = "NONE" ] || [ "$HOT_DOMAINS_RAW" = "none" ]; then
@@ -416,10 +405,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.coreservices.useractivityd*"
 
   # System internals
-  # NOTE: com.apple.loginwindow is intentionally NOT excluded — its system file
-  # (/Library/Preferences) holds real admin policies (GuestEnabled,
-  # HideUserAvatarAndName, LoginwindowText, autoLoginUser, AdminHostInfo). Churn
-  # keys are filtered in is_noisy_key instead.
+  # loginwindow NOT excluded — system file holds real policies (GuestEnabled,
+  # LoginwindowText, autoLoginUser, …); churn filtered in is_noisy_key.
   "com.apple.spaces"
   "com.apple.BezelServices"
   "com.apple.jetpackassetd"
@@ -603,12 +590,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.corespotlightui"
   "com.apple.textunderstanding*"
 
-  # Note: The following are now intelligently filtered instead of excluded:
-  # - com.apple.dock (filter workspace-*, keep orientation, autohide, etc.)
-  # - com.apple.finder (filter FXRecentFolders, keep ShowPathbar, etc.)
-  # - com.apple.Safari (filter History*; limited — most prefs in internal DB since Sequoia)
-  # - com.apple.systemsettings (filter timestamps, keep actual settings)
-  # - com.apple.Mail, Messages, etc. (limited — most prefs in internal DB since Sequoia)
+  # Filtered per-key in is_noisy_key (not excluded) so real prefs survive:
+  # dock, finder, Safari, systemsettings, Mail, Messages.
 )
 
 # Merge user-provided exclusions with defaults
@@ -828,18 +811,10 @@ prepare_logfile() {
   echo "$path"
 }
 
-# Interactive y/n prompt with TTY → /dev/tty → GUI dialog fallback chain.
-# Exit codes:
-#   0 — user confirmed (Yes / y / Y)
-#   1 — user declined (No / anything else)
-#   2 — no usable channel OR dialog timed out (caller decides default)
-# Channels tried in order:
-#   1. stdin when TTY (works under sudo with inherited stdin)
-#   2. /dev/tty when openable (probe avoids a set -e exit in Jamf Self Service
-#      where /dev/tty exists as a char device but has no controlling terminal)
-#   3. osascript GUI dialog as the console user via `launchctl asuser` (Jamf
-#      Self Service, launchd with a logged-in user). 5-minute giving-up
-#      timeout maps to return 2 so Jamf policies never hang forever.
+# Interactive y/n prompt. Exit: 0 = yes, 1 = no, 2 = no channel / dialog timed out.
+# Tries in order: stdin (TTY), /dev/tty (probed — a bare open can set -e-exit under
+# Jamf Self Service), then an osascript dialog as the console user via launchctl
+# asuser (5-min timeout → 2, so Jamf policies never hang).
 prompt_yn() {
   local prompt="$1" answer=""
 
@@ -948,11 +923,8 @@ is_noisy_key() {
     *timestamp*|*Timestamp*|*TimeStamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*|*last*Date|*Last*Date)
       return 0 ;;
 
-    # Note: bare *Date|Date is too generic (would mask ExpirationDate/StartDate as
-    # real prefs); the anchored *last*Date|*Last*Date above is safe — "last…Date"
-    # is always a timestamp (e.g. Messages lastCoolOffDate) and ExpirationDate/
-    # StartDate have no "last".
-    # Specific date noise is already caught by *timestamp*, *LastSync*, *lastBootstrap*, etc.
+    # bare *Date is too broad (masks ExpirationDate/StartDate); anchored *last*Date
+    # above is safe — "last…Date" is always a timestamp (e.g. lastCoolOffDate).
 
     # Error states & sync errors (transient)
     *Error|*Errors|*error|*errors|*ErrorCode*|*ErrorDomain*|*ErrorUserInfo*|IMCloudKitSyncErrors|IMSerializedError*)
@@ -1155,9 +1127,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # loginwindow: filter per-session/login churn, keep real admin policies.
-    # (NOT domain-excluded — the system file carries GuestEnabled,
-    # HideUserAvatarAndName, LoginwindowText, autoLoginUser, AdminHostInfo, etc.)
+    # loginwindow: drop per-session/login churn, keep admin policies (see Keep below).
     com.apple.loginwindow)
       case "$keyname" in
         # Noisy: who logged in last / recently, first-login bookkeeping, build stamp
@@ -3109,21 +3079,13 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          # Parallel flush: each XPC round-trip is ~20-50ms. One bare read per
-          # active domain. We do NOT also issue `-currentHost read` here: it
-          # doubled the per-cycle fork count (and thus the chance one read hangs
-          # cfprefsd and freezes the loop until the watchdog fires). ByHost prefs
-          # are still flushed where the path is known: show_plist_diff's retry
-          # loop and fs_watch both add -currentHost for /ByHost/ files.
+          # One bare read per domain. No `-currentHost` here — it doubled the
+          # fork/hang surface; ByHost is flushed by show_plist_diff/fs_watch instead.
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
           _pids+=($!)
         done
-        # Watchdog: cfprefsd occasionally hangs on a specific domain; without
-        # this bound, `wait` would freeze the polling loop until the read
-        # returns and no further changes would be reported. A normal read is
-        # ~20-50ms, so kill stragglers aggressively: TERM after 1s, KILL after
-        # 1.5s. Worst-case loop freeze is ~1.5s (was 4s); missing one flush hint
-        # is harmless — the next cycle re-flushes.
+        # Watchdog: a hung cfprefsd read would freeze the loop on `wait`. Kill
+        # stragglers (TERM 1s / KILL 1.5s) — missing a flush hint is harmless.
         if (( ${#_pids[@]} > 0 )); then
           (
             /bin/sleep 1
@@ -3166,12 +3128,8 @@ start_watch_all() {
     done
   }
 
-  # CUPS printer monitoring function
-  # Printer Sharing toggle — independent watcher in its own sub-shell so
-  # the lpstat 5s debounce (which fires whenever cupsd DNS-SD-(un)publishes)
-  # never blocks sharing detection. Parses /etc/cups/cupsd.conf's Browsing
-  # directive directly (written instantly by writeconfig, before cupsd
-  # reloads — so no cupsd-runtime lag).
+  # Printer Sharing toggle — own sub-shell so the lpstat 5s debounce never blocks
+  # it. Reads cupsd.conf's Browsing directive directly (written before cupsd reloads).
   cups_sharing_watch() {
     local cupsdconf="/etc/cups/cupsd.conf"
     [ -f "$cupsdconf" ] || { log_line "Cmd: # cups_sharing_watch DISABLED: $cupsdconf not present"; return 0; }
@@ -3251,11 +3209,8 @@ start_watch_all() {
     done
   }
 
-  # Stream eslogger exec events for sharing-related CLI binaries and emit
-  # the reconstructed command line. Catches kickstart / systemsetup / sharing
-  # / networksetup invocations (UI toggles for Remote Management, SSH, File
-  # Sharing, Network Sharing, etc.) — these tools modify state outside
-  # /Library/Preferences/ so the regular fs_usage path can't capture them.
+  # Stream eslogger exec events for sharing CLIs (kickstart/systemsetup/sharing/
+  # networksetup) — UI toggles that modify state outside /Library/Preferences.
   # Requires root + eslogger (Ventura+) + Python3.
   sharing_exec_watch() {
     if [ ! -x /usr/bin/eslogger ]; then
@@ -3338,12 +3293,9 @@ while True:
         done
   }
 
-  # Poll /var/db/com.apple.xpc.launchd/disabled.plist + disabled.<UID>.plist
-  # every 2s. macOS Tahoe System Settings flips most sharing services via
-  # pure XPC to launchd — no exec event fires — but the persistent disabled
-  # state still lands in these files. Emit `launchctl enable/disable
-  # <domain>/<service>` for each on/off transition (true = disabled, false
-  # = enabled). Requires root + Python3 (for JSON diff).
+  # Poll launchd's disabled.plist every 2s: Tahoe flips sharing services via pure
+  # XPC (no exec event), but the disabled state lands here. Emit launchctl
+  # enable/disable per transition. Requires root + Python3 (JSON diff).
   launchd_state_watch() {
     [ -n "$PYTHON3_BIN" ] || return 0
     local sys_plist="/var/db/com.apple.xpc.launchd/disabled.plist"
