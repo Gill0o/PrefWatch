@@ -4,9 +4,9 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Full command coverage** — `defaults`, `PlistBuddy`, `pmset`, `lpadmin`, `launchctl`, `cupsctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`
-- **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
-- **Beyond plist monitoring** (ALL + root) — `eslogger` + `/var/db/com.apple.xpc.launchd/disabled.plist` + `cupsd.conf` catch toggles outside `/Library/Preferences/`
+- **Reproducible commands** — each detected change is emitted as the exact command to recreate it: `defaults`/`PlistBuddy` for plist preferences, `pmset` for energy, `lpadmin` for printer queues
+- **ALL mode** — watch every domain at once and find out which one changed, without naming it upfront (`fs_usage` + polling)
+- **Beyond plists** (ALL + root) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`) and printer sharing (`cupsctl`) — via `eslogger`, launchd's `disabled.plist`, and `cupsd.conf`
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
