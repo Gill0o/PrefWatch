@@ -410,7 +410,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.coreservices.useractivityd*"
 
   # System internals
-  "com.apple.loginwindow"
+  # NOTE: com.apple.loginwindow is intentionally NOT excluded — its system file
+  # (/Library/Preferences) holds real admin policies (GuestEnabled,
+  # HideUserAvatarAndName, LoginwindowText, autoLoginUser, AdminHostInfo). Churn
+  # keys are filtered in is_noisy_key instead.
   "com.apple.spaces"
   "com.apple.BezelServices"
   "com.apple.jetpackassetd"
@@ -1140,6 +1143,22 @@ is_noisy_key() {
         AppleSavedCurrentInputSource|InputSourceKind|KeyboardLayout\ ID|KeyboardLayout\ Name)
           return 0 ;;
         # Keep: AppleEnabledInputSources (adding/removing keyboard layouts)
+      esac
+      ;;
+
+    # loginwindow: filter per-session/login churn, keep real admin policies.
+    # (NOT domain-excluded — the system file carries GuestEnabled,
+    # HideUserAvatarAndName, LoginwindowText, autoLoginUser, AdminHostInfo, etc.)
+    com.apple.loginwindow)
+      case "$keyname" in
+        # Noisy: who logged in last / recently, first-login bookkeeping, build stamp
+        lastUser|lastUserName|RecentUsers|AccountInfo|OptimizerPreviousBuild|UseVoiceOverLegacyMigrated)
+          return 0 ;;
+        # Noisy: per-user logout/session-restore + onboarding churn (user file)
+        TALLogoutReason|TALLogoutSavesState|MiniBuddyLaunch|MiniBuddy*|oneTimeSSMigrationComplete)
+          return 0 ;;
+        # Keep: GuestEnabled, HideUserAvatarAndName, LoginwindowText, RetriesUntilHint,
+        # AdminHostInfo, autoLoginUser*, Disable*, Clock* (login-screen clock font)
       esac
       ;;
 
