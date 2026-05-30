@@ -6,7 +6,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 - **Reproducible commands** — each detected change is emitted as the exact command to recreate it: `defaults`/`PlistBuddy` for plist preferences, `pmset` for energy, `lpadmin` for printer queues
 - **ALL mode** — watch every domain at once and find out which one changed, without naming it upfront (`fs_usage` + polling)
-- **Beyond plists** (ALL + root) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`) and printer sharing (`cupsctl`) — via `eslogger`, launchd's `disabled.plist`, and `cupsd.conf`
+- **Beyond plists** (needs sudo) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`) and printer sharing (`cupsctl`) — via `eslogger`, launchd's `disabled.plist`, and `cupsd.conf`
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
@@ -45,7 +45,7 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (root required — see *Beyond plist monitoring* above). Preferences stored elsewhere won't be detected — notably **Safari, Mail, and Calendar** (internal app databases since recent macOS releases) and the **Desktop wallpaper**, whose real config lives in `~/Library/Application Support/com.apple.wallpaper/Store/` rather than the `com.apple.wallpaper` plist.
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (root required — see *Beyond plists* above). Preferences stored elsewhere won't be detected — notably **Safari, Mail, Calendar**, and the **Desktop wallpaper**, which keep their settings in internal databases/stores rather than plists.
 
 For detected changes that require extra steps to apply (logout/login, `killall`, settings that write but don't take effect, etc.), PrefWatch emits inline `# NOTE:` comments in the output.
 
