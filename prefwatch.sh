@@ -939,10 +939,13 @@ is_noisy_key() {
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*TimeStamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*)
+    *timestamp*|*Timestamp*|*TimeStamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*|*last*Date|*Last*Date)
       return 0 ;;
 
-    # Note: removed *Date|Date — too generic, could mask ExpirationDate/StartDate as real prefs
+    # Note: bare *Date|Date is too generic (would mask ExpirationDate/StartDate as
+    # real prefs); the anchored *last*Date|*Last*Date above is safe — "last…Date"
+    # is always a timestamp (e.g. Messages lastCoolOffDate) and ExpirationDate/
+    # StartDate have no "last".
     # Specific date noise is already caught by *timestamp*, *LastSync*, *lastBootstrap*, etc.
 
     # Error states & sync errors (transient)
