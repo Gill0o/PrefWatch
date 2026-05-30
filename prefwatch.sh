@@ -267,16 +267,21 @@ typeset -a HOT_DOMAINS=(
   com.apple.dock
   com.apple.controlcenter
   com.apple.WindowManager
+  com.apple.systemuiserver                             # legacy menu-bar extras
   com.apple.menuextra.clock                            # menu-bar clock format (ShowAMPM/Date/DayOfWeek)
-  # Input — keyboard / trackpad / mouse (all standard plists here, not ByHost)
+  # Input — keyboard / shortcuts / trackpad / mouse (all standard plists here, not ByHost)
   com.apple.HIToolbox
+  com.apple.symbolichotkeys                            # keyboard shortcuts
   com.apple.AppleMultitouchTrackpad
   com.apple.driver.AppleBluetoothMultitouch.trackpad
   com.apple.AppleMultitouchMouse
   com.apple.driver.AppleBluetoothMultitouch.mouse
-  # Accessibility / search
+  # Accessibility / search / screenshots
   com.apple.universalaccess
+  com.apple.Accessibility                              # newer accessibility domain (VoiceOver, zoom, …)
+  com.apple.mediaaccessibility                         # captions / subtitles appearance
   com.apple.Spotlight
+  com.apple.screencapture                              # screenshot location / format
   # Lock screen / software update
   com.apple.screensaver                                # idle timing lives in ByHost (caught by fs_watch)
   com.apple.SoftwareUpdate
@@ -287,7 +292,8 @@ typeset -a HOT_DOMAINS=(
   #   com.apple.touchbar       → absent on non-Touch-Bar Macs
   #   com.apple.wallpaper      → real config in ~/Library/Application Support/com.apple.wallpaper/Store/
   #                              (outside monitored dirs; plist is stale)
-  # Also not hot (chatty/covered elsewhere): com.apple.bluetooth (daemon-churned
+  # Also not hot (chatty/covered elsewhere): com.apple.ncprefs (Notifications —
+  # huge + daemon-churned, domain-excluded), com.apple.bluetooth (daemon-churned
   # device state), windowserver/displays (chatty), energy (pmset_watch),
   # sharing (dedicated watchers), network (SystemConfiguration, system path).
 )

@@ -8,7 +8,7 @@
 ### Fix
 - Responsiveness: hot-domain set widened to the common System Settings panels, flushed every 0.5s so changes surface in ~1-2s instead of ~10s. Parallel flush ≈0.15s/cycle → no latency cost. Override via `--hot-domains`.
 - Flush-loop freeze capped at ~1.5s (straggler watchdog 3s/4s → 1s/1.5s); active-domain flush back to one bare read/domain (ByHost handled by `show_plist_diff`/`fs_watch`).
-- Hot set trimmed of dead entries (`wallpaper`, `sound`, `systemsettings`, `touchbar`) — config absent or stored outside the monitored Preferences dirs.
+- Hot set audited: dropped dead entries (`wallpaper`/`sound`/`systemsettings`/`touchbar`, config absent or outside monitored dirs), added `Accessibility`/`screencapture`/`symbolichotkeys`/`systemuiserver`/`mediaaccessibility` (live, plist-backed, not chatty).
 - Guard two `set -e` pipeline assignments (`dscl` home, version header) with `|| true` — non-zero exit aborted before the fallback ran (the `dscl` one could kill init under Jamf/root).
 - `com.apple.inputAnalytics*` and `com.apple.appstored` exclusions were stuck inside comment lines, never applied.
 - Stray `_hd=…`/`_adom=…` lines: `local` re-declared inside `poll_watch`'s loop (zsh `TYPESET_SILENT` off prints `name=value`); hoisted out, same for `emit_array_deletions`/`pmset_watch`.
