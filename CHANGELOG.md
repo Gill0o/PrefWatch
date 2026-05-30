@@ -19,7 +19,7 @@
 
 ### Noise
 - Excluded domains: `com.apple.facetime.bag`, `com.apple.gridDataServices`, `com.adobe.AdobeGenuineService`, `com.apple.weather*`, `com.apple.backgroundtaskmanagement*` (lowercase variant).
-- Key filters: `CKPerBootTasks`, `DDMPersisted*`, `*-analytics-stamp` (all global — the last covers dock/screencapture/systemuiserver); Bartender `TerminationReasons`; AudioMIDISetup `audioDevice.selected`; iStat menubar `Updates`/`Status`; cloud.quota `_ICQ*`; AssetCache cache-size keys; ARDAgent `ARDAdmin_AppStoreURL`; RemoteDesktop `RSAKeySize`/`DOCAllowRemoteConnections`.
+- Key filters: `CKPerBootTasks`, `DDMPersisted*`, `*-analytics-stamp` (all global — the last covers dock/screencapture/systemuiserver), `*_frame` (global — window/inspector geometry, e.g. SketchUp LayOut `*Inspector_frame`/`*Palette_frame`); Bartender `TerminationReasons`; AudioMIDISetup `audioDevice.selected`; iStat menubar `Updates`/`Status`; cloud.quota `_ICQ*`; AssetCache cache-size keys; ARDAgent `ARDAdmin_AppStoreURL`; RemoteDesktop `RSAKeySize`/`DOCAllowRemoteConnections`.
 - `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries; dedupe identical commands within 1s.
 - `launchd_state_watch`: skip third-party VM/container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`) and `com.apple.ManagedClient*`.
 
