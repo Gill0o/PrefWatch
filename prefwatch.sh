@@ -1150,6 +1150,14 @@ is_noisy_key() {
       esac
       ;;
 
+    # SMB server: NetBIOSName is auto-derived from the host name (smbd rewrites
+    # it on start). Keep ServerDescription, AllowGuestAccess, etc.
+    com.apple.smb.server)
+      case "$keyname" in
+        NetBIOSName) return 0 ;;
+      esac
+      ;;
+
     # Universal Access: Filter internal change history
     com.apple.universalaccess)
       case "$keyname" in
@@ -3285,8 +3293,16 @@ while True:
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
             emit((exe + " " + tail).rstrip())
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
-            tail = " ".join(shlex.quote(a) for a in args[1:])
-            emit(exe + " " + tail)
+            # Skip load/unload churn of socket-activated system daemons that
+            # launchd cycles on its own (smbd, bootpd, dhcp6d) — their real
+            # persistent state is reported by launchd_state_watch.
+            if args[1] in ("load", "unload") and any(
+                n in a for n in ("com.apple.smbd", "com.apple.bootpd", "com.apple.dhcp6d")
+                for a in args):
+                pass
+            else:
+                tail = " ".join(shlex.quote(a) for a in args[1:])
+                emit(exe + " " + tail)
     except Exception:
         pass
 ' 2>/dev/null \
