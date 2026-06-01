@@ -1133,8 +1133,8 @@ is_noisy_key() {
         # Noisy: who logged in last / recently, first-login bookkeeping, build stamp
         lastUser|lastUserName|RecentUsers|AccountInfo|OptimizerPreviousBuild|UseVoiceOverLegacyMigrated)
           return 0 ;;
-        # Noisy: per-user logout/session-restore + onboarding churn (user file)
-        TALLogoutReason|TALLogoutSavesState|MiniBuddyLaunch|MiniBuddy*|oneTimeSSMigrationComplete)
+        # Noisy: session-restore (TAL* = apps-to-relaunch / logout state) + onboarding churn
+        TAL*|MiniBuddy*|oneTimeSSMigrationComplete)
           return 0 ;;
         # Keep: GuestEnabled, HideUserAvatarAndName, LoginwindowText, RetriesUntilHint,
         # AdminHostInfo, autoLoginUser*, Disable*, Clock* (login-screen clock font)
@@ -1144,7 +1144,7 @@ is_noisy_key() {
     # SoftwareUpdate: drop daemon-written check results, keep the policy toggles
     com.apple.SoftwareUpdate)
       case "$keyname" in
-        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful)
+        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful|FirstOfferDateDictionary)
           return 0 ;;
         # Keep: AutomaticCheckEnabled, AutomaticDownload, AutomaticallyInstall*, etc.
       esac
