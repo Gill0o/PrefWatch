@@ -1123,7 +1123,10 @@ is_noisy_key() {
         # Noisy: current active keyboard (changes on every language switch)
         AppleSavedCurrentInputSource|InputSourceKind|KeyboardLayout\ ID|KeyboardLayout\ Name)
           return 0 ;;
-        # Keep: AppleEnabledInputSources (adding/removing keyboard layouts)
+        # Noisy: MRU history of recently-used input sources (rewrites on every switch)
+        AppleInputSourceHistory)
+          return 0 ;;
+        # Keep: AppleEnabledInputSources / AppleSelectedInputSources (real layout changes)
       esac
       ;;
 
