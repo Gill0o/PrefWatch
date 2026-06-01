@@ -906,7 +906,7 @@ is_noisy_key() {
 
   case "$keyname" in
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -1138,6 +1138,15 @@ is_noisy_key() {
           return 0 ;;
         # Keep: GuestEnabled, HideUserAvatarAndName, LoginwindowText, RetriesUntilHint,
         # AdminHostInfo, autoLoginUser*, Disable*, Clock* (login-screen clock font)
+      esac
+      ;;
+
+    # SoftwareUpdate: drop daemon-written check results, keep the policy toggles
+    com.apple.SoftwareUpdate)
+      case "$keyname" in
+        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful)
+          return 0 ;;
+        # Keep: AutomaticCheckEnabled, AutomaticDownload, AutomaticallyInstall*, etc.
       esac
       ;;
 
@@ -3324,6 +3333,8 @@ NOISE_PATTERNS = (
     "org.virtualbox.*",               # VirtualBox
     "com.docker.*",                   # Docker Desktop
     "com.apple.ManagedClient*",       # MDM enrollagent auto-disable post-enrollment
+    "com.apple.bootpd",               # DHCP/BOOTP server — flaps with Internet Sharing/network
+    "com.apple.dhcp6d",               # DHCPv6 server — flaps automatically
 )
 def is_noisy(svc):
     return any(fnmatch.fnmatchcase(svc, p) for p in NOISE_PATTERNS)

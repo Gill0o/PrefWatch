@@ -20,9 +20,9 @@
 
 ### Noise
 - Excluded domains: `com.apple.facetime.bag`, `com.apple.gridDataServices`, `com.adobe.AdobeGenuineService`, `com.apple.weather*`, `com.apple.backgroundtaskmanagement*` (lowercase variant).
-- Key filters (global): `CKPerBootTasks`, `DDMPersisted*`, `*-analytics-stamp`, `*_frame` (window geometry), `*last*Date`/`*Last*Date` (timestamps). Per-domain: Bartender `TerminationReasons`, AudioMIDISetup `audioDevice.selected`, iStat menubar `Updates`/`Status`, cloud.quota `_ICQ*`, AssetCache cache-size, ARDAgent `ARDAdmin_AppStoreURL`, RemoteDesktop `RSAKeySize`/`DOCAllowRemoteConnections`.
+- Key filters (global): `CKPerBootTasks`, `DDMPersisted*`, `*-analytics-stamp`, `*_frame` (window geometry), `*last*Date`/`*Last*Date` (timestamps), `recentlyPlayed*`/`NSOSPLastRootDirectory` (app recents/open-panel). Per-domain: SoftwareUpdate `LastResultCode`/`LastAttempt*`/`RecommendedUpdates` (daemon results), Bartender `TerminationReasons`, AudioMIDISetup `audioDevice.selected`, iStat menubar `Updates`/`Status`, cloud.quota `_ICQ*`, AssetCache cache-size, ARDAgent `ARDAdmin_AppStoreURL`, RemoteDesktop `RSAKeySize`/`DOCAllowRemoteConnections`.
 - `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries; dedupe identical commands within 1s.
-- `launchd_state_watch`: skip third-party VM/container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`) and `com.apple.ManagedClient*`.
+- `launchd_state_watch`: skip third-party VM/container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`), `com.apple.ManagedClient*`, and the auto-flapping `com.apple.bootpd`/`com.apple.dhcp6d` (Internet Sharing daemons).
 
 
 ## 1.2.1 — 2026-05-14
