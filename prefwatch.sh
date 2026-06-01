@@ -1445,6 +1445,14 @@ is_noisy_command() {
       ;;
   esac
 
+  # ARD Computer Info fields (Text1-4) initialised EMPTY when Remote Management
+  # is enabled — side-effect of the toggle. Keep them when they carry a value.
+  case "$cmd" in
+    *com.apple.RemoteDesktop*'"Text'[1-4]'" -string ""')
+      return 0
+      ;;
+  esac
+
   return 1
 }
 
