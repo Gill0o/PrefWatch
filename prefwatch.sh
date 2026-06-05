@@ -335,7 +335,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.CrashReporter"
   # Note: com.apple.security* narrowed — catch only known noisy sub-domains,
   # not "com.apple.security.authorization" or similar which may have real prefs
-  "com.apple.security.cloudkeychainproxy3"
+  "com.apple.security.cloudkeychainproxy3*"  # glob: also covers .keysToRegister sidecar (sync queue)
   "com.apple.security.smartcard"
   "com.apple.securityagent"
   "com.apple.securityd"
@@ -1027,7 +1027,7 @@ is_noisy_key() {
 
     # Cache & temporary data
     # Note: keeps real prefs like CacheSize, EnableCache, ColorTemperature, Template*
-    *-cache|*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*|*-temp|*-tmp|*TempFile*|*TempPath*)
+    *-cache|*CacheData*|*CachedBy*|*CacheVersion*|*CacheKey*|*CacheEntry*|*FlushThumbnailCache|*-temp|*-tmp|*TempFile*|*TempPath*)
       return 0 ;;
 
     # View state (scroll positions, selected items, etc.)
