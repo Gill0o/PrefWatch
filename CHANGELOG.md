@@ -1,28 +1,21 @@
 # Changelog
 
-## 1.3.0 — unreleased
+## 1.3.0 — 2026-06-05
 
 ### Feature
-- Sharing-panel capture (ALL/root): `sharing_exec_watch` (eslogger exec → the exact `kickstart`/`systemsetup`/`sharing`/`networksetup`/`launchctl` invocation), `launchd_state_watch` (polls `disabled*.plist` → `launchctl enable/disable` for XPC-only toggles: SSH, Screen Sharing, ARD), `cups_sharing_watch` (cupsd.conf `Browsing` → `cupsctl --[no-]share-printers`).
+- Sharing-panel capture (ALL/root): captures toggles stored outside plists and emits the matching command — Remote Login / Screen Sharing / Remote Management (`launchctl`/`kickstart`/`systemsetup`/`sharing`/`networksetup`) and Printer Sharing (`cupsctl`), via `eslogger`, launchd `disabled.plist`, and `cupsd.conf`.
+- Faster detection: a default "hot" set of the common System Settings panels is flushed every 0.5s so changes surface in ~1-2s instead of ~10s. Override via `--hot-domains` (Jamf `$10`); `NONE` disables.
 
 ### Fix
-- Responsiveness: hot-domain set widened to the common System Settings panels, flushed every 0.5s so changes surface in ~1-2s instead of ~10s. Parallel flush ≈0.15s/cycle → no latency cost. Override via `--hot-domains`.
-- Flush-loop freeze capped at ~1.5s (straggler watchdog 3s/4s → 1s/1.5s); active-domain flush back to one bare read/domain (ByHost handled by `show_plist_diff`/`fs_watch`).
-- Hot set audited: dropped dead entries (`wallpaper`/`sound`/`systemsettings`/`touchbar`, config absent or outside monitored dirs), added `Accessibility`/`screencapture`/`symbolichotkeys`/`systemuiserver`/`mediaaccessibility` (live, plist-backed, not chatty).
-- Guard two `set -e` pipeline assignments (`dscl` home, version header) with `|| true` — non-zero exit aborted before the fallback ran (the `dscl` one could kill init under Jamf/root).
-- `com.apple.inputAnalytics*` and `com.apple.appstored` exclusions were stuck inside comment lines, never applied.
-- Stray `_hd=…`/`_adom=…` lines: `local` re-declared inside `poll_watch`'s loop (zsh `TYPESET_SILENT` off prints `name=value`); hoisted out, same for `emit_array_deletions`/`pmset_watch`.
 - `com.apple.loginwindow` un-excluded to surface admin policies (`GuestEnabled`, `LoginwindowText`, `autoLoginUser`, …); per-session churn filtered key-by-key instead.
-
-### Refactor
-- Deduplicated `show_plist_diff`/`show_domain_diff` emission into shared helpers (no output change).
-- MAIN: `EXIT` trap + startup sweep of orphan tmpdirs + lock-orphan reclaim; xtrace disable collapsed to one `unsetopt`.
+- Guard `set -e` pipeline assignments (`dscl` home, version header) with `|| true` so a non-zero exit can't abort startup under Jamf/root.
+- Guaranteed tmpdir cleanup on exit + reclaim of orphan tmpdirs/locks from crashed prior runs.
 
 ### Noise
-- Excluded domains: `com.apple.facetime.bag`, `com.apple.gridDataServices`, `com.adobe.AdobeGenuineService`, `com.apple.weather*`, `com.apple.backgroundtaskmanagement*` (lowercase variant). Widened `com.apple.security.cloudkeychainproxy3` to a glob so the `.keysToRegister` sidecar (iCloud Keychain sync queue: `PendingKeys`/`AlwaysKeys`) is filtered too.
-- Key filters (global): `CKPerBootTasks`, `DDMPersisted*`, `*-analytics-stamp`, `*FlushThumbnailCache` (cache-invalidation signal, e.g. AvatarUI Memoji), `*_frame`/`SidebarWidth` (window geometry), `*last*Date`/`*Last*Date` (timestamps), `recentlyPlayed*`/`NSOSPLastRootDirectory` (app recents/open-panel). Per-domain: SoftwareUpdate `LastResultCode`/`LastAttempt*`/`RecommendedUpdates`/`FirstOfferDateDictionary` (daemon results), smb.server `NetBIOSName` (auto-derived from host name), HIToolbox `AppleInputSourceHistory` (input-source MRU), Bartender `TerminationReasons`, AudioMIDISetup `audioDevice.selected`, iStat menubar `Updates`/`Status`, cloud.quota `_ICQ*`, AssetCache cache-size, ARDAgent `ARDAdmin_AppStoreURL`, RemoteDesktop `RSAKeySize`/`DOCAllowRemoteConnections` + empty `Text1-4` (ARD info fields initialised on enable; real values kept).
-- `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries; dedupe identical commands within 1s; skip `load`/`unload` churn of socket-activated `smbd`/`bootpd`/`dhcp6d` (real toggles still caught by `launchd_state_watch`).
-- `launchd_state_watch`: skip third-party VM/container helpers (`codes.rambo.*`, `com.parallels.*`, `com.vmware.*`, `org.virtualbox.*`, `com.docker.*`), `com.apple.ManagedClient*`, and the auto-flapping `com.apple.bootpd`/`com.apple.dhcp6d` (Internet Sharing daemons).
+- Newly excluded domains: `com.apple.facetime.bag`, `com.apple.gridDataServices`, `com.adobe.AdobeGenuineService`, `com.apple.weather*`, `com.apple.inputAnalytics*`, `com.apple.appstored`, `com.apple.security.cloudkeychainproxy3*`.
+- New global key filters: `CKPerBootTasks`, `DDMPersisted*`, `*-analytics-stamp`, `*FlushThumbnailCache`, `*_frame`/`SidebarWidth` (window geometry), `*last*Date` (timestamps), `recentlyPlayed*`/`NSOSPLastRootDirectory`.
+- New per-domain filters: SoftwareUpdate daemon results, smb.server `NetBIOSName`, HIToolbox `AppleInputSourceHistory`, Bartender `TerminationReasons`, AudioMIDISetup `audioDevice.selected`, iStat menubar `Updates`/`Status`, cloud.quota `_ICQ*`, AssetCache cache-size, ARDAgent/RemoteDesktop daemon-init values.
+- Sharing watchers: drop read-only `networksetup`/`systemsetup` queries, VM/container launchd helpers, and auto-flapping `bootpd`/`dhcp6d`.
 
 
 ## 1.2.1 — 2026-05-14
