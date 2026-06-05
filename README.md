@@ -4,11 +4,12 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Full command coverage** — `defaults`, `PlistBuddy`, `pmset`, `lpadmin`
-- **ALL mode** — discover which domain changed without knowing in advance (`fs_usage` + polling)
+- **Reproducible commands** — each detected change is emitted as the exact command to recreate it: `defaults`/`PlistBuddy` for plist preferences, `pmset` for energy, `lpadmin` for printer queues
+- **ALL mode** — watch every domain at once and find out which one changed, without naming it upfront (`fs_usage` + polling)
+- **Beyond plists** (needs sudo) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`) and printer sharing (`cupsctl`) — via `eslogger`, launchd's `disabled.plist`, and `cupsd.conf`
 - **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
-- **Noise filtering** — 350+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
+- **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
 - **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
 
 ## Quick Start
@@ -35,7 +36,7 @@ sudo ./prefwatch.sh -v
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
-| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | `com.apple.finder,.GlobalPreferences` |
+| `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
 
 ## Jamf Pro Integration
@@ -44,14 +45,14 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), and printer configuration (CUPS). Preferences stored outside plist files won't be detected — notably **Safari, Mail, and Calendar**, which since recent macOS releases keep most of their settings in internal app databases.
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (root required — see *Beyond plists* above). Preferences stored elsewhere won't be detected — notably **Safari, Mail, Calendar**, and the **Desktop wallpaper**, which keep their settings in internal databases/stores rather than plists.
 
 For detected changes that require extra steps to apply (logout/login, `killall`, settings that write but don't take effect, etc.), PrefWatch emits inline `# NOTE:` comments in the output.
 
 ## Notes
 
 - ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
-- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, frequently-touched domains (`com.apple.finder`, `.GlobalPreferences` by default) are kept "hot" and flushed preemptively every 0.5s, typically surfacing changes within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
+- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, "hot" domains (the common System Settings panels by default — see `HOT_DOMAINS`) are flushed preemptively every 0.5s, forcing `cfprefsd` to sync them so changes surface within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected, non-hot) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
 
 ## Security
 
