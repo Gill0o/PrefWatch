@@ -1,7 +1,9 @@
 # Changelog
 
-## .1.4. — unreleased
+## 1.3.1 — unreleased
 
+### Noise
+- New global key filter: `BIT*Time` (HockeyApp / App Center SDK session lifecycle timestamps, e.g. `BITApplicationDidEnterBackgroundTime`).
 
 ## 1.3.0 — 2026-06-05
 
