@@ -127,6 +127,9 @@ gh release create "$TAG" --title "PrefWatch $TAG" --notes "$RELEASE_NOTES" || ec
 git checkout dev
 
 CURRENT_VER="${TAG#v}"
+CURRENT_VER="${CURRENT_VER#.}"   # tolerate v.X.Y.Z tag convention — strip leading dot
+                                 # (else MAJOR="" and PATCH keeps a dot → zsh does
+                                 #  float arithmetic, e.g. $((3.1+1))=4.0999999999999996)
 MAJOR="${CURRENT_VER%%.*}"
 REST="${CURRENT_VER#*.}"
 MINOR="${REST%%.*}"

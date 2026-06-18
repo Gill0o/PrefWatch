@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.3.1
+# Version: 1.3.2
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains

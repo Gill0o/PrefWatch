@@ -1,6 +1,8 @@
 # Changelog
 
-## 1.3.1 — unreleased
+## 1.3.2 — unreleased
+
+## 1.3.1 — 2026-06-18
 
 ### Feature
 - `ard_privs_watch`: capture per-user Remote Management (ARD) privileges (the `naprivs` bitmask, set via XPC outside any plist) — emits the `dscl -create/-delete` + `kickstart -restart -agent` to apply.

@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: .1.4.
+# Version: 1.3.2
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -925,6 +925,11 @@ is_noisy_key() {
 
     # bare *Date is too broad (masks ExpirationDate/StartDate); anchored *last*Date
     # above is safe — "last…Date" is always a timestamp (e.g. lastCoolOffDate).
+
+    # HockeyApp / App Center SDK session lifecycle timestamps (BIT* prefix,
+    # epoch floats rewritten on every foreground/background transition)
+    BIT*Time)
+      return 0 ;;
 
     # Error states & sync errors (transient)
     *Error|*Errors|*error|*errors|*ErrorCode*|*ErrorDomain*|*ErrorUserInfo*|IMCloudKitSyncErrors|IMSerializedError*)
@@ -3012,6 +3017,7 @@ start_watch_all() {
     if [ -f /etc/cups/cupsd.conf ]; then
       _watch_active+=("cups_sharing")
     fi
+    [ -x /usr/bin/dscl ] && _watch_active+=("ard_privs")
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
@@ -3261,10 +3267,20 @@ start_watch_all() {
 import json, sys, shlex, time
 # Direct sharing-toolkit binaries — any invocation is relevant
 DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
+# kickstart is a Perl script, so its exec reports the interpreter as the
+# executable with .../kickstart in args. Resolve the real command from args ONLY
+# for genuine interpreters — NOT launchers like sudo, which re-exec the target as
+# its own event (matching args there would emit the command twice).
+SCRIPT_INTERPRETERS = ("perl", "python", "python3", "ruby", "bash", "sh", "zsh")
 # launchctl is the universal worker macOS Tahoe System Settings calls via
 # the writeconfig XPC service. Filter to subcommands that change state —
 # drop noisy kill / list / print / dumpstate.
 LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
+# launchctl is also how third-party apps (Zoom/Microsoft/Adobe/VM updaters)
+# churn their OWN LaunchAgents through these same verbs. This watcher is
+# sharing-only, so whitelist the Apple sharing service labels and drop the rest.
+SHARING_LABELS = ("com.apple.smbd", "com.apple.screensharing", "com.openssh.sshd",
+                  "ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
 # networksetup / systemsetup are heavily polled by macOS daemons in read-only
 # mode (Wi-Fi menu refresh, Network panel scan, time sync). Drop pure queries.
 READONLY_PREFIXES = ("-get", "-list", "-print", "-show")
@@ -3298,12 +3314,22 @@ while True:
             continue
         basename = exe.rsplit("/", 1)[-1]
         args = ev.get("args", []) or []
+        # Interpreted DIRECT_BIN (kickstart = Perl): rewrite to the script command.
+        if basename in SCRIPT_INTERPRETERS:
+            for i in range(1, len(args)):
+                if args[i].rsplit("/", 1)[-1] in DIRECT_BINS:
+                    exe, args, basename = args[i], args[i:], args[i].rsplit("/", 1)[-1]
+                    break
         if basename in DIRECT_BINS:
             if is_readonly(basename, args):
                 continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
             emit((exe + " " + tail).rstrip())
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
+            # Sharing-only: drop third-party LaunchAgent churn (e.g. Zoom/MS
+            # updaters bootstrapping us.zoom.updater.* in gui/<uid>).
+            if not any(lbl in " ".join(args) for lbl in SHARING_LABELS):
+                continue
             # Skip load/unload churn of socket-activated system daemons that
             # launchd cycles on its own (smbd, bootpd, dhcp6d) — their real
             # persistent state is reported by launchd_state_watch.
@@ -3385,24 +3411,73 @@ for k in sorted(set(prev) | set(curr)):
 PY
     }
 
-    # Wrap each emitted command: if sharing_exec_watch dropped a marker for
-    # the same service in the last 10s, prepend a one-shot NOTE so the
-    # reader knows the two forms are equivalent.
+    # Resolve a launchd label to its LaunchDaemon plist path. Fast path =
+    # filename matches the label (smbd, screensharing). Fallback for the
+    # mismatches (com.openssh.sshd lives in ssh.plist): one grep over the
+    # text plists, confirmed by the Label key. Binary-plist mismatches stay
+    # unresolved → caller degrades to the reboot NOTE. Prints path or fails.
+    _resolve_launchd_plist() {
+      local label="$1" d f
+      for d in /System/Library/LaunchDaemons /Library/LaunchDaemons; do
+        [ -f "$d/${label}.plist" ] && { printf '%s' "$d/${label}.plist"; return 0; }
+      done
+      local -a _lds _cands
+      _lds=( /System/Library/LaunchDaemons/*.plist(N) /Library/LaunchDaemons/*.plist(N) )
+      (( ${#_lds[@]} )) || return 1
+      _cands=( ${(f)"$(/usr/bin/grep -lF "$label" "${_lds[@]}" 2>/dev/null)"} )
+      for f in "${_cands[@]}"; do
+        [ -n "$f" ] || continue
+        [ "$(/usr/bin/plutil -extract Label raw -o - "$f" 2>/dev/null)" = "$label" ] && { printf '%s' "$f"; return 0; }
+      done
+      return 1
+    }
+
+    # Emit an enable/disable command, plus:
+    #  - a one-shot dedup NOTE if sharing_exec_watch logged the equivalent
+    #    load/unload form for the same service in the last 10s;
+    #  - the bootstrap/bootout companion (system domain) so the output is
+    #    actually replayable — enable/disable only flips the persistent
+    #    on-disk flag; a socket/on-demand service (smbd, ssh, …) won't
+    #    start/stop until launchd (re)loads it, so the UI stays unchanged
+    #    until a bootstrap/bootout (or a reboot).
     _emit_with_dup_note() {
       local cmd="$1" recent_dir="$PREFWATCH_TMPDIR/sharing_recent"
       [ -n "$cmd" ] || return 0
-      if [ -d "$recent_dir" ] && [[ "$cmd" =~ launchctl[[:space:]]+(enable|disable)[[:space:]]+[^[:space:]]+/([^[:space:]]+)$ ]]; then
-        local svc="${match[2]}" marker
-        marker="$recent_dir/$svc"
-        if [ -f "$marker" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
-          typeset -A _mst
-          if zstat -H _mst "$marker" 2>/dev/null && (( EPOCHSECONDS - ${_mst[mtime]:-0} < 10 )); then
-            log_line "Cmd: # NOTE: equivalent to the launchctl load/unload above"
-            /bin/rm -f "$marker" 2>/dev/null || true
+      local _verb="" _svc="" _ld_domain=""
+      if [[ "$cmd" =~ launchctl[[:space:]]+(enable|disable)[[:space:]]+([^[:space:]]+)$ ]]; then
+        _verb="${match[1]}"
+        _svc="${match[2]##*/}"          # service label (after last '/')
+        _ld_domain="${match[2]%/*}"     # 'system' or 'gui/<uid>'
+        if [ -d "$recent_dir" ]; then
+          local marker="$recent_dir/$_svc"
+          if [ -f "$marker" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+            typeset -A _mst
+            if zstat -H _mst "$marker" 2>/dev/null && (( EPOCHSECONDS - ${_mst[mtime]:-0} < 10 )); then
+              log_line "Cmd: # NOTE: equivalent to the launchctl load/unload above"
+              /bin/rm -f "$marker" 2>/dev/null || true
+            fi
           fi
         fi
       fi
       log_line "Cmd: $cmd"
+
+      # Bootstrap/bootout companion (system daemons only — gui agent plist
+      # paths vary; for those a reboot also applies the enable/disable).
+      if [ "$_ld_domain" = "system" ] && [ -n "$_svc" ]; then
+        local _companion=""
+        if [ "$_verb" = "enable" ]; then
+          local _ld_plist=""
+          _ld_plist=$(_resolve_launchd_plist "$_svc") || _ld_plist=""
+          [ -n "$_ld_plist" ] && _companion="/bin/launchctl bootstrap system \"$_ld_plist\""
+        else
+          _companion="/bin/launchctl bootout system/${_svc}"
+        fi
+        if [ -z "${_LAUNCHD_BOOTSTRAP_NOTED:-}" ]; then
+          log_line "Cmd: # NOTE: enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing) won't start/stop — and its UI toggle won't move — until launchd (re)loads it via bootstrap/bootout, or a reboot"
+          typeset -g _LAUNCHD_BOOTSTRAP_NOTED=1
+        fi
+        [ -n "$_companion" ] && log_line "Cmd: $_companion"
+      fi
     }
 
     while true; do
@@ -3516,6 +3591,53 @@ PY
     done
   }
 
+  # Remote Management per-user privileges (Observe/Control/…). These live as the
+  # `naprivs` bitmask in each user's directory record — not a plist, and the UI
+  # sets them via XPC (no kickstart exec), so fs/poll/launchd/exec watchers all
+  # miss them. Poll `dscl . -list /Users naprivs` and emit the replayable write.
+  ard_privs_watch() {
+    local snap="$PREFWATCH_TMPDIR/ardprivs.snap" curr="$PREFWATCH_TMPDIR/ardprivs.curr"
+    local line u v oldv _changed
+    local _ks=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
+    /usr/bin/dscl . -list /Users naprivs 2>/dev/null | /usr/bin/sort > "$snap" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      /usr/bin/dscl . -list /Users naprivs 2>/dev/null | /usr/bin/sort > "$curr" 2>/dev/null || true
+      if ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
+        _changed=false
+        # Added or changed (a user/value pair in curr not matching snap)
+        while IFS=$' \t' read -r u v; do
+          [ -n "$u" ] || continue
+          oldv=$(/usr/bin/awk -v k="$u" '$1==k{print $2}' "$snap" 2>/dev/null)
+          [ "$oldv" = "$v" ] && continue
+          log_line "Cmd: # Remote Management: per-user ARD access for $u (naprivs bitmask)"
+          log_line "Cmd: sudo /usr/bin/dscl . -create /Users/$u naprivs $v"
+          _changed=true
+        done < "$curr"
+        # Removed (user had naprivs in snap, gone from curr → access revoked)
+        while IFS=$' \t' read -r u v; do
+          [ -n "$u" ] || continue
+          /usr/bin/awk -v k="$u" '$1==k{f=1} END{exit !f}' "$curr" 2>/dev/null && continue
+          log_line "Cmd: # Remote Management: ARD access removed for $u"
+          log_line "Cmd: sudo /usr/bin/dscl . -delete /Users/$u naprivs"
+          _changed=true
+        done < "$snap"
+        # Apply: the dscl write (which is exactly what kickstart does internally)
+        # only persists the value — the ARD agent must restart to pick it up, or
+        # the Options UI / live access won't reflect the change.
+        if [ "$_changed" = "true" ] && [ -x "$_ks" ]; then
+          if [ -z "${_ARD_RESTART_NOTED:-}" ]; then
+            log_line "Cmd: # NOTE: dscl persists naprivs; restart the ARD agent to apply it (UI/live access won't move otherwise)"
+            typeset -g _ARD_RESTART_NOTED=1
+          fi
+          log_line "Cmd: sudo $_ks -restart -agent"
+        fi
+        /bin/cp -f "$curr" "$snap" 2>/dev/null || true
+      fi
+    done
+  }
+
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
@@ -3542,6 +3664,8 @@ PY
   local CUPS_SHARING_PID=$!
   pmset_watch &
   local PMSET_PID=$!
+  ard_privs_watch &
+  local ARD_PRIVS_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
@@ -3550,7 +3674,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
