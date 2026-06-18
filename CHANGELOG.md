@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.1 — 2026-06-18
+
+### Feature
+- `ard_privs_watch`: capture per-user Remote Management (ARD) privileges (the `naprivs` bitmask, set via XPC outside any plist) — emits the `dscl -create/-delete` + `kickstart -restart -agent` to apply.
+
+### Fix
+- `sharing_exec_watch`: capture `kickstart` (a Perl script, so its exec reports `perl` — now resolved from args for interpreters, not launchers like `sudo`).
+- `launchd_state_watch`: pair `enable`/`disable` with `bootstrap`/`bootout` so socket-activated sharing toggles (SMB/SSH/Screen Sharing) replay; plist resolved by label (`com.openssh.sshd`→`ssh.plist`).
+
+### Noise
+- Global key filter `BIT*Time` (HockeyApp / App Center session timestamps).
+- `sharing_exec_watch`: whitelist `launchctl` to Apple sharing labels (smbd/screensharing/sshd/ARD) — drops third-party LaunchAgent churn (Zoom/MS/Adobe/VM updaters).
+
 ## 1.3.0 — 2026-06-05
 
 ### Feature
