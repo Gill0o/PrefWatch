@@ -3017,6 +3017,7 @@ start_watch_all() {
     if [ -f /etc/cups/cupsd.conf ]; then
       _watch_active+=("cups_sharing")
     fi
+    [ -x /usr/bin/dscl ] && _watch_active+=("ard_privs")
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
@@ -3266,10 +3267,20 @@ start_watch_all() {
 import json, sys, shlex, time
 # Direct sharing-toolkit binaries — any invocation is relevant
 DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
+# kickstart is a Perl script, so its exec reports the interpreter as the
+# executable with .../kickstart in args. Resolve the real command from args ONLY
+# for genuine interpreters — NOT launchers like sudo, which re-exec the target as
+# its own event (matching args there would emit the command twice).
+SCRIPT_INTERPRETERS = ("perl", "python", "python3", "ruby", "bash", "sh", "zsh")
 # launchctl is the universal worker macOS Tahoe System Settings calls via
 # the writeconfig XPC service. Filter to subcommands that change state —
 # drop noisy kill / list / print / dumpstate.
 LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
+# launchctl is also how third-party apps (Zoom/Microsoft/Adobe/VM updaters)
+# churn their OWN LaunchAgents through these same verbs. This watcher is
+# sharing-only, so whitelist the Apple sharing service labels and drop the rest.
+SHARING_LABELS = ("com.apple.smbd", "com.apple.screensharing", "com.openssh.sshd",
+                  "ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
 # networksetup / systemsetup are heavily polled by macOS daemons in read-only
 # mode (Wi-Fi menu refresh, Network panel scan, time sync). Drop pure queries.
 READONLY_PREFIXES = ("-get", "-list", "-print", "-show")
@@ -3303,12 +3314,22 @@ while True:
             continue
         basename = exe.rsplit("/", 1)[-1]
         args = ev.get("args", []) or []
+        # Interpreted DIRECT_BIN (kickstart = Perl): rewrite to the script command.
+        if basename in SCRIPT_INTERPRETERS:
+            for i in range(1, len(args)):
+                if args[i].rsplit("/", 1)[-1] in DIRECT_BINS:
+                    exe, args, basename = args[i], args[i:], args[i].rsplit("/", 1)[-1]
+                    break
         if basename in DIRECT_BINS:
             if is_readonly(basename, args):
                 continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
             emit((exe + " " + tail).rstrip())
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
+            # Sharing-only: drop third-party LaunchAgent churn (e.g. Zoom/MS
+            # updaters bootstrapping us.zoom.updater.* in gui/<uid>).
+            if not any(lbl in " ".join(args) for lbl in SHARING_LABELS):
+                continue
             # Skip load/unload churn of socket-activated system daemons that
             # launchd cycles on its own (smbd, bootpd, dhcp6d) — their real
             # persistent state is reported by launchd_state_watch.
@@ -3570,6 +3591,53 @@ PY
     done
   }
 
+  # Remote Management per-user privileges (Observe/Control/…). These live as the
+  # `naprivs` bitmask in each user's directory record — not a plist, and the UI
+  # sets them via XPC (no kickstart exec), so fs/poll/launchd/exec watchers all
+  # miss them. Poll `dscl . -list /Users naprivs` and emit the replayable write.
+  ard_privs_watch() {
+    local snap="$PREFWATCH_TMPDIR/ardprivs.snap" curr="$PREFWATCH_TMPDIR/ardprivs.curr"
+    local line u v oldv _changed
+    local _ks=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
+    /usr/bin/dscl . -list /Users naprivs 2>/dev/null | /usr/bin/sort > "$snap" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      /usr/bin/dscl . -list /Users naprivs 2>/dev/null | /usr/bin/sort > "$curr" 2>/dev/null || true
+      if ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
+        _changed=false
+        # Added or changed (a user/value pair in curr not matching snap)
+        while IFS=$' \t' read -r u v; do
+          [ -n "$u" ] || continue
+          oldv=$(/usr/bin/awk -v k="$u" '$1==k{print $2}' "$snap" 2>/dev/null)
+          [ "$oldv" = "$v" ] && continue
+          log_line "Cmd: # Remote Management: per-user ARD access for $u (naprivs bitmask)"
+          log_line "Cmd: sudo /usr/bin/dscl . -create /Users/$u naprivs $v"
+          _changed=true
+        done < "$curr"
+        # Removed (user had naprivs in snap, gone from curr → access revoked)
+        while IFS=$' \t' read -r u v; do
+          [ -n "$u" ] || continue
+          /usr/bin/awk -v k="$u" '$1==k{f=1} END{exit !f}' "$curr" 2>/dev/null && continue
+          log_line "Cmd: # Remote Management: ARD access removed for $u"
+          log_line "Cmd: sudo /usr/bin/dscl . -delete /Users/$u naprivs"
+          _changed=true
+        done < "$snap"
+        # Apply: the dscl write (which is exactly what kickstart does internally)
+        # only persists the value — the ARD agent must restart to pick it up, or
+        # the Options UI / live access won't reflect the change.
+        if [ "$_changed" = "true" ] && [ -x "$_ks" ]; then
+          if [ -z "${_ARD_RESTART_NOTED:-}" ]; then
+            log_line "Cmd: # NOTE: dscl persists naprivs; restart the ARD agent to apply it (UI/live access won't move otherwise)"
+            typeset -g _ARD_RESTART_NOTED=1
+          fi
+          log_line "Cmd: sudo $_ks -restart -agent"
+        fi
+        /bin/cp -f "$curr" "$snap" 2>/dev/null || true
+      fi
+    done
+  }
+
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
@@ -3596,6 +3664,8 @@ PY
   local CUPS_SHARING_PID=$!
   pmset_watch &
   local PMSET_PID=$!
+  ard_privs_watch &
+  local ARD_PRIVS_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
@@ -3604,7 +3674,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
