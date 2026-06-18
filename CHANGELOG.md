@@ -2,6 +2,9 @@
 
 ## 1.3.1 — unreleased
 
+### Fix
+- `launchd_state_watch`: pair `enable`/`disable` with the `bootstrap`/`bootout` companion so socket-activated sharing toggles (SMB/SSH/Screen Sharing) are replayable, not just the persistent flag. Plist resolved by label (incl. `com.openssh.sshd`→`ssh.plist`).
+
 ### Noise
 - New global key filter: `BIT*Time` (HockeyApp / App Center SDK session lifecycle timestamps, e.g. `BITApplicationDidEnterBackgroundTime`).
 

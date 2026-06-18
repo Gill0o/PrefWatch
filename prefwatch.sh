@@ -3390,24 +3390,73 @@ for k in sorted(set(prev) | set(curr)):
 PY
     }
 
-    # Wrap each emitted command: if sharing_exec_watch dropped a marker for
-    # the same service in the last 10s, prepend a one-shot NOTE so the
-    # reader knows the two forms are equivalent.
+    # Resolve a launchd label to its LaunchDaemon plist path. Fast path =
+    # filename matches the label (smbd, screensharing). Fallback for the
+    # mismatches (com.openssh.sshd lives in ssh.plist): one grep over the
+    # text plists, confirmed by the Label key. Binary-plist mismatches stay
+    # unresolved → caller degrades to the reboot NOTE. Prints path or fails.
+    _resolve_launchd_plist() {
+      local label="$1" d f
+      for d in /System/Library/LaunchDaemons /Library/LaunchDaemons; do
+        [ -f "$d/${label}.plist" ] && { printf '%s' "$d/${label}.plist"; return 0; }
+      done
+      local -a _lds _cands
+      _lds=( /System/Library/LaunchDaemons/*.plist(N) /Library/LaunchDaemons/*.plist(N) )
+      (( ${#_lds[@]} )) || return 1
+      _cands=( ${(f)"$(/usr/bin/grep -lF "$label" "${_lds[@]}" 2>/dev/null)"} )
+      for f in "${_cands[@]}"; do
+        [ -n "$f" ] || continue
+        [ "$(/usr/bin/plutil -extract Label raw -o - "$f" 2>/dev/null)" = "$label" ] && { printf '%s' "$f"; return 0; }
+      done
+      return 1
+    }
+
+    # Emit an enable/disable command, plus:
+    #  - a one-shot dedup NOTE if sharing_exec_watch logged the equivalent
+    #    load/unload form for the same service in the last 10s;
+    #  - the bootstrap/bootout companion (system domain) so the output is
+    #    actually replayable — enable/disable only flips the persistent
+    #    on-disk flag; a socket/on-demand service (smbd, ssh, …) won't
+    #    start/stop until launchd (re)loads it, so the UI stays unchanged
+    #    until a bootstrap/bootout (or a reboot).
     _emit_with_dup_note() {
       local cmd="$1" recent_dir="$PREFWATCH_TMPDIR/sharing_recent"
       [ -n "$cmd" ] || return 0
-      if [ -d "$recent_dir" ] && [[ "$cmd" =~ launchctl[[:space:]]+(enable|disable)[[:space:]]+[^[:space:]]+/([^[:space:]]+)$ ]]; then
-        local svc="${match[2]}" marker
-        marker="$recent_dir/$svc"
-        if [ -f "$marker" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
-          typeset -A _mst
-          if zstat -H _mst "$marker" 2>/dev/null && (( EPOCHSECONDS - ${_mst[mtime]:-0} < 10 )); then
-            log_line "Cmd: # NOTE: equivalent to the launchctl load/unload above"
-            /bin/rm -f "$marker" 2>/dev/null || true
+      local _verb="" _svc="" _ld_domain=""
+      if [[ "$cmd" =~ launchctl[[:space:]]+(enable|disable)[[:space:]]+([^[:space:]]+)$ ]]; then
+        _verb="${match[1]}"
+        _svc="${match[2]##*/}"          # service label (after last '/')
+        _ld_domain="${match[2]%/*}"     # 'system' or 'gui/<uid>'
+        if [ -d "$recent_dir" ]; then
+          local marker="$recent_dir/$_svc"
+          if [ -f "$marker" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+            typeset -A _mst
+            if zstat -H _mst "$marker" 2>/dev/null && (( EPOCHSECONDS - ${_mst[mtime]:-0} < 10 )); then
+              log_line "Cmd: # NOTE: equivalent to the launchctl load/unload above"
+              /bin/rm -f "$marker" 2>/dev/null || true
+            fi
           fi
         fi
       fi
       log_line "Cmd: $cmd"
+
+      # Bootstrap/bootout companion (system daemons only — gui agent plist
+      # paths vary; for those a reboot also applies the enable/disable).
+      if [ "$_ld_domain" = "system" ] && [ -n "$_svc" ]; then
+        local _companion=""
+        if [ "$_verb" = "enable" ]; then
+          local _ld_plist=""
+          _ld_plist=$(_resolve_launchd_plist "$_svc") || _ld_plist=""
+          [ -n "$_ld_plist" ] && _companion="/bin/launchctl bootstrap system \"$_ld_plist\""
+        else
+          _companion="/bin/launchctl bootout system/${_svc}"
+        fi
+        if [ -z "${_LAUNCHD_BOOTSTRAP_NOTED:-}" ]; then
+          log_line "Cmd: # NOTE: enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing) won't start/stop — and its UI toggle won't move — until launchd (re)loads it via bootstrap/bootout, or a reboot"
+          typeset -g _LAUNCHD_BOOTSTRAP_NOTED=1
+        fi
+        [ -n "$_companion" ] && log_line "Cmd: $_companion"
+      fi
     }
 
     while true; do
