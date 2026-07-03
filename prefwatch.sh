@@ -216,7 +216,7 @@ if [ "$JAMF_MODE" = "true" ]; then
   DOMAIN="${4:-ALL}"
   LOG_FILE_PARAM="${5:-}"
   INCLUDE_SYSTEM_RAW="${6:-true}"
-  ONLY_CMDS_RAW="${ONLY_CMDS:-${7:-true}}"
+  ONLY_CMDS_RAW="${7:-true}"
   EXCLUDE_DOMAINS="${8:-}"
   MDM_OUTPUT_RAW="${9:-false}"
   # Only set HOT_DOMAINS_RAW if $10 was explicitly provided (non-empty),
@@ -251,12 +251,14 @@ mdm_plist_path() {
 unsetopt xtrace verbose 2>/dev/null || true
 
 # ============================================================================
-# EXCLUSIONS
+# HOT DOMAINS
 # ============================================================================
 
 # "Hot" domains stay marked active so their first change is caught without the
 # fs_usage→poll round-trip (cfprefsd can buffer writes for seconds; hot ones are
 # flushed every cycle → ~1-2s). Override via --hot-domains / Jamf $10; "NONE" disables.
+# Note: this is the OPPOSITE of an exclusion — hot domains are kept permanently
+# active, not filtered out. Real exclusions live in DEFAULT_EXCLUSIONS below.
 typeset -a HOT_DOMAINS=(
   # Shell / appearance
   com.apple.finder
@@ -293,6 +295,10 @@ if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
     HOT_DOMAINS=("${(@s:,:)HOT_DOMAINS_RAW}")
   fi
 fi
+
+# ============================================================================
+# EXCLUSIONS
+# ============================================================================
 
 # Default exclusion patterns for noisy/irrelevant domains
 # These domains change frequently but are rarely useful for preference monitoring
@@ -1741,9 +1747,25 @@ convert_delete_to_plistbuddy() {
     printf '# WARNING: Array deletion - indexes change after each deletion. For multiple deletions: execute from HIGHEST index to LOWEST\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
-  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$target" "$_mdm_path"
+  # Escape single quotes in the key path so a key containing ' doesn't break the
+  # single-quoted PlistBuddy -c 'Delete …' expression (each ' → '\'').
+  local _target_esc
+  _target_esc=$(printf '%s' "$target" | /usr/bin/sed "s/'/'\\\\''/g")
+  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$_mdm_path"
   return 0
 }
+
+# ---------------------------------------
+# Command Emission
+# ---------------------------------------
+# Builds the `defaults`/PlistBuddy commands and routes them through the
+# filters/logging — the bridge between the diff engine and the log output.
+
+# Escape a value for safe embedding inside a double-quoted shell string in an
+# emitted command: backslash, double-quote, $ and backtick — else a pref value
+# containing `$(…)`, `$VAR` or backticks would execute/expand when the logged
+# command is copy-pasted and run.
+_escape_dq() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g; s/`/\\`/g'; }
 
 # Build `defaults write …` for dom/keyname/trimmed via type cascade.
 # Stdout = command, or empty for array/dict (not flat-writable).
@@ -1764,7 +1786,7 @@ _build_defaults_write_cmd() {
     cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
   elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
     noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
-    str=$(printf '%s' "$noquotes" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
+    str=$(_escape_dq "$noquotes")
     cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
   elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
     type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
@@ -1781,7 +1803,7 @@ _build_defaults_write_cmd() {
       plutil_type="${plutil_result%%|*}"
       plutil_value="${plutil_result#*|}"
       case "$plutil_type" in
-        string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${plutil_value}\"" ;;
+        string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"$(_escape_dq "$plutil_value")\"" ;;
         bool)   cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
         int)    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
         float)  cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
@@ -2126,6 +2148,14 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
                 cmds.extend(emit_plistbuddy(array_name, index, v, key_path + ":"))
             elif isinstance(v, list):
                 cmds.append(f"PBCMD\tAdd :{array_name}:{index}:{key_path} array")
+                for j, elem in enumerate(v):
+                    tv = pb_type_value(elem)
+                    if tv:
+                        cmds.append(f"PBCMD\tAdd :{array_name}:{index}:{key_path}:{j} {tv[0]} {tv[1]}")
+                    elif isinstance(elem, dict):
+                        cmds.append(f"PBCMD\tAdd :{array_name}:{index}:{key_path}:{j} dict")
+                        cmds.extend(emit_plistbuddy(array_name, index, elem, f"{key_path}:{j}:"))
+                    # nested list-in-list left as an empty array (vanishingly rare)
             else:
                 tv = pb_type_value(v)
                 if tv:
@@ -2551,17 +2581,17 @@ for top_key in sorted(curr.keys()):
         if len(prev[top_key]) != len(curr[top_key]):
             changes = []
         elif changes:
-            # Same-length array: detect moved elements (same content, different index)
-            # Uses strip_volatile to ignore metadata that changes on every plist rewrite
-            prev_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in prev[top_key]]
-            prev_fp_set = set(prev_fps)
-            moved = set()
-            for i, elem in enumerate(curr[top_key]):
-                fp = json.dumps(strip_volatile(elem), sort_keys=True)
-                if fp != prev_fps[i] and fp in prev_fp_set:
-                    moved.add(str(i))
-            if moved:
-                changes = [(pp, tv) for pp, tv in changes if len(pp) < 2 or pp[1] not in moved]
+            # Same-length array: if curr is a pure permutation of prev (identical
+            # multiset of elements), the positional Set diffs are reorder noise —
+            # drop them all. A genuine value change breaks multiset equality so its
+            # Set survives; a set-membership test would wrongly absorb an edit whose
+            # new value happens to equal another element already present in prev
+            # (e.g. ["A","B"]→["B","B"] would silently miss Set :arr:0).
+            # strip_volatile ignores metadata that changes on every plist rewrite.
+            prev_fps = sorted(json.dumps(strip_volatile(e), sort_keys=True) for e in prev[top_key])
+            curr_fps = sorted(json.dumps(strip_volatile(e), sort_keys=True) for e in curr[top_key])
+            if prev_fps == curr_fps:
+                changes = [(pp, tv) for pp, tv in changes if len(pp) < 2]
     if not changes and not additions and not deletions:
         continue
     changed_top_keys.add(top_key)
@@ -2766,15 +2796,14 @@ show_domain_diff() {
   tmpplist="$CACHE_DIR/${key}.plist"
 
   "${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - > "$tmpplist" 2>/dev/null || :
-  if [ -s "$tmpplist" ]; then
-    /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
-    curr_json="$CACHE_DIR/${key}.curr.json"
-    dump_plist_json "$tmpplist" "$curr_json"
-  else
-    : > "$curr" 2>/dev/null || true
-    curr_json="$CACHE_DIR/${key}.curr.json"
-    : > "$curr_json" 2>/dev/null || true
-  fi
+  # An empty export means the domain is absent OR the read transiently failed
+  # (cfprefsd busy under load — common on hot domains). Diffing an empty curr
+  # against a full prev would emit every key as a spurious delete AND overwrite
+  # the baseline empty → full re-add storm next cycle. Skip: keep last good state.
+  [ -s "$tmpplist" ] || return 0
+  /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
+  curr_json="$CACHE_DIR/${key}.curr.json"
+  dump_plist_json "$tmpplist" "$curr_json"
 
   prev_json="$CACHE_DIR/${key}.prev.json"
   typeset -gA _SKIP_KEYS
@@ -3267,30 +3296,29 @@ start_watch_all() {
 import json, sys, shlex, time
 # Direct sharing-toolkit binaries — any invocation is relevant
 DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup")
-# kickstart is a Perl script, so its exec reports the interpreter as the
-# executable with .../kickstart in args. Resolve the real command from args ONLY
-# for genuine interpreters — NOT launchers like sudo, which re-exec the target as
-# its own event (matching args there would emit the command twice).
+# kickstart is a Perl script → its exec reports `perl` with .../kickstart in args.
+# Resolve the real command from args for interpreters only, NOT launchers like
+# sudo (which re-exec the target as its own event → would emit it twice).
 SCRIPT_INTERPRETERS = ("perl", "python", "python3", "ruby", "bash", "sh", "zsh")
-# launchctl is the universal worker macOS Tahoe System Settings calls via
-# the writeconfig XPC service. Filter to subcommands that change state —
-# drop noisy kill / list / print / dumpstate.
+# launchctl is the writeconfig-XPC worker macOS Tahoe System Settings drives.
+# Keep only state-changing subcommands; drop kill/list/print/dumpstate noise.
 LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
-# launchctl is also how third-party apps (Zoom/Microsoft/Adobe/VM updaters)
-# churn their OWN LaunchAgents through these same verbs. This watcher is
-# sharing-only, so whitelist the Apple sharing service labels and drop the rest.
+# Third-party apps (Zoom/MS/Adobe/VM updaters) churn their OWN LaunchAgents via
+# these same verbs, so whitelist Apple sharing labels only and drop the rest.
 SHARING_LABELS = ("com.apple.smbd", "com.apple.screensharing", "com.openssh.sshd",
                   "ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
-# networksetup / systemsetup are heavily polled by macOS daemons in read-only
-# mode (Wi-Fi menu refresh, Network panel scan, time sync). Drop pure queries.
-READONLY_PREFIXES = ("-get", "-list", "-print", "-show")
+# networksetup/systemsetup are polled read-only by macOS daemons (Wi-Fi refresh,
+# Network scan, time sync). Drop queries — sometimes invoked WITHOUT the dash
+# (`networksetup listallhardwareports`), so strip dashes first; write verbs all
+# start with set/create/remove/add/switch/… anyway.
+READONLY_VERBS = ("get", "list", "print", "show")
 def is_readonly(basename, args):
     if basename not in ("networksetup", "systemsetup"):
         return False
     if len(args) < 2:
         return True
-    sub = args[1]
-    return sub.startswith(READONLY_PREFIXES)
+    sub = args[1].lstrip("-")
+    return sub.startswith(READONLY_VERBS)
 # Dedup: macOS sometimes fires the same exec twice back-to-back
 # (eg smbd reload). Skip identical commands within 1s.
 DEDUP_WINDOW_S = 1.0

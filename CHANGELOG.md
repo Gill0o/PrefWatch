@@ -2,6 +2,15 @@
 
 ## 1.3.2 — unreleased
 
+### Fix
+- `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries invoked without the leading dash (e.g. `networksetup listallhardwareports` from macOS daemons) — the filter only matched dashed forms, leaking these into the log.
+- `show_domain_diff`: a transient empty `defaults export` (cfprefsd busy under load) no longer emits the whole domain as spurious deletes then corrupts the baseline into a full re-add storm next cycle — skip the cycle and keep the last good baseline.
+- Emitted `defaults write … -string` commands now escape `$`, backticks and `$VAR` in the value, so a pref string containing shell metacharacters is reproduced literally instead of executing/expanding when the logged command is run.
+- Emitted `PlistBuddy -c 'Delete …'` now escapes single quotes in the key path (a key containing `'` no longer breaks the quoting).
+- Array diff: an element edited to a value already present elsewhere in the array (e.g. `["A","B"]`→`["B","B"]`) is no longer misread as a reorder and dropped — the positional `Set` now survives.
+- Array additions: a new element carrying a nested list now emits the list's items (scalars and dicts), instead of creating it empty.
+- Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
+
 ## 1.3.1 — 2026-06-18
 
 ### Feature
