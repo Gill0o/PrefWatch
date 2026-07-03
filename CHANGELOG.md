@@ -9,6 +9,7 @@
 - Emitted `PlistBuddy -c 'Delete …'` now escapes single quotes in the key path (a key containing `'` no longer breaks the quoting).
 - Array additions: a new element carrying a nested list now emits the list's items (scalars and dicts), instead of creating it empty.
 - Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
+- `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
 
 ## 1.3.1 — 2026-06-18
 

@@ -64,7 +64,6 @@ set -e
 set -u
 set -o pipefail
 
-# Help message
 show_help() {
   cat << 'EOF'
 Usage: prefwatch.sh [domain] [OPTIONS]
@@ -121,7 +120,6 @@ EOF
   exit 0
 }
 
-# Parse CLI arguments
 parse_cli_args() {
   # Check for help first
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -227,7 +225,6 @@ else
   parse_cli_args "$@"
 fi
 
-# Boolean normalization
 to_bool() {
   case "$(printf "%s" "${1:-}" | /usr/bin/tr '[:upper:]' '[:lower:]')" in
     1|true|yes|y|on|enable|enabled|oui|vrai) echo "true";;
@@ -658,7 +655,6 @@ if [ "$(id -u)" -eq 0 ] && [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root"
 fi
 
 # Binary availability checks (optimization to avoid repeated lookups)
-# Detect /bin/date availability at startup
 HAVE_BIN_DATE="false"
 [ -x /bin/date ] && HAVE_BIN_DATE="true"
 
@@ -796,7 +792,6 @@ hash_path() {
   printf '%s\n' "$h"
 }
 
-# Initialize cache directory
 init_cache() {
   if [ -z "$CACHE_DIR" ]; then
     CACHE_DIR="$PREFWATCH_TMPDIR/cache"
@@ -804,7 +799,6 @@ init_cache() {
   fi
 }
 
-# Prepare log files
 prepare_logfile() {
   local path="$1"
   /bin/mkdir -p "$(/usr/bin/dirname "$path")" 2>/dev/null || true
@@ -882,7 +876,6 @@ end run'
 is_excluded_domain() {
   local d="$1"
 
-  # Cache check
   if [ -n "${_EXCLUSION_CACHE[$d]+isset}" ]; then
     return ${_EXCLUSION_CACHE[$d]}
   fi
@@ -1519,7 +1512,6 @@ is_noisy_pbcmd() {
       ;;
   esac
 
-  # Domain-specific sub-key patterns (need full path matching)
   case "$domain" in
     com.apple.GameController)
       # Noisy: modification dates (sync metadata), tombstone tracking
@@ -2164,7 +2156,6 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
 
 diff(prev, curr, [])
 
-emitted_arrays = set()
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
@@ -2175,10 +2166,6 @@ for prefix, index, item in results:
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
     if arr_name not in prev:
         continue
-    # Emit array creation if the array is new (didn't exist in prev)
-    if arr_name not in emitted_arrays and arr_name not in prev:
-        print(f"PBCMD\tAdd :{arr_name} array")
-        emitted_arrays.add(arr_name)
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
         # Output metadata line (for _skip_keys in shell)
@@ -2703,6 +2690,8 @@ show_plist_diff() {
   while ! /bin/mkdir "$lockdir" 2>/dev/null; do
     _wait_attempts=$((_wait_attempts + 1))
     if [ "$_wait_attempts" -gt 30 ]; then
+      # Lock held by the other watcher (fs_watch vs poll_watch), already emitting
+      # this plist's diff — skip to avoid a double-emit. Not an error.
       return 0
     fi
     /bin/sleep 0.1
@@ -2861,12 +2850,10 @@ get_plist_path_for_domain() {
   return 1
 }
 
-# Check if Console.app is running
 is_console_running() {
   /usr/bin/pgrep -x "Console" >/dev/null 2>/dev/null
 }
 
-# Launch Console.app
 launch_console() {
   local open_cmd=(/usr/bin/open)
   if command -v /bin/launchctl >/dev/null 2>&1 && id -u "$CONSOLE_USER" >/dev/null 2>&1; then
@@ -2998,6 +2985,9 @@ start_watch_all() {
       _snapshot_one_plist "$f" &
       _snap_pids+=($!)
       if (( ${#_snap_pids[@]} >= _max_parallel )); then
+        # zsh is 1-based: [1] is the oldest pid; the [@]:1 slice uses a 0-based
+        # offset (drop one). Don't "normalize" [1]→[0] — [0] is empty, so
+        # `wait ""` returns instantly and the fork throttle is defeated.
         wait "${_snap_pids[1]}" 2>/dev/null || true
         _snap_pids=("${_snap_pids[@]:1}")
       fi
@@ -3026,6 +3016,9 @@ start_watch_all() {
       _snapshot_one_plist "$f" &
       _snap_pids+=($!)
       if (( ${#_snap_pids[@]} >= _max_parallel )); then
+        # zsh is 1-based: [1] is the oldest pid; the [@]:1 slice uses a 0-based
+        # offset (drop one). Don't "normalize" [1]→[0] — [0] is empty, so
+        # `wait ""` returns instantly and the fork throttle is defeated.
         wait "${_snap_pids[1]}" 2>/dev/null || true
         _snap_pids=("${_snap_pids[@]:1}")
       fi
@@ -3056,7 +3049,6 @@ start_watch_all() {
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
-  # fs_usage monitoring function
   fs_watch() {
     # Debounce: cfprefsd fires several fs_usage events per logical write.
     # Skip events seen <$FS_DEBOUNCE_S ago; poll_watch catches misses.
@@ -3064,6 +3056,8 @@ start_watch_all() {
     local _FS_DEBOUNCE_S=0.3
     # Force line-buffered I/O so a single fs_usage event isn't stuck in a
     # block buffer waiting for more data (notably for idle domains).
+    # script(1) allocates a pty so fs_usage line-buffers; /dev/null is its
+    # typescript sink, NOT an output redirect. macOS has no stdbuf — don't drop it.
     script -q /dev/null /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
     /usr/bin/sed -l -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
     /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
@@ -3110,7 +3104,6 @@ start_watch_all() {
     done
   }
 
-  # Polling monitoring function
   poll_watch() {
     local marker_user marker_sys active_dir
     # Flush-block locals — declared ONCE here, not inside the while loop.
@@ -3248,7 +3241,6 @@ start_watch_all() {
         [ -z "$printer" ] && continue
         log_line "Cmd: # CUPS: printer added — $printer"
 
-        # Extract URI
         local uri=""
         uri=$(/usr/bin/lpstat -v "$printer" 2>/dev/null | /usr/bin/sed -nE 's/.*:[[:space:]]+(.*)/\1/p')
 
@@ -3256,7 +3248,6 @@ start_watch_all() {
         local opts=""
         opts=$(/usr/bin/lpoptions -p "$printer" 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/grep -E '^(media|sides|print-color-mode|print-quality|printer-is-shared)=' | while IFS= read -r o; do printf " -o %s" "$o"; done)
 
-        # Build lpadmin command
         local cmd="lpadmin -p \"$printer\""
         [ -n "$uri" ] && cmd="$cmd -v \"$uri\""
         cmd="$cmd -m everywhere -E${opts}"
@@ -3270,7 +3261,6 @@ start_watch_all() {
         log_line "Cmd: lpadmin -x \"$printer\""
       done
 
-      # Update snapshot
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
     done
   }
@@ -3293,6 +3283,9 @@ start_watch_all() {
     # on the pipe — `for line in sys.stdin` defers to a large internal
     # buffer and would never fire on sparse event streams (one toggle every
     # few minutes). -u also forces unbuffered stdout.
+    # The trailing " in each grep pattern anchors the match to eslogger's JSON
+    # executable-path field (not a typo) — keeps this cheap prefilter tight
+    # before the Python stage re-validates.
     /usr/bin/eslogger exec 2>/dev/null \
       | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' -e '/launchctl"' \
       | "$PYTHON3_BIN" -u -c '
@@ -3400,8 +3393,8 @@ while True:
 
     local sys_prev="$PREFWATCH_TMPDIR/launchd.sys.json"
     local user_prev="$PREFWATCH_TMPDIR/launchd.user.json"
-    [ -f "$sys_plist" ] && /usr/bin/plutil -convert json -o "$sys_prev" "$sys_plist" 2>/dev/null || true
-    [ -n "$user_plist" ] && [ -f "$user_plist" ] && /usr/bin/plutil -convert json -o "$user_prev" "$user_plist" 2>/dev/null || true
+    [ -f "$sys_plist" ] && /usr/bin/plutil -convert json -o "$sys_prev" "$sys_plist" >/dev/null 2>&1 || true
+    [ -n "$user_plist" ] && [ -f "$user_plist" ] && /usr/bin/plutil -convert json -o "$user_prev" "$user_plist" >/dev/null 2>&1 || true
 
     _emit_launchd_diff() {
       local prev="$1" curr="$2" domain="$3"
@@ -3515,7 +3508,7 @@ PY
       /bin/sleep 2
       if [ -f "$sys_plist" ]; then
         local sys_curr="$PREFWATCH_TMPDIR/launchd.sys.curr.json"
-        /usr/bin/plutil -convert json -o "$sys_curr" "$sys_plist" 2>/dev/null || true
+        /usr/bin/plutil -convert json -o "$sys_curr" "$sys_plist" >/dev/null 2>&1 || true
         if [ -s "$sys_curr" ] && ! /usr/bin/cmp -s "$sys_prev" "$sys_curr" 2>/dev/null; then
           _emit_launchd_diff "$sys_prev" "$sys_curr" "system" | while IFS= read -r cmd; do
             _emit_with_dup_note "$cmd"
@@ -3527,7 +3520,7 @@ PY
       fi
       if [ -n "$user_plist" ] && [ -f "$user_plist" ]; then
         local user_curr="$PREFWATCH_TMPDIR/launchd.user.curr.json"
-        /usr/bin/plutil -convert json -o "$user_curr" "$user_plist" 2>/dev/null || true
+        /usr/bin/plutil -convert json -o "$user_curr" "$user_plist" >/dev/null 2>&1 || true
         if [ -s "$user_curr" ] && ! /usr/bin/cmp -s "$user_prev" "$user_curr" 2>/dev/null; then
           _emit_launchd_diff "$user_prev" "$user_curr" "gui/${console_uid}" | while IFS= read -r cmd; do
             _emit_with_dup_note "$cmd"
@@ -3617,7 +3610,6 @@ PY
         done <<< "$curr_parsed"
       fi
 
-      # Update snapshot
       /bin/cp -f "$pmset_current" "$pmset_snapshot" 2>/dev/null || true
     done
   }
