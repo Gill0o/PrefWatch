@@ -2581,17 +2581,20 @@ for top_key in sorted(curr.keys()):
         if len(prev[top_key]) != len(curr[top_key]):
             changes = []
         elif changes:
-            # Same-length array: if curr is a pure permutation of prev (identical
-            # multiset of elements), the positional Set diffs are reorder noise —
-            # drop them all. A genuine value change breaks multiset equality so its
-            # Set survives; a set-membership test would wrongly absorb an edit whose
-            # new value happens to equal another element already present in prev
-            # (e.g. ["A","B"]→["B","B"] would silently miss Set :arr:0).
-            # strip_volatile ignores metadata that changes on every plist rewrite.
-            prev_fps = sorted(json.dumps(strip_volatile(e), sort_keys=True) for e in prev[top_key])
-            curr_fps = sorted(json.dumps(strip_volatile(e), sort_keys=True) for e in curr[top_key])
-            if prev_fps == curr_fps:
-                changes = [(pp, tv) for pp, tv in changes if len(pp) < 2]
+            # Same-length array: suppress positional Set diffs for elements that
+            # merely moved (same content, different index) — reordering an
+            # order-insensitive list (e.g. Spotlight EnabledPreferenceRules) must
+            # not emit per-index Sets. strip_volatile ignores metadata that
+            # changes on every plist rewrite.
+            prev_fps = [json.dumps(strip_volatile(e), sort_keys=True) for e in prev[top_key]]
+            prev_fp_set = set(prev_fps)
+            moved = set()
+            for i, elem in enumerate(curr[top_key]):
+                fp = json.dumps(strip_volatile(elem), sort_keys=True)
+                if fp != prev_fps[i] and fp in prev_fp_set:
+                    moved.add(str(i))
+            if moved:
+                changes = [(pp, tv) for pp, tv in changes if len(pp) < 2 or pp[1] not in moved]
     if not changes and not additions and not deletions:
         continue
     changed_top_keys.add(top_key)
