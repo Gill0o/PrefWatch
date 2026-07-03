@@ -3049,6 +3049,7 @@ start_watch_all() {
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
+  # Primary detector — real-time plist writes captured live via fs_usage.
   fs_watch() {
     # Debounce: cfprefsd fires several fs_usage events per logical write.
     # Skip events seen <$FS_DEBOUNCE_S ago; poll_watch catches misses.
@@ -3104,6 +3105,7 @@ start_watch_all() {
     done
   }
 
+  # Fallback detector — periodic poll (find -newer) for writes fs_usage buffers/misses.
   poll_watch() {
     local marker_user marker_sys active_dir
     # Flush-block locals — declared ONCE here, not inside the while loop.
@@ -3218,6 +3220,7 @@ start_watch_all() {
     done
   }
 
+  # Printer add/remove detector — diffs the CUPS printer list (lpstat).
   cups_watch() {
     local cups_snapshot cups_current
     cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
