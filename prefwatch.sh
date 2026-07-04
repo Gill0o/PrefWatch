@@ -311,6 +311,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.powerlogd"
   "ContextStoreAgent*"
 
+  # Clock/Timer daemon: live timer *instances*, not preferences — fresh UUIDs
+  # (MTTimerID), timestamps and a decrementing MTTimerTimeInterval. Creating a
+  # timer is a runtime action; nothing here is a reproducible setting.
+  "com.apple.mobiletimerd"
+
   # Cloud sync internals
   "com.apple.CloudKit*"
   "com.apple.bird*"
@@ -437,6 +442,13 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Account existence tracking
   "com.apple.accounts.exists"
 
+  # iCloud account services (MobileMeAccounts): the Services array is positional,
+  # so an emitted `Set :Accounts:0:Services:N:Enabled` targets a different service
+  # on another machine/OS (indices shift once e.g. ImagePlayground appears in
+  # Sequoia 15.2). PlistBuddy addresses arrays by index only, not by ServiceID —
+  # so no portable command exists for these toggles.
+  "MobileMeAccounts"
+
   # Find My device daemon (APS tokens, internal state)
   "com.apple.icloud.fmfd"
 
@@ -448,6 +460,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.Music"
   "com.apple.itunescloud"
   "com.apple.itunescloudd"
+
+  # ShazamKit: CloudKit account cache, boot tasks and an access token only — no
+  # user preferences (the SHLibrary…UserID churn is internal iCloud identity state)
+  "com.apple.ShazamKit"
 
   # Find My app & framework (UI state, window geometry, precision flags)
   "com.apple.findmy*"

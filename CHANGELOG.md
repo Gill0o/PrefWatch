@@ -11,6 +11,11 @@
 - Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
 - `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
 
+### Noise
+- Excluded `MobileMeAccounts` (iCloud account services) — its `Services:N:Enabled` Sets are positional, so they target a different service on another machine/OS and can't be reproduced portably (PlistBuddy addresses arrays by index only).
+- Excluded `com.apple.ShazamKit` — CloudKit cache and access token only, no user preferences.
+- Excluded `com.apple.mobiletimerd` — the Clock/Timer daemon stores live timer instances (fresh UUIDs, timestamps, a decrementing interval), not reproducible preferences.
+
 ## 1.3.1 — 2026-06-18
 
 ### Feature
