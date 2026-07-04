@@ -38,6 +38,9 @@ Temporary Items
 .env
 .env.local
 
+# Local-only test tracking (never publish)
+TESTING.md
+
 # IDE files
 .vscode/
 .idea/
