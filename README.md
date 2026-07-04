@@ -45,7 +45,7 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (needs sudo — see *Beyond plists* above). Settings kept outside plists won't be detected — **Safari, Mail, Calendar**, the **Desktop wallpaper** (internal databases/stores), and display **HDR / color presets** (owned by CoreDisplay). Settings that live in protected stores or are configurable only through an MDM profile also won't appear — per-app **Notifications**, **iCloud services** (`MobileMeAccounts`), and **Privacy/TCC permissions** (Full Disk Access, Screen Recording, …); deploy those as configuration profiles, not `defaults`.
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (needs sudo — see *Beyond plists* above). Settings stored elsewhere — internal app databases, protected system stores, or state managed entirely by a daemon or OS framework — won't be detected (e.g. Safari, Mail, Calendar, the Desktop wallpaper, Privacy permissions); some are configurable via MDM configuration profiles instead.
 
 For detected changes that require extra steps to apply (logout/login, `killall`, settings that write but don't take effect, etc.), PrefWatch emits inline `# NOTE:` comments in the output.
 
