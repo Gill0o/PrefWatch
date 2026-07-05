@@ -16,6 +16,7 @@
 - `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
 - Emitted `PlistBuddy` string values with leading/trailing whitespace are now quoted (internal `"` escaped) so they reproduce faithfully — PlistBuddy strips a leading space from an unquoted value (e.g. localized smart-quote characters like `« `/` »`).
 - `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer silently dropped by the global `NSTableView*` noise glob — added a keep-exception so this real `.GlobalPreferences` setting surfaces again.
+- ByHost `defaults write` commands placed `-currentHost` after the key (`defaults write dom key -currentHost -int 8`), which `defaults` rejects ("Unexpected argument") so the reproduction did nothing — the host flag now precedes the verb (`defaults -currentHost write …`). Same fix applied to the internal `read-type` (its type detection was silently failing for ByHost keys). Affects every ByHost pref: Control Center menu bar modules, trackpad/mouse gestures, screensaver, ColorSync, etc.
 
 ### Noise
 - Excluded `MobileMeAccounts` (iCloud account services) — its `Services:N:Enabled` Sets are positional, so they target a different service on another machine/OS and can't be reproduced portably (PlistBuddy addresses arrays by index only).

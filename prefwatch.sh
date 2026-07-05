@@ -1794,43 +1794,43 @@ _build_defaults_write_cmd() {
   local actual_type="" type_val noquotes str cmd=""
   local plutil_result plutil_type plutil_value
 
-  actual_type=$(/usr/bin/defaults read-type "$dom" "$keyname" ${hostflag:+$hostflag} 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+  actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
 
   if [ "$actual_type" = "float" ]; then
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${trimmed}"
   elif [ "$actual_type" = "integer" ]; then
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -int ${trimmed}"
   elif [ "$actual_type" = "boolean" ]; then
     type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
     noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
     str=$(_escape_dq "$noquotes")
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"${str}\""
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -string \"${str}\""
   elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
     type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${type_val}"
   elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
     type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -int ${trimmed}"
   elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${trimmed}"
   else
     if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
       plutil_type="${plutil_result%%|*}"
       plutil_value="${plutil_result#*|}"
       case "$plutil_type" in
-        string) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-string \"$(_escape_dq "$plutil_value")\"" ;;
-        bool)   cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-bool ${plutil_value}" ;;
-        int)    cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-int ${plutil_value}" ;;
-        float)  cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }-float ${plutil_value}" ;;
+        string) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
+        bool)   cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${plutil_value}" ;;
+        int)    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -int ${plutil_value}" ;;
+        float)  cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${plutil_value}" ;;
         array|dict) cmd="" ;;
-        *) cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>" ;;
+        *) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" <type> <value>" ;;
       esac
     else
-      cmd="defaults write ${dom} \"${keyname}\" ${hostflag:+$hostflag }<type> <value>"
+      cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" <type> <value>"
     fi
   fi
 
