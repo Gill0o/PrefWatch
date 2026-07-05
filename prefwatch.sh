@@ -1765,7 +1765,7 @@ convert_delete_to_plistbuddy() {
   if [ "$is_array_deletion" = "true" ]; then
     # WARNING is deduped by the caller (parent scope) — this function runs in a
     # $() subshell so setting the flag here would be lost.
-    printf '# WARNING: Array deletion - indexes change after each deletion. For multiple deletions: execute from HIGHEST index to LOWEST\n'
+    printf '# WARNING: Array deletion - indexes shift after each delete, so these commands are ordered highest-index-first; run them in order, do not reorder\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
@@ -2360,6 +2360,11 @@ def diff_deletions(prev_obj, curr_obj, path):
         return
 
 diff_deletions(prev, curr, [])
+
+# Emit highest index first: deleting a lower index shifts everything above it,
+# so the Delete commands must run highest-to-lowest to stay correct. Emitting
+# them in that order lets the admin run them as-is (matches the WARNING).
+results.sort(key=lambda r: r[1], reverse=True)
 
 for path_tuple, index, item in results:
     if not path_tuple:
