@@ -924,6 +924,9 @@ is_noisy_key() {
   # ========================================================================
 
   case "$keyname" in
+    # Keep: NSTableViewDefaultSizeMode is the sidebar icon size (real pref),
+    # NOT table-view UI state — must precede the NSTableView* noise glob below
+    NSTableViewDefaultSizeMode) return 1 ;;
     # Window positions & UI state (changes on every resize/move)
     NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|SidebarWidth)
       return 0 ;;
@@ -1188,7 +1191,9 @@ is_noisy_key() {
     # Universal Access: Filter internal change history
     com.apple.universalaccess)
       case "$keyname" in
-        History|com.apple.custommenu.apps|displaysLastCursorLocation) return 0 ;;
+        # hudNotifiedConstrast (sic): internal contrast-HUD state, not a setting —
+        # value type even varies by machine (float here, bool elsewhere)
+        History|com.apple.custommenu.apps|displaysLastCursorLocation|hudNotifiedConstrast) return 0 ;;
       esac
       ;;
 

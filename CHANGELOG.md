@@ -14,6 +14,7 @@
 - Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
 - `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
 - Emitted `PlistBuddy` string values with leading/trailing whitespace are now quoted (internal `"` escaped) so they reproduce faithfully — PlistBuddy strips a leading space from an unquoted value (e.g. localized smart-quote characters like `« `/` »`).
+- `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer silently dropped by the global `NSTableView*` noise glob — added a keep-exception so this real `.GlobalPreferences` setting surfaces again.
 
 ### Noise
 - Excluded `MobileMeAccounts` (iCloud account services) — its `Services:N:Enabled` Sets are positional, so they target a different service on another machine/OS and can't be reproduced portably (PlistBuddy addresses arrays by index only).
@@ -22,6 +23,7 @@
 - Excluded `com.apple.parsecd` — Siri/Spotlight suggestions daemon; only a server-driven resource-download URL cache and internal state, no user preferences.
 - Filtered `VisibleNetworkSRLocaleIdentifiers` in the speech-recognition domain — internal dictation-locale visibility tracking rewritten as a side-effect of adding a keyboard/language (real dictation prefs kept).
 - Filtered `com.apple.Spotlight` `version` — internal schema-version bump written alongside search-category changes (like the already-filtered `PreferencesVersion`).
+- Filtered `com.apple.universalaccess` `hudNotifiedConstrast` (sic) — internal contrast-HUD state, not a setting (its value type even varies by machine).
 
 ## 1.3.1 — 2026-06-18
 
