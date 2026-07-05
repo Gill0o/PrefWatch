@@ -499,6 +499,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.siri.DialogEngine"
   "com.apple.siri.sirisuggestions"
   "com.apple.siriknowledged"
+  # Siri/Spotlight suggestions backend daemon — server-driven resource-download
+  # URL cache (version-stamped CDN links), upload headers, internal version; no
+  # user prefs (the actual toggles live in com.apple.suggestions/sirisuggestions)
+  "com.apple.parsecd"
 
   # iStat Menus status data (satellite TLE, sensor readings)
   "com.bjango.istatmenus.status"
