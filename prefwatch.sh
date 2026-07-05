@@ -2249,6 +2249,11 @@ _emit_contextual_note() {
         persistent-apps|persistent-others)
           _note="Run 'killall Dock' to apply Dock changes" ;;
       esac ;;
+    com.apple.systemuiserver)
+      case "$array_base" in
+        menuExtras)
+          _note="Run 'killall SystemUIServer' to apply menu bar extra changes" ;;
+      esac ;;
     com.apple.print.custompresets*)
       case "$array_base" in
         com.apple.print.customPresetsInfo)

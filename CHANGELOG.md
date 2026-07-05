@@ -4,6 +4,7 @@
 
 ### Feature
 - Finder `StandardViewSettings`: contextual NOTE clarifying that the first "Use as Defaults" write dumps the entire view-settings structure (every column) — so the large one-time output is expected, not a defect.
+- `com.apple.systemuiserver` `menuExtras`: contextual NOTE to run `killall SystemUIServer` to apply menu bar extra changes (fires on both add and removal).
 
 ### Fix
 - `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries invoked without the leading dash (e.g. `networksetup listallhardwareports` from macOS daemons) — the filter only matched dashed forms, leaking these into the log.
