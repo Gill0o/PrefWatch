@@ -1893,9 +1893,7 @@ _emit_cmd() {
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
           "# WARNING: Array deletion"*)
-            (( EPOCHSECONDS - ${_NOTED_DOMAIN[__array_del_warning__]:-0} < _NOTE_BURST_GAP )) && continue
-            _NOTED_DOMAIN[__array_del_warning__]=$EPOCHSECONDS
-            _log_kind "$kind" "$pb_line" ;;
+            _note_should_show __array_del_warning__ && _log_kind "$kind" "$pb_line" ;;
           "#"*) _log_kind "$kind" "$pb_line" ;;
           *)    _log_kind "$kind" "Cmd: $pb_line" ;;
         esac
@@ -2247,7 +2245,19 @@ PY
 # gap of _NOTE_BURST_GAP seconds — so a rapid burst of changes shows it once, but a
 # later change re-shows it (context isn't lost). Not once/session, not every change.
 typeset -gA _NOTED_DOMAIN=()
-typeset -g _NOTE_BURST_GAP=15   # seconds between bursts; tune to taste
+typeset -g _NOTE_BURST_GAP=15   # seconds of quiet between bursts; tune to taste
+
+# Sliding-window per-burst dedup: return 0 to SHOW the notice keyed by $1, 1 to
+# suppress. Updates the timestamp on EVERY call, so a continuous stream of changes
+# keeps re-suppressing; the notice re-shows only after _NOTE_BURST_GAP seconds of
+# QUIET (not _NOTE_BURST_GAP since it was last shown — that made independent keys
+# re-fire mid-sequence and interleave oddly).
+_note_should_show() {
+  local _last=${_NOTED_DOMAIN[$1]:-0}
+  _NOTED_DOMAIN[$1]=$EPOCHSECONDS
+  (( EPOCHSECONDS - _last < _NOTE_BURST_GAP )) && return 1
+  return 0
+}
 
 # Emit contextual notes for domains that need extra steps
 _emit_contextual_note() {
@@ -2297,10 +2307,8 @@ _emit_contextual_note() {
       _note="Color profile changes require logout/login to take effect" ;;
   esac
   [ -n "$_note" ] || return 0
-  # Dedup per burst: re-show only after a quiet gap of _NOTE_BURST_GAP seconds
-  local _note_key="${dom}:${_note}"
-  (( EPOCHSECONDS - ${_NOTED_DOMAIN[$_note_key]:-0} < _NOTE_BURST_GAP )) && return 0
-  _NOTED_DOMAIN[$_note_key]=$EPOCHSECONDS
+  # Dedup per burst (sliding window): show once, re-show only after quiet
+  _note_should_show "${dom}:${_note}" || return 0
   log_line "Cmd: # NOTE: $_note"
 }
 
@@ -2443,8 +2451,7 @@ emit_array_deletions() {
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
             "# WARNING: Array deletion"*)
-              (( EPOCHSECONDS - ${_NOTED_DOMAIN[__array_del_warning__]:-0} < _NOTE_BURST_GAP )) && continue
-              _NOTED_DOMAIN[__array_del_warning__]=$EPOCHSECONDS ;;
+              _note_should_show __array_del_warning__ || continue ;;
           esac
           _log_kind "$kind" "Cmd: $pb_line"
         done <<< "$pb_delete"
