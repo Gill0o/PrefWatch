@@ -1762,9 +1762,10 @@ convert_delete_to_plistbuddy() {
     is_array_deletion=true
   fi
 
-  if [ "$is_array_deletion" = "true" ] && [[ -z "${_NOTED_DOMAIN[__array_del_warning__]+isset}" ]]; then
+  if [ "$is_array_deletion" = "true" ]; then
+    # WARNING is deduped by the caller (parent scope) — this function runs in a
+    # $() subshell so setting the flag here would be lost.
     printf '# WARNING: Array deletion - indexes change after each deletion. For multiple deletions: execute from HIGHEST index to LOWEST\n'
-    _NOTED_DOMAIN[__array_del_warning__]=1
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
@@ -1891,6 +1892,10 @@ _emit_cmd() {
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
+          "# WARNING: Array deletion"*)
+            [[ -n "${_NOTED_DOMAIN[__array_del_warning__]+isset}" ]] && continue
+            _NOTED_DOMAIN[__array_del_warning__]=1
+            _log_kind "$kind" "$pb_line" ;;
           "#"*) _log_kind "$kind" "$pb_line" ;;
           *)    _log_kind "$kind" "Cmd: $pb_line" ;;
         esac
@@ -2426,6 +2431,11 @@ emit_array_deletions() {
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
+          case "$pb_line" in
+            "# WARNING: Array deletion"*)
+              [[ -n "${_NOTED_DOMAIN[__array_del_warning__]+isset}" ]] && continue
+              _NOTED_DOMAIN[__array_del_warning__]=1 ;;
+          esac
           _log_kind "$kind" "Cmd: $pb_line"
         done <<< "$pb_delete"
       else
