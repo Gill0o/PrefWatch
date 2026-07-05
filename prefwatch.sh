@@ -1267,7 +1267,9 @@ is_noisy_key() {
     # Speech Recognition: Filter auto-generated app inventory on Voice Control activation
     com.apple.speech.recognition.AppleSpeechRecognition.prefs)
       case "$keyname" in
-        DictationIMTargetApplications|CACPersistentSleepState) return 0 ;;
+        # VisibleNetworkSRLocaleIdentifiers: internal dictation-locale visibility
+        # tracking, rewritten as a side-effect of adding a keyboard/language
+        DictationIMTargetApplications|CACPersistentSleepState|VisibleNetworkSRLocaleIdentifiers) return 0 ;;
         # Keep: DictationIMUseOnlyOfflineDictation, CACUserHintsFeatures, etc.
       esac
       ;;
