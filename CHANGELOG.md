@@ -3,32 +3,22 @@
 ## 1.3.2 — unreleased
 
 ### Feature
-- Finder `StandardViewSettings`: contextual NOTE clarifying that the first "Use as Defaults" write dumps the entire view-settings structure (every column) — so the large one-time output is expected, not a defect.
-- `com.apple.systemuiserver` `menuExtras`: contextual NOTE to run `killall SystemUIServer` to apply menu bar extra changes (fires on both add and removal).
+- Contextual NOTEs for Finder view settings (first "Use as Defaults" writes the full structure) and menu-bar extras (run `killall SystemUIServer` to apply).
 
 ### Fix
-- `sharing_exec_watch`: drop read-only `networksetup`/`systemsetup` queries invoked without the leading dash (e.g. `networksetup listallhardwareports` from macOS daemons) — the filter only matched dashed forms, leaking these into the log.
-- `show_domain_diff`: a transient empty `defaults export` (cfprefsd busy under load) no longer emits the whole domain as spurious deletes then corrupts the baseline into a full re-add storm next cycle — skip the cycle and keep the last good baseline.
-- Emitted `defaults write … -string` commands now escape `$`, backticks and `$VAR` in the value, so a pref string containing shell metacharacters is reproduced literally instead of executing/expanding when the logged command is run.
-- Emitted `PlistBuddy -c 'Delete …'` now escapes single quotes in the key path (a key containing `'` no longer breaks the quoting).
-- Emitted `PlistBuddy -c 'Add/Set …'` commands now escape single quotes too — a value or key containing `'` (e.g. `O'Brien`) no longer breaks the single-quoted `-c '…'` wrapper when the command is run.
-- Array additions: a new element carrying a nested list now emits the list's items (scalars and dicts), instead of creating it empty.
-- Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
-- `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
-- Emitted `PlistBuddy` string values with leading/trailing whitespace are now quoted (internal `"` escaped) so they reproduce faithfully — PlistBuddy strips a leading space from an unquoted value (e.g. localized smart-quote characters like `« `/` »`).
-- `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer silently dropped by the global `NSTableView*` noise glob — added a keep-exception so this real `.GlobalPreferences` setting surfaces again.
-- Notice dedup is now consistent: contextual `# NOTE:`s (killall, logout/login, …) and the array-deletion `# WARNING:` share one per-change-event granularity — each shows once per detected change and re-appears on the next one, instead of the NOTEs being once-per-session while the WARNING repeated on every delete command.
-- ByHost `defaults write` commands placed `-currentHost` after the key (`defaults write dom key -currentHost -int 8`), which `defaults` rejects ("Unexpected argument") so the reproduction did nothing — the host flag now precedes the verb (`defaults -currentHost write …`). Same fix applied to the internal `read-type` (its type detection was silently failing for ByHost keys). Affects every ByHost pref: Control Center menu bar modules, trackpad/mouse gestures, screensaver, ColorSync, etc.
-- Array deletions are emitted highest-index-first so a batch of `Delete` commands is safe to run in the order shown — they were emitted lowest-first, and running them top-to-bottom (or copy-pasted into a script) deleted the wrong elements because each deletion shifts higher indexes down. The index-shift `# WARNING:` is conditionally phrased ("if removing several…") so it isn't misleading for a single deletion.
+- ByHost `defaults write` commands now place `-currentHost` before the verb — they were malformed and did nothing, affecting every ByHost pref (Control Center menu-bar modules, trackpad/mouse, screensaver, ColorSync).
+- Emitted commands reproduce values faithfully: escape `$`/backticks/`$VAR` in `-string` values, single quotes in all `PlistBuddy` commands, and leading/trailing whitespace in PlistBuddy values.
+- Array deletions are emitted highest-index-first so a batch is safe to run in order; a new array element with a nested list now emits its items.
+- `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer dropped as noise.
+- `show_domain_diff` no longer emits a spurious full-domain storm when `defaults export` transiently returns empty.
+- `launchd_state_watch` no longer leaks plutil errors into the log (Sonoma).
+- `sharing_exec_watch` drops read-only `networksetup`/`systemsetup` queries invoked without the leading dash.
+- Jamf `$7` (ONLY_CMDS) is no longer overridden by a stray environment variable.
+- Contextual NOTEs and the array-deletion WARNING now show once per change (re-appearing on the next), not once per session.
 
 ### Noise
-- Excluded `MobileMeAccounts` (iCloud account services) — its `Services:N:Enabled` Sets are positional, so they target a different service on another machine/OS and can't be reproduced portably (PlistBuddy addresses arrays by index only).
-- Excluded `com.apple.ShazamKit` — CloudKit cache and access token only, no user preferences.
-- Excluded `com.apple.mobiletimerd` — the Clock/Timer daemon stores live timer instances (fresh UUIDs, timestamps, a decrementing interval), not reproducible preferences.
-- Excluded `com.apple.parsecd` — Siri/Spotlight suggestions daemon; only a server-driven resource-download URL cache and internal state, no user preferences.
-- Filtered `VisibleNetworkSRLocaleIdentifiers` in the speech-recognition domain — internal dictation-locale visibility tracking rewritten as a side-effect of adding a keyboard/language (real dictation prefs kept).
-- Filtered `com.apple.Spotlight` `version` — internal schema-version bump written alongside search-category changes (like the already-filtered `PreferencesVersion`).
-- Filtered `com.apple.universalaccess` `hudNotifiedConstrast` (sic) — internal contrast-HUD state, not a setting (its value type even varies by machine).
+- Excluded daemon / non-reproducible domains: `MobileMeAccounts`, `com.apple.ShazamKit`, `com.apple.mobiletimerd`, `com.apple.parsecd`.
+- Filtered internal keys: `VisibleNetworkSRLocaleIdentifiers` (speech), `version` (Spotlight), `hudNotifiedConstrast` (universalaccess).
 
 ## 1.3.1 — 2026-06-18
 
