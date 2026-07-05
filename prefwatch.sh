@@ -1765,7 +1765,7 @@ convert_delete_to_plistbuddy() {
   if [ "$is_array_deletion" = "true" ]; then
     # WARNING is deduped by the caller (parent scope) — this function runs in a
     # $() subshell so setting the flag here would be lost.
-    printf '# WARNING: Array deletion - indexes shift after each delete, so these commands are ordered highest-index-first; run them in order, do not reorder\n'
+    printf '# WARNING: Array deletion - indexes shift after each delete; if removing several, they are ordered highest-index-first, so run them in order (do not reorder)\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
@@ -2406,12 +2406,6 @@ emit_array_deletions() {
   fi
 
   [ -n "$py_output" ] || return 0
-
-  # The array-deletion WARNING (index-shift ordering) is only relevant for 2+
-  # deletions. For a single deletion, pre-seed the dedup flag so it's suppressed.
-  if (( $(printf '%s\n' "$py_output" | grep -c .) < 2 )); then
-    _NOTED_DOMAIN[__array_del_warning__]=1
-  fi
 
   typeset -A _noted_del_arrays=()
   while IFS=$'\t' read -r base idx keylist app_label; do
