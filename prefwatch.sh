@@ -1893,8 +1893,8 @@ _emit_cmd() {
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
           "# WARNING: Array deletion"*)
-            [[ -n "${_NOTED_DOMAIN[__array_del_warning__]+isset}" ]] && continue
-            _NOTED_DOMAIN[__array_del_warning__]=1
+            (( EPOCHSECONDS - ${_NOTED_DOMAIN[__array_del_warning__]:-0} < _NOTE_BURST_GAP )) && continue
+            _NOTED_DOMAIN[__array_del_warning__]=$EPOCHSECONDS
             _log_kind "$kind" "$pb_line" ;;
           "#"*) _log_kind "$kind" "$pb_line" ;;
           *)    _log_kind "$kind" "Cmd: $pb_line" ;;
@@ -2242,10 +2242,12 @@ PY
   printf '%s\n' "$py_output"
 }
 
-# Dedup store for notices (contextual NOTEs + array-deletion WARNING). Reset at
-# the start of each diff (show_plist_diff/show_domain_diff), so a notice appears
-# ONCE per change-event and re-appears on the next change — not once per session.
+# Per-burst notice dedup: _NOTED_DOMAIN[key] holds the LAST-EMIT epoch time for a
+# contextual NOTE / array-deletion WARNING. A notice re-appears only after a quiet
+# gap of _NOTE_BURST_GAP seconds — so a rapid burst of changes shows it once, but a
+# later change re-shows it (context isn't lost). Not once/session, not every change.
 typeset -gA _NOTED_DOMAIN=()
+typeset -g _NOTE_BURST_GAP=15   # seconds between bursts; tune to taste
 
 # Emit contextual notes for domains that need extra steps
 _emit_contextual_note() {
@@ -2295,10 +2297,10 @@ _emit_contextual_note() {
       _note="Color profile changes require logout/login to take effect" ;;
   esac
   [ -n "$_note" ] || return 0
-  # Dedup: emit each note only once per session
+  # Dedup per burst: re-show only after a quiet gap of _NOTE_BURST_GAP seconds
   local _note_key="${dom}:${_note}"
-  [[ -z "${_NOTED_DOMAIN[$_note_key]+isset}" ]] || return 0
-  _NOTED_DOMAIN[$_note_key]=1
+  (( EPOCHSECONDS - ${_NOTED_DOMAIN[$_note_key]:-0} < _NOTE_BURST_GAP )) && return 0
+  _NOTED_DOMAIN[$_note_key]=$EPOCHSECONDS
   log_line "Cmd: # NOTE: $_note"
 }
 
@@ -2441,8 +2443,8 @@ emit_array_deletions() {
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
             "# WARNING: Array deletion"*)
-              [[ -n "${_NOTED_DOMAIN[__array_del_warning__]+isset}" ]] && continue
-              _NOTED_DOMAIN[__array_del_warning__]=1 ;;
+              (( EPOCHSECONDS - ${_NOTED_DOMAIN[__array_del_warning__]:-0} < _NOTE_BURST_GAP )) && continue
+              _NOTED_DOMAIN[__array_del_warning__]=$EPOCHSECONDS ;;
           esac
           _log_kind "$kind" "Cmd: $pb_line"
         done <<< "$pb_delete"
@@ -2733,7 +2735,6 @@ show_plist_diff() {
     return 0
   fi
 
-  _NOTED_DOMAIN=()   # per-change-event notice dedup: fresh for each diff
   init_cache
   local key prev curr prev_json curr_json
   key=$(hash_path "$path")
@@ -2846,7 +2847,6 @@ show_domain_diff() {
     return 0
   fi
 
-  [ "$skip_arrays" = "true" ] || _NOTED_DOMAIN=()   # reset only when standalone (ALL-mode pair resets in show_plist_diff)
   init_cache
   local key prev curr tmpplist prev_json curr_json
   key=$(hash_path "domain:${CONSOLE_USER}:${dom}")

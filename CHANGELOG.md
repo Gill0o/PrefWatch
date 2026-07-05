@@ -15,7 +15,7 @@
 - `sharing_exec_watch` drops read-only `networksetup`/`systemsetup` queries invoked without the leading dash.
 - Jamf `$7` (ONLY_CMDS) is no longer overridden by a stray environment variable.
 - `poll_watch` flush watchdog: `set -e` no longer aborts the kill escalation on an already-reaped pid, so the straggler freeze-cap holds.
-- Contextual NOTEs and the array-deletion WARNING now show once per change (re-appearing on the next), not once per session.
+- Contextual NOTEs and the array-deletion WARNING dedup per burst — shown once for a rapid run of changes and re-shown after a quiet gap (`_NOTE_BURST_GAP`, default 15s), instead of once per session or on every single change.
 
 ### Noise
 - Excluded daemon / non-reproducible domains: `MobileMeAccounts`, `com.apple.ShazamKit`, `com.apple.mobiletimerd`, `com.apple.parsecd`.
