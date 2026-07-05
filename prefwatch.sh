@@ -1762,8 +1762,9 @@ convert_delete_to_plistbuddy() {
     is_array_deletion=true
   fi
 
-  if [ "$is_array_deletion" = "true" ]; then
+  if [ "$is_array_deletion" = "true" ] && [[ -z "${_NOTED_DOMAIN[__array_del_warning__]+isset}" ]]; then
     printf '# WARNING: Array deletion - indexes change after each deletion. For multiple deletions: execute from HIGHEST index to LOWEST\n'
+    _NOTED_DOMAIN[__array_del_warning__]=1
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
@@ -2233,6 +2234,9 @@ PY
   printf '%s\n' "$py_output"
 }
 
+# Dedup store for notices (contextual NOTEs + array-deletion WARNING). Reset at
+# the start of each diff (show_plist_diff/show_domain_diff), so a notice appears
+# ONCE per change-event and re-appears on the next change — not once per session.
 typeset -gA _NOTED_DOMAIN=()
 
 # Emit contextual notes for domains that need extra steps
@@ -2711,6 +2715,7 @@ show_plist_diff() {
     return 0
   fi
 
+  _NOTED_DOMAIN=()   # per-change-event notice dedup: fresh for each diff
   init_cache
   local key prev curr prev_json curr_json
   key=$(hash_path "$path")
@@ -2823,6 +2828,7 @@ show_domain_diff() {
     return 0
   fi
 
+  _NOTED_DOMAIN=()   # per-change-event notice dedup: fresh for each diff
   init_cache
   local key prev curr tmpplist prev_json curr_json
   key=$(hash_path "domain:${CONSOLE_USER}:${dom}")

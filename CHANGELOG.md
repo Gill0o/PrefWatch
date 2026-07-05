@@ -16,6 +16,7 @@
 - `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
 - Emitted `PlistBuddy` string values with leading/trailing whitespace are now quoted (internal `"` escaped) so they reproduce faithfully — PlistBuddy strips a leading space from an unquoted value (e.g. localized smart-quote characters like `« `/` »`).
 - `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer silently dropped by the global `NSTableView*` noise glob — added a keep-exception so this real `.GlobalPreferences` setting surfaces again.
+- Notice dedup is now consistent: contextual `# NOTE:`s (killall, logout/login, …) and the array-deletion `# WARNING:` share one per-change-event granularity — each shows once per detected change and re-appears on the next one, instead of the NOTEs being once-per-session while the WARNING repeated on every delete command.
 - ByHost `defaults write` commands placed `-currentHost` after the key (`defaults write dom key -currentHost -int 8`), which `defaults` rejects ("Unexpected argument") so the reproduction did nothing — the host flag now precedes the verb (`defaults -currentHost write …`). Same fix applied to the internal `read-type` (its type detection was silently failing for ByHost keys). Affects every ByHost pref: Control Center menu bar modules, trackpad/mouse gestures, screensaver, ColorSync, etc.
 
 ### Noise
