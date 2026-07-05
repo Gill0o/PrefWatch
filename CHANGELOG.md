@@ -11,6 +11,7 @@
 - `show_domain_diff`: a transient empty `defaults export` (cfprefsd busy under load) no longer emits the whole domain as spurious deletes then corrupts the baseline into a full re-add storm next cycle — skip the cycle and keep the last good baseline.
 - Emitted `defaults write … -string` commands now escape `$`, backticks and `$VAR` in the value, so a pref string containing shell metacharacters is reproduced literally instead of executing/expanding when the logged command is run.
 - Emitted `PlistBuddy -c 'Delete …'` now escapes single quotes in the key path (a key containing `'` no longer breaks the quoting).
+- Emitted `PlistBuddy -c 'Add/Set …'` commands now escape single quotes too — a value or key containing `'` (e.g. `O'Brien`) no longer breaks the single-quoted `-c '…'` wrapper when the command is run.
 - Array additions: a new element carrying a nested list now emits the list's items (scalars and dicts), instead of creating it empty.
 - Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
 - `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.

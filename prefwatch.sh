@@ -1876,7 +1876,7 @@ _emit_cmd() {
 
   if [ "$is_delete" != "true" ]; then
     local _cmd_dom
-    _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\1/p')
+    _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
     [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom" && return 0
     _emit_contextual_note "$note_dom" ""
   fi
@@ -1919,7 +1919,7 @@ _process_py_meta() {
 
   local _domain_note_emitted=false _last_array_base=""
   local -a _pending_comments=()
-  local _array_base _array_idx _array_keys _pb_cmd _pc _k _mdm_path pb_full
+  local _array_base _array_idx _array_keys _pb_cmd _pc _k _mdm_path _pb_esc pb_full
   local -a _array_key_list
 
   while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
@@ -1944,7 +1944,10 @@ _process_py_meta() {
         _pending_comments=()
       fi
       _mdm_path=$(mdm_plist_path "$plist_path")
-      pb_full="/usr/libexec/PlistBuddy -c '${_pb_cmd}' \"${_mdm_path}\""
+      # Escape single quotes in the PBCMD so a value/key containing ' doesn't
+      # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
+      _pb_esc=$(printf '%s' "$_pb_cmd" | /usr/bin/sed "s/'/'\\\\''/g")
+      pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
       _log_kind "$kind" "Cmd: $pb_full"
       continue
     fi
