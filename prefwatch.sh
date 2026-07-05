@@ -1208,7 +1208,7 @@ is_noisy_key() {
           return 0 ;;
         lastWindowPosition|lastVisibleScreenRect|userHasMovedWindow|windowHeight)
           return 0 ;;
-        queryViewOptions|PasteboardHistoryVersion|PreferencesVersion)
+        queryViewOptions|PasteboardHistoryVersion|PreferencesVersion|version)
           return 0 ;;
         NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
           return 0 ;;

@@ -21,6 +21,7 @@
 - Excluded `com.apple.mobiletimerd` — the Clock/Timer daemon stores live timer instances (fresh UUIDs, timestamps, a decrementing interval), not reproducible preferences.
 - Excluded `com.apple.parsecd` — Siri/Spotlight suggestions daemon; only a server-driven resource-download URL cache and internal state, no user preferences.
 - Filtered `VisibleNetworkSRLocaleIdentifiers` in the speech-recognition domain — internal dictation-locale visibility tracking rewritten as a side-effect of adding a keyboard/language (real dictation prefs kept).
+- Filtered `com.apple.Spotlight` `version` — internal schema-version bump written alongside search-category changes (like the already-filtered `PreferencesVersion`).
 
 ## 1.3.1 — 2026-06-18
 
