@@ -2407,6 +2407,12 @@ emit_array_deletions() {
 
   [ -n "$py_output" ] || return 0
 
+  # The array-deletion WARNING (index-shift ordering) is only relevant for 2+
+  # deletions. For a single deletion, pre-seed the dedup flag so it's suppressed.
+  if (( $(printf '%s\n' "$py_output" | grep -c .) < 2 )); then
+    _NOTED_DOMAIN[__array_del_warning__]=1
+  fi
+
   typeset -A _noted_del_arrays=()
   while IFS=$'\t' read -r base idx keylist app_label; do
     [ -n "$base" ] || continue
