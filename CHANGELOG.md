@@ -13,6 +13,7 @@
 - Array additions: a new element carrying a nested list now emits the list's items (scalars and dicts), instead of creating it empty.
 - Jamf mode: `$7` (ONLY_CMDS) no longer silently overridden by a stray `ONLY_CMDS` environment variable.
 - `launchd_state_watch`: suppress plutil stdout at its four `-convert -o` sites — on Sonoma a malformed `disabled.plist` leaked plutil's error text into the log.
+- Emitted `PlistBuddy` string values with leading/trailing whitespace are now quoted (internal `"` escaped) so they reproduce faithfully — PlistBuddy strips a leading space from an unquoted value (e.g. localized smart-quote characters like `« `/` »`).
 
 ### Noise
 - Excluded `MobileMeAccounts` (iCloud account services) — its `Services:N:Enabled` Sets are positional, so they target a different service on another machine/OS and can't be reproduced portably (PlistBuddy addresses arrays by index only).

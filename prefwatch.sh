@@ -2144,6 +2144,11 @@ def pb_type_value(val):
     if isinstance(val, float):
         return ("real", str(val))
     if isinstance(val, str):
+        # PlistBuddy strips a leading regular space from an unquoted value; quote
+        # values with leading/trailing whitespace (escaping any internal ") so
+        # they round-trip. Values without edge whitespace stay unquoted as before.
+        if val[:1].isspace() or val[-1:].isspace():
+            return ("string", '"' + val.replace('"', '\\"') + '"')
         return ("string", val)
     return None
 
@@ -2465,6 +2470,11 @@ def pb_type_value(val):
     if isinstance(val, float):
         return ("real", str(val))
     if isinstance(val, str):
+        # PlistBuddy strips a leading regular space from an unquoted value; quote
+        # values with leading/trailing whitespace (escaping any internal ") so
+        # they round-trip. Values without edge whitespace stay unquoted as before.
+        if val[:1].isspace() or val[-1:].isspace():
+            return ("string", '"' + val.replace('"', '\\"') + '"')
         return ("string", val)
     return None
 
