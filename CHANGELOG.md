@@ -14,6 +14,7 @@
 - `launchd_state_watch` no longer leaks plutil errors into the log (Sonoma).
 - `sharing_exec_watch` drops read-only `networksetup`/`systemsetup` queries invoked without the leading dash.
 - Jamf `$7` (ONLY_CMDS) is no longer overridden by a stray environment variable.
+- `poll_watch` flush watchdog: `set -e` no longer aborts the kill escalation on an already-reaped pid, so the straggler freeze-cap holds.
 - Contextual NOTEs and the array-deletion WARNING now show once per change (re-appearing on the next), not once per session.
 
 ### Noise

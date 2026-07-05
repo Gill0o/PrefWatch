@@ -1609,8 +1609,8 @@ _log() {
       return 0
     fi
 
-    if [[ "$out" =~ 'defaults[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
-      local _cmd_dom="${match[1]}"
+    if [[ "$out" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
+      local _cmd_dom="${match[2]}"
       if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
         return 0
       fi
@@ -1623,8 +1623,8 @@ _log() {
   fi
 
   local line="[$ts] $msg"
-  if [[ "$msg" =~ 'defaults[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
-    local _cmd_dom="${match[1]}"
+  if [[ "$msg" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
+    local _cmd_dom="${match[2]}"
     if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
       return 0
     fi
@@ -2846,7 +2846,7 @@ show_domain_diff() {
     return 0
   fi
 
-  _NOTED_DOMAIN=()   # per-change-event notice dedup: fresh for each diff
+  [ "$skip_arrays" = "true" ] || _NOTED_DOMAIN=()   # reset only when standalone (ALL-mode pair resets in show_plist_diff)
   init_cache
   local key prev curr tmpplist prev_json curr_json
   key=$(hash_path "domain:${CONSOLE_USER}:${dom}")
@@ -3217,9 +3217,9 @@ start_watch_all() {
         if (( ${#_pids[@]} > 0 )); then
           (
             /bin/sleep 1
-            for _p in "${_pids[@]}"; do /bin/kill -TERM "$_p" 2>/dev/null; done
+            for _p in "${_pids[@]}"; do /bin/kill -TERM "$_p" 2>/dev/null || :; done
             /bin/sleep 0.5
-            for _p in "${_pids[@]}"; do /bin/kill -KILL "$_p" 2>/dev/null; done
+            for _p in "${_pids[@]}"; do /bin/kill -KILL "$_p" 2>/dev/null || :; done
           ) &
           _watchdog=$!
           for _p in "${_pids[@]}"; do wait "$_p" 2>/dev/null || true; done
