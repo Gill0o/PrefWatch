@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.2 — 2026-07-06
+## 1.3.2 — unreleased
 
 ### Feature
 - Contextual NOTEs for Finder view settings (first "Use as Defaults" writes the full structure) and menu-bar extras (run `killall SystemUIServer` to apply).
