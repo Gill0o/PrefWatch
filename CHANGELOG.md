@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.3.2 — 2026-07-06
+
+### Feature
+- Contextual NOTEs for Finder view settings (first "Use as Defaults" writes the full structure) and menu-bar extras (run `killall SystemUIServer` to apply).
+
+### Fix
+- ByHost `defaults write` commands now place `-currentHost` before the verb — they were malformed and did nothing, affecting every ByHost pref (Control Center menu-bar modules, trackpad/mouse, screensaver, ColorSync).
+- System-level pref changes (`/Library/Preferences`, seen when running as root) now emit commands targeting the system file by full path plus a root NOTE — a bare domain replayed into the console user's `~/Library` copy instead.
+- Emitted commands reproduce values faithfully: escape `$`/backticks/`$VAR` in `-string` values, single quotes in all `PlistBuddy` commands, and leading/trailing whitespace in PlistBuddy values.
+- Array deletions: emitted highest-index-first so a batch runs safely in order, a nested-list element now emits its items, and the deletion WARNING is no longer dropped from `ONLY_CMDS`/Jamf output.
+- `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer dropped as noise.
+- `show_domain_diff` no longer emits a spurious full-domain storm when `defaults export` transiently returns empty.
+- `launchd_state_watch` no longer leaks plutil errors into the log (Sonoma).
+- `sharing_exec_watch` drops read-only `networksetup`/`systemsetup` queries invoked without the leading dash.
+- Jamf `$7` (ONLY_CMDS) is no longer overridden by a stray environment variable.
+- `poll_watch` flush watchdog: `set -e` no longer aborts the kill escalation on an already-reaped pid, so the straggler freeze-cap holds.
+- Contextual NOTEs and the array-deletion WARNING dedup per burst — shown once for a rapid run of changes and re-shown after a quiet gap (`_NOTE_BURST_GAP`, default 15s), instead of once per session or on every single change.
+
+### Noise
+- Excluded daemon / non-reproducible domains: `MobileMeAccounts`, `com.apple.ShazamKit`, `com.apple.mobiletimerd`, `com.apple.parsecd`.
+- Filtered internal keys: `VisibleNetworkSRLocaleIdentifiers` (speech), `version` (Spotlight), `hudNotifiedConstrast` (universalaccess).
+
 ## 1.3.1 — 2026-06-18
 
 ### Feature
