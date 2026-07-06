@@ -3883,7 +3883,7 @@ fi
 
 # Warn if domain is normally excluded (but don't stop — user explicitly requested it)
 if [ "$ALL_MODE" != "true" ] && is_excluded_domain "$DOMAIN"; then
-  log_line "NOTE: $DOMAIN is normally excluded in ALL mode, but monitoring as explicitly requested"
+  log_line "Cmd: # NOTE: $DOMAIN is normally excluded in ALL mode, but monitoring as explicitly requested"
 fi
 
 # Try to open Console.app
