@@ -780,6 +780,9 @@ get_plist_path() {
   local domain="$1"
   if [[ "$domain" =~ ^/ ]]; then
     printf '%s' "$domain"
+  elif [ "${_EMIT_SYS:-false}" = "true" ]; then
+    # System-level pref: root-owned file under /Library/Preferences
+    printf '%s' "/Library/Preferences/${domain}.plist"
   else
     # $TARGET_HOME: console user's home when root (Jamf), $HOME otherwise
     printf '%s' "$TARGET_HOME/Library/Preferences/${domain}.plist"
@@ -1796,6 +1799,11 @@ _build_defaults_write_cmd() {
   local actual_type="" type_val noquotes str cmd=""
   local plutil_result plutil_type plutil_value
 
+  # System-level pref: emit (and type-probe) the root-owned /Library/Preferences
+  # file by full path — `defaults` accepts a path in place of a bare domain and
+  # appends .plist. A bare domain would replay into the console user's ~ copy.
+  [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="/Library/Preferences/${dom}"
+
   actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
 
   if [ "$actual_type" = "float" ]; then
@@ -1865,6 +1873,16 @@ _log_kind() {
   esac
 }
 
+# One-per-burst NOTE when the current diff targets a system-level pref: the
+# emitted defaults/PlistBuddy commands write a root-owned /Library/Preferences
+# file and must be replayed as root.
+_maybe_sys_note() {
+  [ "${_EMIT_SYS:-false}" = "true" ] || return 0
+  _note_should_show __sys_root__ || return 0
+  # "Cmd: " prefix required so the note survives ONLY_CMDS (Jamf) filtering.
+  _log_kind "$1" "Cmd: # NOTE: system-level pref (/Library/Preferences) — replay these commands as root (sudo)"
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -1886,15 +1904,18 @@ _emit_cmd() {
     return 0
   fi
 
+  _maybe_sys_note "$kind"
+
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
     if pb_delete=$(convert_delete_to_plistbuddy "$cmd" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
+          # "Cmd: " prefix on comment lines too, else ONLY_CMDS (Jamf) drops them.
           "# WARNING: Array deletion"*)
-            _note_should_show __array_del_warning__ && _log_kind "$kind" "$pb_line" ;;
-          "#"*) _log_kind "$kind" "$pb_line" ;;
+            _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
+          "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
           *)    _log_kind "$kind" "Cmd: $pb_line" ;;
         esac
       done <<< "$pb_delete"
@@ -1935,6 +1956,7 @@ _process_py_meta() {
         _emit_contextual_note "$dom" "$_last_array_base"
         _domain_note_emitted=true
       fi
+      _maybe_sys_note "$kind"
       if (( ${#_pending_comments[@]} > 0 )); then
         for _pc in "${_pending_comments[@]}"; do
           _log_kind "$kind" "Cmd: $_pc"
@@ -2742,6 +2764,13 @@ show_plist_diff() {
     return 0
   fi
 
+  # System-level prefs (/Library/Preferences, non-ByHost) are root-owned: the
+  # emitted defaults/PlistBuddy commands must target the system file and run as
+  # root. Flag it so get_plist_path + _build_defaults_write_cmd emit the full
+  # /Library/Preferences path instead of the console user's ~/Library copy.
+  typeset -g _EMIT_SYS=false
+  [[ "$path" == /Library/Preferences/* && "$path" != */ByHost/* ]] && _EMIT_SYS=true
+
   init_cache
   local key prev curr prev_json curr_json
   key=$(hash_path "$path")
@@ -2848,6 +2877,10 @@ show_plist_diff() {
 show_domain_diff() {
   local dom="$1"
   local skip_arrays="${2:-false}"
+
+  # Domain mode uses user-domain semantics; clear any system flag left set by a
+  # prior show_plist_diff so emitted commands don't get /Library/Preferences.
+  typeset -g _EMIT_SYS=false
 
   # In ALL mode, skip excluded domains. In domain mode, user explicitly requested it.
   if [ "${ALL_MODE:-false}" = "true" ] && is_excluded_domain "$dom"; then

@@ -7,8 +7,10 @@
 
 ### Fix
 - ByHost `defaults write` commands now place `-currentHost` before the verb — they were malformed and did nothing, affecting every ByHost pref (Control Center menu-bar modules, trackpad/mouse, screensaver, ColorSync).
+- System-level pref changes (`/Library/Preferences`, seen when running as root) now emit commands targeting the system file by full path plus a root NOTE — a bare domain replayed into the console user's `~/Library` copy instead.
 - Emitted commands reproduce values faithfully: escape `$`/backticks/`$VAR` in `-string` values, single quotes in all `PlistBuddy` commands, and leading/trailing whitespace in PlistBuddy values.
 - Array deletions are emitted highest-index-first so a batch is safe to run in order; a new array element with a nested list now emits its items.
+- The array-deletion WARNING now appears in `ONLY_CMDS`/Jamf output — it lacked the `Cmd:` prefix and was silently dropped there.
 - `NSTableViewDefaultSizeMode` (sidebar icon size) is no longer dropped as noise.
 - `show_domain_diff` no longer emits a spurious full-domain storm when `defaults export` transiently returns empty.
 - `launchd_state_watch` no longer leaks plutil errors into the log (Sonoma).
