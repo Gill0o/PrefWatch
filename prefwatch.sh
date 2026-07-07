@@ -1550,6 +1550,14 @@ is_noisy_pbcmd() {
           return 0 ;;
       esac
       ;;
+    com.apple.preferences.accounts)
+      # 'deletedUsers' is a bookkeeping record of removed accounts — replaying
+      # the Add commands just creates a phantom entry, it does NOT delete a
+      # user. useracct_watch reports the real add/remove via a NOTE instead.
+      case "$pb_cmd" in
+        *":deletedUsers"*) return 0 ;;
+      esac
+      ;;
     com.apple.TimeMachine)
       # Noisy: disk space metrics (change on every backup), snapshot counters,
       # filesystem state detection. Keeps: ID, Kind, QuotaGB, Name (user config)
@@ -3150,6 +3158,7 @@ start_watch_all() {
       _watch_active+=("cups_sharing")
     fi
     [ -x /usr/bin/dscl ] && _watch_active+=("ard_privs")
+    [ -x /usr/bin/dscl ] && _watch_active+=("useracct")
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
@@ -3771,6 +3780,36 @@ PY
     done
   }
 
+  # Detect local user account add/remove (real users, UID >= 501). The account
+  # itself (UID/home/password) lives in OpenDirectory/dslocal, not a plist, so
+  # it is NOT reproducible via `defaults` — emit a factual NOTE only, no command.
+  # `dscl -list` needs no root and works in every mode (same approach as ard_privs).
+  # Also suppresses the misleading com.apple.preferences.accounts 'deletedUsers'
+  # churn (see is_noisy_pbcmd) so the NOTE is the single source of truth.
+  useracct_watch() {
+    local snap="$PREFWATCH_TMPDIR/useracct.snap" curr="$PREFWATCH_TMPDIR/useracct.curr"
+    local u
+    /usr/bin/dscl . -list /Users UniqueID 2>/dev/null | /usr/bin/awk '$2 >= 501 {print $1}' | /usr/bin/sort > "$snap" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      /usr/bin/dscl . -list /Users UniqueID 2>/dev/null | /usr/bin/awk '$2 >= 501 {print $1}' | /usr/bin/sort > "$curr" 2>/dev/null || true
+      # Guard empty curr: a transient dscl failure must not report every user as
+      # removed. (Cost: removing the very last real user is missed — negligible.)
+      if [ -s "$curr" ] && ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
+        while IFS= read -r u; do
+          [ -n "$u" ] || continue
+          log_line "Cmd: # NOTE: user account '$u' added — the account itself (UID/home/password) is NOT reproducible via defaults; use sysadminctl/dscl or a config profile"
+        done < <(/usr/bin/comm -13 "$snap" "$curr" 2>/dev/null)
+        while IFS= read -r u; do
+          [ -n "$u" ] || continue
+          log_line "Cmd: # NOTE: user account '$u' removed — not reproducible via defaults; use sysadminctl/dscl"
+        done < <(/usr/bin/comm -23 "$snap" "$curr" 2>/dev/null)
+        /bin/cp -f "$curr" "$snap" 2>/dev/null || true
+      fi
+    done
+  }
+
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
@@ -3799,6 +3838,8 @@ PY
   local PMSET_PID=$!
   ard_privs_watch &
   local ARD_PRIVS_PID=$!
+  useracct_watch &
+  local USERACCT_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
@@ -3807,7 +3848,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 

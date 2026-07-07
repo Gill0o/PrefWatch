@@ -2,6 +2,12 @@
 
 ## 1.3.3 — unreleased
 
+### Feature
+- Local user account add/remove now emits a `# NOTE:` — the account itself (UID/home/password) lives in OpenDirectory and isn't reproducible via `defaults` (use `sysadminctl`/`dscl`). Detected via `dscl -list /Users` (real users, UID ≥ 501), no root needed.
+
+### Noise
+- Drop the `com.apple.preferences.accounts` `deletedUsers` churn: replaying those `Add` commands created a phantom deleted-user record without deleting anyone — the account NOTE reports the real removal instead.
+
 
 ## 1.3.2 — 2026-07-06
 
