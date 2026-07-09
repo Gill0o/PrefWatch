@@ -1006,7 +1006,8 @@ is_noisy_key() {
     parent-mod-date|file-mod-date|mod-count|file-type)
       return 0 ;;
 
-    # Note: removed global `last-selection` — too generic, move to domain-specific if needed
+    # Note: `last-selection` is NOT global (too generic) — filtered domain-specific
+    # for com.apple.screencapture below.
 
     # Recent items & history
     # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
@@ -1135,6 +1136,27 @@ is_noisy_key() {
         # Noisy: last seen timestamps, navigation state, indexing timestamps, extension state
         *-last-seen|*LastUpdate*|*NavigationState*|*update-state-indexing*|*.extension)
           return 0 ;;
+      esac
+      ;;
+
+    # Screenshot: last-selection rectangle + display (rewritten on every region capture)
+    com.apple.screencapture)
+      case "$keyname" in
+        last-selection*) return 0 ;;
+      esac
+      ;;
+
+    # OmniGroup apps: OmniSoftwareUpdate run statistics / timestamps (telemetry, not prefs)
+    com.omnigroup.*)
+      case "$keyname" in
+        OSURunTimeStatistics|OSULastRun*) return 0 ;;
+      esac
+      ;;
+
+    # SketchUp / LayOut: web-dialog window geometry (X/Y/Width/Height)
+    com.sketchup.*)
+      case "$keyname" in
+        WebDialog.*.X|WebDialog.*.Y|WebDialog.*.Width|WebDialog.*.Height) return 0 ;;
       esac
       ;;
 
