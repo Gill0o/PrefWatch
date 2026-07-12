@@ -2782,6 +2782,42 @@ _run_py_diff_workers() {
   /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
 }
 
+# Detect a pure Dock reorder — persistent-apps/others hold the SAME apps in a
+# different order. The positional churn (GUID/book/file-mod-date) is filtered as
+# noise, so a reorder otherwise emits nothing; surface a NOTE, since the order
+# isn't cleanly reproducible via defaults (it lives positionally in the array).
+_note_dock_reorder() {
+  local kind="$1" pj="$2" cj="$3" _r
+  [ -n "$PYTHON3_BIN" ] || return 0
+  [ -s "$pj" ] && [ -s "$cj" ] || return 0
+  _r=$("$PYTHON3_BIN" - "$pj" "$cj" 2>/dev/null <<'PY'
+import json, sys
+def ids(doc, key):
+    out = []
+    for el in (doc.get(key) or []):
+        td = (el or {}).get("tile-data") or {}
+        i = td.get("bundle-identifier")
+        if not i:
+            fd = td.get("file-data") or {}
+            i = fd.get("_CFURLString") or td.get("file-label")
+        if i:
+            out.append(i)
+    return out
+try:
+    p = json.load(open(sys.argv[1])); c = json.load(open(sys.argv[2]))
+except Exception:
+    sys.exit(0)
+for key in ("persistent-apps", "persistent-others"):
+    po, co = ids(p, key), ids(c, key)
+    if po and co and sorted(po) == sorted(co) and po != co:
+        print("1"); break
+PY
+)
+  if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
+    _log_kind "$kind" "Cmd: # NOTE: Dock item order changed — a reorder isn't cleanly reproducible via defaults (the order is positional in persistent-apps)"
+  fi
+}
+
 # Display plist file diff
 show_plist_diff() {
   local kind="$1" path="$2" mode="${3:-normal}" silent="false"
@@ -2893,6 +2929,8 @@ show_plist_diff() {
       _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
     fi
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
+    # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
+    [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
