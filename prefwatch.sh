@@ -2357,6 +2357,12 @@ _emit_contextual_note() {
   case "$array_base" in
     com.apple.ColorSync.Devices)
       _note="Color profile changes require logout/login to take effect" ;;
+    # AppKit toolbar config, written by any app: the first window open dumps the
+    # whole item list. NOT filtered — a customized toolbar IS a real preference
+    # (deliberately un-filtered in an earlier version) — so annotate instead.
+    # Both spellings: metadata reports the top-level key or the nested array name.
+    NSToolbar\ Configuration*|TB\ Item\ Identifiers*)
+      _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations" ;;
   esac
   [ -n "$_note" ] || return 0
   # Dedup per burst (sliding window): show once, re-show only after quiet
