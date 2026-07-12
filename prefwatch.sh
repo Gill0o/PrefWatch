@@ -2784,8 +2784,8 @@ _run_py_diff_workers() {
 
 # Detect a pure Dock reorder — persistent-apps/others hold the SAME apps in a
 # different order. The positional churn (GUID/book/file-mod-date) is filtered as
-# noise, so a reorder otherwise emits nothing; surface a NOTE, since the order
-# isn't cleanly reproducible via defaults (it lives positionally in the array).
+# noise, so a reorder otherwise emits nothing; surface a NOTE. Reproducing the
+# order needs a full persistent-apps rewrite, which the per-key diff doesn't emit.
 _note_dock_reorder() {
   local kind="$1" pj="$2" cj="$3" _r
   [ -n "$PYTHON3_BIN" ] || return 0
@@ -2814,7 +2814,7 @@ for key in ("persistent-apps", "persistent-others"):
 PY
 )
   if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
-    _log_kind "$kind" "Cmd: # NOTE: Dock item order changed — a reorder isn't cleanly reproducible via defaults (the order is positional in persistent-apps)"
+    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted (reproducing the order needs a full persistent-apps rewrite)"
   fi
 }
 

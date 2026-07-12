@@ -4,7 +4,7 @@
 
 ### Feature
 - Local user account add/remove now emits a `# NOTE:` — the account itself (UID/home/password) lives in OpenDirectory and isn't reproducible via `defaults` (use `sysadminctl`/`dscl`). Detected via `dscl -list /Users` (real users, UID ≥ 501), no root needed.
-- A pure Dock reorder (same apps, different order) now emits a `# NOTE:` — the order is positional and isn't cleanly reproducible via `defaults`, so it previously produced no output at all.
+- A pure Dock reorder (same apps, different order) now emits a `# NOTE:` — reproducing the order needs a full `persistent-apps` rewrite (which the per-key diff doesn't emit), so it previously produced no output at all.
 
 ### Noise
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn: replaying those `Add` commands created a phantom deleted-user record without deleting anyone — the account NOTE reports the real removal instead.
