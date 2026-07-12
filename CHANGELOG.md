@@ -8,6 +8,7 @@
 ### Noise
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn: replaying those `Add` commands created a phantom deleted-user record without deleting anyone — the account NOTE reports the real removal instead.
 - Filter geometry/telemetry churn: `com.apple.screencapture` `last-selection*` (screenshot rectangle), OmniGroup `OSURunTimeStatistics`/`OSULastRun*` (run stats), SketchUp `WebDialog.*` window positions.
+- Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` (notification bookkeeping) — the policy toggles stay.
 
 
 ## 1.3.2 — 2026-07-06

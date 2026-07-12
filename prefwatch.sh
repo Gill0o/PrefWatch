@@ -1199,7 +1199,7 @@ is_noisy_key() {
     # SoftwareUpdate: drop daemon-written check results, keep the policy toggles
     com.apple.SoftwareUpdate)
       case "$keyname" in
-        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful|FirstOfferDateDictionary)
+        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful|FirstOfferDateDictionary|AvailableUpdatesNotification*)
           return 0 ;;
         # Keep: AutomaticCheckEnabled, AutomaticDownload, AutomaticallyInstall*, etc.
       esac
