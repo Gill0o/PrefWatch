@@ -4,13 +4,13 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — each detected change is emitted as the exact command to recreate it: `defaults`/`PlistBuddy` for plist preferences, `pmset` for energy, `lpadmin` for printer queues
-- **ALL mode** — watch every domain at once and find out which one changed, without naming it upfront (`fs_usage` + polling)
-- **Beyond plists** (needs sudo) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management, printer sharing, and per-user ARD privileges (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`, `cupsctl`, `dscl`)
-- **Contextual notes** — inline `# NOTE:` comments saying how to apply a change (`killall Dock`, logout/login) or why a real change produced no command
-- **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
-- **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
-- **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
+- **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy`, `pmset` for energy, `lpadmin` for printer queues
+- **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
+- **Beyond plists** (sudo) — toggles stored outside plists, with the matching command: Remote Login / Screen Sharing / Remote Management, printer sharing, per-user ARD privileges
+- **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), or why a real change produced no command
+- **ByHost auto-detection** — adds `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
+- **Noise filtering** — 450+ rules, so only real changes surface
+- **Minimal dependencies** — one zsh script + Python 3
 
 ## Quick Start
 
@@ -45,11 +45,11 @@ Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (needs sudo — see *Beyond plists* above).
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state (sudo — see *Beyond plists*).
 
-Anything stored elsewhere won't be detected: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon- or framework-owned state (the Desktop wallpaper), and — usually the first thing people try — settings held in the hardware itself (display and keyboard brightness, HDR, display presets, the battery charge limit). **Getting no output for those is expected, not a bug**: they never reach a plist PrefWatch watches, so there is nothing to capture and nothing to reproduce.
+Anything stored elsewhere won't be detected: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon-owned state (the Desktop wallpaper), and the hardware itself (display and keyboard brightness, HDR, display presets, battery charge limit). **No output there is expected, not a bug** — none of it reaches a plist PrefWatch watches, so there is nothing to capture or reproduce.
 
-PrefWatch annotates its output with inline `# NOTE:` comments in two cases: a change that needs an extra step to apply (logout/login, `killall`, restarting a service, running as root), and a change it detects but cannot turn into a command (a new user account, a Dock reorder — real changes, neither reproducible via `defaults`). Out-of-reach settings get no note either — there is nothing to annotate.
+Inline `# NOTE:` comments cover two cases: how to apply a change (logout/login, `killall`, restart a service, run as root), and why a real change produced no command (a new user account, a Dock reorder). Out-of-reach settings get no note either.
 
 ## Detection
 
