@@ -124,7 +124,7 @@ There is no automated test suite — testing is manual. Before opening a PR:
 - [ ] **Log output** is correct.
 - [ ] If possible, test on more than one macOS version (Sonoma / Sequoia / Tahoe behave differently).
 
-Jamf mode is auto-detected from positional parameters (`$4`=domain, `$5`=log, `$6`=include system, `$7`=only-cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains) — relevant for deployment testing, not day-to-day dev.
+Under Jamf, parameters start at `$4` (Jamf reserves `$1`–`$3`): `$4`=domain, `$5`=log, `$6`=include system, `$7`=only-cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains — relevant for deployment testing, not day-to-day dev.
 
 ## Pull Request Process
 
