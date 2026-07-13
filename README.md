@@ -37,7 +37,7 @@ sudo ./prefwatch.sh -v
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
-| `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
+| `--mdm` | -- | Make PlistBuddy paths fleet-deployable: `$loggedInUser` for the home, `$UUID` for ByHost files | Off |
 
 ## Jamf Pro Integration
 
@@ -49,7 +49,7 @@ PrefWatch monitors plist files, energy settings (`pmset`), printer configuration
 
 **Hardware-driven settings produce no output — that's expected, not a bug.** Display and keyboard brightness, HDR, display presets, the battery charge limit and the like are held in the SMC/firmware and read through private APIs, never written to a plist — so there is nothing to capture, and nothing to reproduce.
 
-For detected changes that need extra steps to apply (logout/login, `killall`, restarting a service, running as root, etc.), PrefWatch emits inline `# NOTE:` comments. This only covers changes it detects — settings outside its reach (see *Scope*) produce no output and no note.
+PrefWatch annotates its output with inline `# NOTE:` comments in two cases: a change that needs an extra step to apply (logout/login, `killall`, restarting a service, running as root), and a change it detects but cannot turn into a command (a new user account, a Dock reorder — real changes, neither reproducible via `defaults`). Settings outside its reach (see *Scope*) produce no output and no note.
 
 ## Notes
 

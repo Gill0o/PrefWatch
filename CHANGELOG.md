@@ -3,16 +3,15 @@
 ## 1.3.3 — unreleased
 
 ### Feature
-- Local user account add/remove now emits a `# NOTE:` — the account itself (UID/home/password) lives in OpenDirectory and isn't reproducible via `defaults` (use `sysadminctl`/`dscl`). Detected via `dscl -list /Users` (real users, UID ≥ 501), no root needed.
-- A pure Dock reorder (same apps, different order) now emits a `# NOTE:` — reproducing the order needs a full `persistent-apps` rewrite (which the per-key diff doesn't emit), so it previously produced no output at all.
-- Window toolbar layout (`NSToolbar Configuration`, any app) now carries a `# NOTE:` — the first window open dumps the whole item list; only later changes are real customizations. It stays visible (a customized toolbar is a real preference), just annotated.
-- MDM mode (`--mdm` / Jamf `$9`) now templatizes the ByHost UUID as well as the home path: a `PlistBuddy` path `…/ByHost/<domain>.<Mac-UUID>.plist` becomes `.$UUID.plist`, with a `# NOTE:` carrying the `ioreg` one-liner that resolves it. The literal UUID names one Mac only, so those commands were undeployable fleet-wide. In normal mode the literal path is kept (correct for local replay) but now carries a `# NOTE:` saying it is valid on this Mac only, pointing at `--mdm`. (`defaults -currentHost write` was already portable — the flag resolves the UUID.)
+- Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
+- A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
+- `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
+- ByHost `PlistBuddy` paths are now fleet-deployable: `--mdm` templatizes the Mac's hardware UUID to `.$UUID.plist` with a resolver NOTE; normal mode warns the literal path is valid on this Mac only.
 
 ### Noise
-- Drop the `com.apple.preferences.accounts` `deletedUsers` churn: replaying those `Add` commands created a phantom deleted-user record without deleting anyone — the account NOTE reports the real removal instead.
-- Filter geometry/telemetry churn: `com.apple.screencapture` `last-selection*` (screenshot rectangle), OmniGroup `OSURunTimeStatistics`/`OSULastRun*` (run stats), SketchUp `WebDialog.*` window positions.
-- Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` (notification bookkeeping) — the policy toggles stay.
-
+- Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.
+- Filter geometry/telemetry churn: `screencapture` `last-selection*`, OmniGroup `OSURunTimeStatistics`/`OSULastRun*`, SketchUp `WebDialog.*` window positions.
+- Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` — the policy toggles stay.
 
 ## 1.3.2 — 2026-07-06
 
