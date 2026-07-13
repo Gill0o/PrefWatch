@@ -1924,6 +1924,20 @@ _maybe_sys_note() {
 # One-per-burst NOTE when an emitted path was templatized to $UUID (MDM mode,
 # ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
 # the command would target a broken path, so this NOTE is not optional.
+# One-per-burst NOTE when the PlistBuddy KEY path carries a UUID. For ColorSync,
+# `Device.mntr.<UUID>` is the monitor's own CoreGraphics UUID (verified: it matches
+# CGDisplayCreateUUIDFromDisplayID) — it names the display, not the Mac, and there is
+# no CLI to resolve it, so mdm_plist_path cannot templatize it. Without this, the
+# $loggedInUser/$UUID rewrite of the *file* path suggests a portability the command
+# does not have.
+_note_device_uuid() {
+  local kind="$1" key="$2"
+  [[ "$key" =~ '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' ]] || return 0
+  _note_should_show __device_uuid__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: the key path holds a device UUID — for ColorSync, the monitor's own CoreGraphics UUID."
+  _log_kind "$kind" "Cmd: #       --mdm cannot templatize it: check the target Mac's UUID before deploying this elsewhere."
+}
+
 _note_byhost_uuid() {
   local kind="$1" path="$2"
   case "$path" in
@@ -1977,6 +1991,9 @@ _emit_cmd() {
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
           *)    _note_byhost_uuid "$kind" "$pb_line"
+                # Key expression only — strip the trailing file path, whose ByHost
+                # UUID is the Mac's and is a different concern.
+                _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
                 _log_kind "$kind" "Cmd: $pb_line" ;;
         esac
       done <<< "$pb_delete"
@@ -2026,6 +2043,9 @@ _process_py_meta() {
       fi
       _mdm_path=$(mdm_plist_path "$plist_path")
       _note_byhost_uuid "$kind" "$_mdm_path"
+      # $_pb_cmd = the key expression only; never the file path (whose ByHost UUID
+      # is the Mac's, a different thing handled by _note_byhost_uuid above).
+      _note_device_uuid "$kind" "$_pb_cmd"
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
       _pb_esc=$(printf '%s' "$_pb_cmd" | /usr/bin/sed "s/'/'\\\\''/g")
