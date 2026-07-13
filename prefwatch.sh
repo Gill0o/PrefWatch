@@ -2332,10 +2332,9 @@ typeset -gA _NOTED_DOMAIN=()
 typeset -g _NOTE_BURST_GAP=15   # seconds of quiet between bursts; tune to taste
 
 # Sliding-window per-burst dedup: return 0 to SHOW the notice keyed by $1, 1 to
-# suppress. Updates the timestamp on EVERY call, so a continuous stream of changes
-# keeps re-suppressing; the notice re-shows only after _NOTE_BURST_GAP seconds of
-# QUIET (not _NOTE_BURST_GAP since it was last shown — that made independent keys
-# re-fire mid-sequence and interleave oddly).
+# suppress. The timestamp updates on EVERY call, so the notice re-shows only after
+# _NOTE_BURST_GAP seconds of QUIET — not that long since it was last shown, which
+# would let it re-fire mid-burst.
 _note_should_show() {
   local _last=${_NOTED_DOMAIN[$1]:-0}
   _NOTED_DOMAIN[$1]=$EPOCHSECONDS
