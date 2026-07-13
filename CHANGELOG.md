@@ -7,7 +7,7 @@
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
 - ByHost `PlistBuddy` paths are now fleet-deployable: `--mdm` templatizes the Mac's hardware UUID to `.$UUID.plist` with a resolver NOTE; normal mode warns the literal path is valid on this Mac only.
-- A UUID inside the *key* path now carries its own `# NOTE:` — for ColorSync, `Device.mntr.<UUID>` is the monitor's CoreGraphics UUID, which `--mdm` cannot templatize. Without it, the ByHost path rewrite implied a portability such a command does not have.
+- A UUID inside the *key* path now carries its own `# NOTE:`. `Device.mntr.<UUID>` is the display's CoreGraphics UUID, derived from EDID (vendor/product/serial/manufacture date). Where the panel reports a serial it is unique per physical unit; where it does not, it collides across a production batch. In neither case is it knowable at profile-authoring time, so `--mdm` cannot templatize it — and without the NOTE, the ByHost path rewrite implied a portability such a command does not have.
 
 ### Noise
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.

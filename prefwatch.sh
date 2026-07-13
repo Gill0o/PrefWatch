@@ -1925,17 +1925,18 @@ _maybe_sys_note() {
 # ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
 # the command would target a broken path, so this NOTE is not optional.
 # One-per-burst NOTE when the PlistBuddy KEY path carries a UUID. For ColorSync,
-# `Device.mntr.<UUID>` is the monitor's own CoreGraphics UUID (verified: it matches
-# CGDisplayCreateUUIDFromDisplayID) — it names the display, not the Mac, and there is
-# no CLI to resolve it, so mdm_plist_path cannot templatize it. Without this, the
-# $loggedInUser/$UUID rewrite of the *file* path suggests a portability the command
-# does not have.
+# `Device.mntr.<UUID>` is the DISPLAY's own UUID (verified: it matches
+# CGDisplayCreateUUIDFromDisplayID exactly) — the panel, not the Mac. No CLI resolves
+# it, so mdm_plist_path cannot templatize it the way it does the Mac UUID in the ByHost
+# filename. Without this NOTE, that $loggedInUser/$UUID rewrite of the *file* path
+# suggests a portability the command does not have.
 _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" =~ '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: the key path holds a device UUID — for ColorSync, the monitor's own CoreGraphics UUID."
-  _log_kind "$kind" "Cmd: #       --mdm cannot templatize it: check the target Mac's UUID before deploying this elsewhere."
+  _log_kind "$kind" "Cmd: # NOTE: the key holds the display's own UUID (ColorSync Device.mntr.…) — it identifies"
+  _log_kind "$kind" "Cmd: #       the panel, not the Mac. No CLI resolves it and --mdm cannot templatize it: to"
+  _log_kind "$kind" "Cmd: #       deploy, resolve the target's display UUID at run time (CGDisplayCreateUUIDFromDisplayID)."
 }
 
 _note_byhost_uuid() {
