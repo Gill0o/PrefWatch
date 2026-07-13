@@ -235,13 +235,21 @@ ONLY_CMDS=$(to_bool "$ONLY_CMDS_RAW")
 INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
 MDM_OUTPUT=$(to_bool "$MDM_OUTPUT_RAW")
 
-# Replace user home path with $loggedInUser variable for MDM deployment scripts
+# Make an emitted PlistBuddy path deployable fleet-wide (MDM mode only):
+#  - user home       -> /Users/$loggedInUser/...
+#  - ByHost filename -> ...<domain>.$UUID.plist
+# A ByHost file is named after THIS Mac's hardware UUID, so a literal path is
+# valid nowhere else. The caller emits a NOTE with the one-liner resolving $UUID.
+# (`defaults -currentHost write` needs none of this — the flag resolves the UUID.)
 mdm_plist_path() {
-  if [ "$MDM_OUTPUT" = "true" ] && [[ "$1" == "$TARGET_HOME"* ]]; then
-    printf '%s' "/Users/\$loggedInUser${1#$TARGET_HOME}"
-  else
-    printf '%s' "$1"
+  local _p="$1"
+  if [ "$MDM_OUTPUT" = "true" ]; then
+    [[ "$_p" == "$TARGET_HOME"* ]] && _p="/Users/\$loggedInUser${_p#$TARGET_HOME}"
+    if [[ "$_p" == */ByHost/* ]]; then
+      _p=$(printf '%s' "$_p" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}\.plist$/.$UUID.plist/') || _p="$1"
+    fi
   fi
+  printf '%s' "$_p"
 }
 
 # Disable shell trace so -v/--verbose only toggles our own logging.
@@ -1913,6 +1921,17 @@ _maybe_sys_note() {
   _log_kind "$1" "Cmd: # NOTE: system-level pref (/Library/Preferences) — replay these commands as root (sudo)"
 }
 
+# One-per-burst NOTE when an emitted path was templatized to $UUID (MDM mode,
+# ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
+# the command would target a broken path, so this NOTE is not optional.
+_note_byhost_uuid() {
+  local kind="$1" path="$2"
+  [[ "$path" == *'$UUID'* ]] || return 0
+  _note_should_show __byhost_uuid__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: a ByHost file is named after the Mac's hardware UUID — resolve it at run time so this works on any Mac:"
+  _log_kind "$kind" "Cmd: #       UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -1946,7 +1965,8 @@ _emit_cmd() {
           "# WARNING: Array deletion"*)
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
-          *)    _log_kind "$kind" "Cmd: $pb_line" ;;
+          *)    _note_byhost_uuid "$kind" "$pb_line"
+                _log_kind "$kind" "Cmd: $pb_line" ;;
         esac
       done <<< "$pb_delete"
     else
@@ -1994,6 +2014,7 @@ _process_py_meta() {
         _pending_comments=()
       fi
       _mdm_path=$(mdm_plist_path "$plist_path")
+      _note_byhost_uuid "$kind" "$_mdm_path"
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
       _pb_esc=$(printf '%s' "$_pb_cmd" | /usr/bin/sed "s/'/'\\\\''/g")
