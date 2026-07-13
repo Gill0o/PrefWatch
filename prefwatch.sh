@@ -1926,10 +1926,21 @@ _maybe_sys_note() {
 # the command would target a broken path, so this NOTE is not optional.
 _note_byhost_uuid() {
   local kind="$1" path="$2"
-  [[ "$path" == *'$UUID'* ]] || return 0
-  _note_should_show __byhost_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: a ByHost file is named after the Mac's hardware UUID — resolve it at run time so this works on any Mac:"
-  _log_kind "$kind" "Cmd: #       UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+  case "$path" in
+    # MDM mode: mdm_plist_path templatized it — without the resolver $UUID is
+    # undefined and the command targets a broken path, so this NOTE is required.
+    *'$UUID'*)
+      _note_should_show __byhost_uuid__ || return 0
+      _log_kind "$kind" "Cmd: # NOTE: a ByHost file is named after the Mac's hardware UUID — resolve it at run time so this works on any Mac:"
+      _log_kind "$kind" "Cmd: #       UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+      ;;
+    # Normal mode: the literal UUID is correct for replay HERE, and useless
+    # anywhere else — say so, and point at the flag that makes it deployable.
+    */ByHost/*)
+      _note_should_show __byhost_uuid__ || return 0
+      _log_kind "$kind" "Cmd: # NOTE: this ByHost filename holds THIS Mac's hardware UUID — the path is valid on this Mac only; re-run with --mdm for a deployable form"
+      ;;
+  esac
 }
 
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
