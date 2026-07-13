@@ -49,7 +49,7 @@ PrefWatch monitors plist files, energy settings (`pmset`), printer configuration
 
 Anything stored elsewhere won't be detected: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon- or framework-owned state (the Desktop wallpaper), and — usually the first thing people try — settings held in the hardware itself (display and keyboard brightness, HDR, display presets, the battery charge limit). **Getting no output for those is expected, not a bug**: they never reach a plist, so there is nothing to capture and nothing to reproduce. Some are configurable via MDM configuration profiles instead.
 
-PrefWatch annotates its output with inline `# NOTE:` comments in two cases: a change that needs an extra step to apply (logout/login, `killall`, restarting a service, running as root), and a change it detects but cannot turn into a command (a new user account, a Dock reorder — real changes, neither reproducible via `defaults`). Anything out of reach produces no output and no note.
+PrefWatch annotates its output with inline `# NOTE:` comments in two cases: a change that needs an extra step to apply (logout/login, `killall`, restarting a service, running as root), and a change it detects but cannot turn into a command (a new user account, a Dock reorder — real changes, neither reproducible via `defaults`). Out-of-reach settings get no note either — there is nothing to annotate.
 
 ## Detection
 
