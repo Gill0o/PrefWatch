@@ -7,7 +7,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **Reproducible commands** — each detected change is emitted as the exact command to recreate it: `defaults`/`PlistBuddy` for plist preferences, `pmset` for energy, `lpadmin` for printer queues
 - **ALL mode** — watch every domain at once and find out which one changed, without naming it upfront (`fs_usage` + polling)
 - **Beyond plists** (needs sudo) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management, printer sharing, and per-user ARD privileges (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`, `cupsctl`, `dscl`)
-- **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
+- **Contextual notes** — inline `# NOTE:` comments saying how to apply a change (`killall Dock`, logout/login) or why a real change produced no command
 - **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
 - **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
@@ -49,12 +49,12 @@ PrefWatch monitors plist files, energy settings (`pmset`), printer configuration
 
 **Hardware-driven settings produce no output — that's expected, not a bug.** Display and keyboard brightness, HDR, display presets, the battery charge limit and the like are held in the SMC/firmware and read through private APIs, never written to a plist — so there is nothing to capture, and nothing to reproduce.
 
-PrefWatch annotates its output with inline `# NOTE:` comments in two cases: a change that needs an extra step to apply (logout/login, `killall`, restarting a service, running as root), and a change it detects but cannot turn into a command (a new user account, a Dock reorder — real changes, neither reproducible via `defaults`). Settings outside its reach (see *Scope*) produce no output and no note.
+PrefWatch annotates its output with inline `# NOTE:` comments in two cases: a change that needs an extra step to apply (logout/login, `killall`, restarting a service, running as root), and a change it detects but cannot turn into a command (a new user account, a Dock reorder — real changes, neither reproducible via `defaults`). Anything out of reach produces no output and no note.
 
-## Notes
+## Detection
 
 - ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
-- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, "hot" domains (the common System Settings panels by default — see `HOT_DOMAINS`) are flushed preemptively every 0.5s, forcing `cfprefsd` to sync them so changes surface within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected, non-hot) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
+- Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take several seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security
 
