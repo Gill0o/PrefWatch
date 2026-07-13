@@ -6,7 +6,7 @@
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
-- ByHost `PlistBuddy` paths are now fleet-deployable: `--mdm` templatizes the Mac's hardware UUID to `.$UUID.plist` with a resolver NOTE; normal mode warns the literal path is valid on this Mac only.
+- `--mdm` now templatizes the ByHost filename's Mac hardware UUID to `.$UUID.plist` (with an `ioreg` resolver NOTE), as it already did the home path — a literal ByHost path names the capture machine and is valid on no other. Normal mode warns rather than rewriting. This is what a nested ByHost pref needs to deploy, but it is not always sufficient — see below.
 - A UUID inside the *key* path now carries its own `# NOTE:`. `Device.mntr.<UUID>` is the display's CoreGraphics UUID, derived from EDID (vendor/product/serial/manufacture date). Where the panel reports a serial it is unique per physical unit; where it does not, it collides across a production batch. In neither case is it knowable at profile-authoring time, so `--mdm` cannot templatize it — and without the NOTE, the ByHost path rewrite implied a portability such a command does not have.
 
 ### Noise
