@@ -5,12 +5,12 @@
 ### Feature
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
-- Menu bar position changes emit a `# NOTE:` — the pixel offsets are filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them identically, so the NOTE claims neither.
+- Menu bar position changes emit a `# NOTE:` — pixel offsets, filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them too, so the NOTE claims neither.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
 - A UUID in the *key* path carries a `# NOTE:` — it names a machine-local object (for ColorSync, the display), never the Mac, so `--mdm` cannot templatize it: resolve it on the target to deploy.
 
 ### Fix
-- `--mdm` left the capture machine's literal hardware UUID in the ByHost path — so on every target PlistBuddy seeded a stray plist named after an absent machine. Now rewritten to `.$UUID.plist` with an `ioreg` resolver NOTE.
+- `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target. Now `.$UUID.plist`, with an `ioreg` resolver NOTE.
 
 ### Noise
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.
