@@ -6,7 +6,7 @@
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
-- A UUID in the *key* path now carries a `# NOTE:` — `Device.mntr.<UUID>` is the display's EDID-derived CoreGraphics UUID (unique per panel where it reports a serial, shared across a production batch where it does not), so the command targets that one display. It is not knowable when authoring the profile and cannot be templatized: to deploy, resolve the target's display UUID at run time.
+- A UUID in the *key* path now carries a `# NOTE:` — it names a machine-local object (a display, an account, …), never the Mac, so `--mdm` cannot templatize it and the command must be resolved against the target before it will deploy. The common case is ColorSync's `Device.mntr.<UUID>`: the display's EDID-derived CoreGraphics UUID — unique per panel where it reports a serial, shared across a production batch where it does not, and readable only via `CGDisplayCreateUUIDFromDisplayID`.
 
 ### Fix
 - `--mdm` emitted a ByHost path carrying the capture machine's literal hardware UUID: it templatized the home but not the UUID, so on any target the path was wrong — and PlistBuddy creates what it cannot find, seeding a stray ByHost plist named after a machine that is not there. Now rewritten to `.$UUID.plist` with an `ioreg` resolver NOTE; normal mode warns rather than rewriting.
