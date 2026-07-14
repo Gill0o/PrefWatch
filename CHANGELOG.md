@@ -15,6 +15,7 @@
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.
 - Filter geometry/telemetry churn: `screencapture` `last-selection*`, OmniGroup `OSURunTimeStatistics`/`OSULastRun*`, SketchUp `WebDialog.*` window positions.
 - Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` — the policy toggles stay.
+- Filter `com.apple.Passwords` system state: `WBSPrivacyProxyAvailability*` (iCloud Private Relay availability, which flips on its own with the network, and a byte counter) plus content-refresh stamps. The real toggles (`ShowServiceNamesInPasswords`, `showMenuBarExtra`) stay.
 
 ## 1.3.2 — 2026-07-06
 

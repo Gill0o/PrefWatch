@@ -1154,6 +1154,16 @@ is_noisy_key() {
       esac
       ;;
 
+    # Passwords: iCloud Private Relay availability is observed network state (it flips
+    # on its own as the network changes, and Traffic is a byte counter), plus content
+    # refresh stamps. Keep: ShowServiceNamesInPasswords, showMenuBarExtra.
+    com.apple.Passwords)
+      case "$keyname" in
+        WBSPrivacyProxyAvailability*|WBS*LastUpdate*|WebsiteNameProviderLastUpdateTime|DidReportHistorySettings)
+          return 0 ;;
+      esac
+      ;;
+
     # OmniGroup apps: OmniSoftwareUpdate run statistics / timestamps (telemetry, not prefs)
     com.omnigroup.*)
       case "$keyname" in
