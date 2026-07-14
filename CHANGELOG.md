@@ -6,6 +6,7 @@
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
+- Menu bar item positions now carry a `# NOTE:` when they change — `NSStatusItem Preferred Position` is a pixel offset each app keeps in its own domain, filtered as UI churn, so a Cmd+drag reorder previously emitted nothing at all. It fires only on a value change (showing or hiding an item already emits its real command) and deliberately does not claim a reorder: connecting or removing a display recomputes the very same offsets.
 - A UUID in the *key* path now carries a `# NOTE:` — it names a machine-local object (a display, an account, …), never the Mac, so `--mdm` cannot templatize it and the command must be resolved against the target before it will deploy. The common case is ColorSync's `Device.mntr.<UUID>`: the display's EDID-derived CoreGraphics UUID — unique per panel where it reports a serial, shared across a production batch where it does not, and readable only via `CGDisplayCreateUUIDFromDisplayID`.
 
 ### Fix

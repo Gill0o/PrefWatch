@@ -2850,6 +2850,27 @@ _run_py_diff_workers() {
   /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
 }
 
+# Menu bar item positions (`NSStatusItem Preferred Position <Item>`) are pixel offsets,
+# each app storing its own in its OWN domain. They are filtered as UI churn, so a
+# Cmd+drag reorder otherwise emits nothing — surface a NOTE.
+# Fires only on a VALUE change of an existing key: a key added/removed means an item was
+# shown/hidden, whose real command (the Control Center module value) is already emitted.
+# A display being connected or removed recomputes the offsets identically (verified:
+# unplugging an external screen moved Bluetooth 439 -> 401 with no user action), so the
+# NOTE must not claim a reorder — it says what is true in both cases.
+_note_menubar_positions() {
+  local kind="$1" prev="$2" curr="$3" _k
+  [ -s "$prev" ] && [ -s "$curr" ] || return 0
+  _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
+        | /usr/bin/grep -E '^[<>].*"NSStatusItem Preferred Position' \
+        | /usr/bin/sed -E 's/^[<>][[:space:]]*//; s/[[:space:]]*=.*//' \
+        | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1) || _k=""
+  [ -n "$_k" ] || return 0
+  _note_should_show __menubar_pos__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: menu bar item positions changed — pixel offsets, one per app in its own"
+  _log_kind "$kind" "Cmd: #       domain, not emitted. A display being connected or removed recomputes them too."
+}
+
 # Detect a pure Dock reorder — persistent-apps/others hold the SAME apps in a
 # different order. The positional churn (GUID/book/file-mod-date) is filtered as
 # noise, so a reorder otherwise emits nothing; surface a NOTE. Reproducing the
@@ -2999,6 +3020,8 @@ show_plist_diff() {
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
     # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
+    # Same for menu bar offsets — any domain, so no guard.
+    _note_menubar_positions "$kind" "$prev" "$curr"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
