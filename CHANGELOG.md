@@ -5,18 +5,18 @@
 ### Feature
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
+- Menu bar position changes emit a `# NOTE:` — the pixel offsets are filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them identically, so the NOTE claims neither.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
-- Menu bar item positions now carry a `# NOTE:` when they change — `NSStatusItem Preferred Position` is a pixel offset each app keeps in its own domain, filtered as UI churn, so a Cmd+drag reorder previously emitted nothing at all. It fires only on a value change (showing or hiding an item already emits its real command) and deliberately does not claim a reorder: connecting or removing a display recomputes the very same offsets.
-- A UUID in the *key* path now carries a `# NOTE:` — it names a machine-local object (a display, an account, …), never the Mac, so `--mdm` cannot templatize it and the command must be resolved against the target before it will deploy. The common case is ColorSync's `Device.mntr.<UUID>`: the display's EDID-derived CoreGraphics UUID — unique per panel where it reports a serial, shared across a production batch where it does not, and readable only via `CGDisplayCreateUUIDFromDisplayID`.
+- A UUID in the *key* path carries a `# NOTE:` — it names a machine-local object (for ColorSync, the display), never the Mac, so `--mdm` cannot templatize it: resolve it on the target to deploy.
 
 ### Fix
-- `--mdm` emitted a ByHost path carrying the capture machine's literal hardware UUID: it templatized the home but not the UUID, so on any target the path was wrong — and PlistBuddy creates what it cannot find, seeding a stray ByHost plist named after a machine that is not there. Now rewritten to `.$UUID.plist` with an `ioreg` resolver NOTE; normal mode warns rather than rewriting.
+- `--mdm` left the capture machine's literal hardware UUID in the ByHost path — so on every target PlistBuddy seeded a stray plist named after an absent machine. Now rewritten to `.$UUID.plist` with an `ioreg` resolver NOTE.
 
 ### Noise
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.
 - Filter geometry/telemetry churn: `screencapture` `last-selection*`, OmniGroup `OSURunTimeStatistics`/`OSULastRun*`, SketchUp `WebDialog.*` window positions.
+- Filter `com.apple.Passwords` system state: `WBSPrivacyProxyAvailability*` (Private Relay availability, which flips with the network) and content-refresh stamps. The real toggles stay.
 - Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` — the policy toggles stay.
-- Filter `com.apple.Passwords` system state: `WBSPrivacyProxyAvailability*` (iCloud Private Relay availability, which flips on its own with the network, and a byte counter) plus content-refresh stamps. The real toggles (`ShowServiceNamesInPasswords`, `showMenuBarExtra`) stay.
 
 ## 1.3.2 — 2026-07-06
 
