@@ -1938,19 +1938,19 @@ _maybe_sys_note() {
 # One-per-burst NOTE when an emitted path was templatized to $UUID (MDM mode,
 # ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
 # the command would target a broken path, so this NOTE is not optional.
-# One-per-burst NOTE when the PlistBuddy KEY path carries a UUID. It names a
-# machine-local object, never the Mac itself, so mdm_plist_path cannot templatize it
-# the way it does the Mac UUID in the ByHost filename. Observed: the display
-# (ColorSync `Device.mntr.<UUID>` and windowserver `DisplaySets:Underscan:<UUID>` —
-# verified to match CGDisplayCreateUUIDFromDisplayID exactly) and an account
-# (`com.apple.imservice.SMS` `Accounts:<UUID>`) — hence the NOTE stays generic.
+# One-per-burst NOTE for a ColorSync command that targets a monitor by its CoreGraphics
+# UUID (`Device.mntr.<UUID>`). That UUID differs per display AND per Mac (proven: two
+# identical monitors → different UUIDs), no CLI resolves it, so mdm_plist_path can't
+# templatize it. SCOPED to `Device.mntr.` on purpose: a bare "any UUID in the key" match
+# also fired on `NSToolbar Configuration <UUID>` (a toolbar-config id, already covered by
+# its own NOTE) and on account UUIDs, where the display-resolution advice is just wrong.
 _note_device_uuid() {
   local kind="$1" key="$2"
-  [[ "$key" =~ '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' ]] || return 0
+  [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: the key path holds a UUID naming a machine-local object, not the Mac — for"
-  _log_kind "$kind" "Cmd: #       ColorSync it is the display (resolvable only via CGDisplayCreateUUIDFromDisplayID)."
-  _log_kind "$kind" "Cmd: #       --mdm cannot templatize it: resolve it on the target before deploying this."
+  _log_kind "$kind" "Cmd: # NOTE: this ColorSync key targets a monitor by its CoreGraphics UUID (Device.mntr.…),"
+  _log_kind "$kind" "Cmd: #       which differs per display and per Mac. --mdm can't templatize it: resolve the"
+  _log_kind "$kind" "Cmd: #       target's display UUID (CGDisplayCreateUUIDFromDisplayID) before deploying."
 }
 
 _note_byhost_uuid() {
