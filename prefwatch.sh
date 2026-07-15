@@ -2865,10 +2865,13 @@ _run_py_diff_workers() {
 _note_menubar_positions() {
   local kind="$1" prev="$2" curr="$3" _k
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
+  # `|| true` INSIDE the $() — diff exits 1 when the files differ, and pipefail
+  # propagates that, which an outer `|| _k=""` would use to wipe the captured key
+  # (the bug that kept this NOTE from ever firing). Keep the stdout, drop the status.
   _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
         | /usr/bin/grep -E '^[<>].*"NSStatusItem Preferred Position' \
         | /usr/bin/sed -E 's/^[<>][[:space:]]*//; s/[[:space:]]*=.*//' \
-        | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1) || _k=""
+        | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1 || true)
   [ -n "$_k" ] || return 0
   _note_should_show __menubar_pos__ || return 0
   _log_kind "$kind" "Cmd: # NOTE: menu bar item positions changed — pixel offsets, one per app in its own"
