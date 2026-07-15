@@ -4095,6 +4095,40 @@ else
 fi
 WATCH_PID=$!
 
+# Tear the watcher down on a termination signal aimed at the MAIN pid, then remove the
+# tmpdir. Without this, a SIGTERM/SIGHUP to the main pid (a supervisor, launchd,
+# `kill <pid>`) kills this shell by default disposition — the EXIT trap is skipped on
+# signal death — orphaning the watcher child and leaking $PREFWATCH_TMPDIR. Ctrl-C
+# already works (process-group SIGINT reaches the child's own trap); this makes
+# single-pid signals safe too, which matters most in Jamf/root where the process is
+# killed non-interactively by pid.
+# Kill a process and its whole subtree, leaves first, so nothing gets reparented to init
+# and survives. The watcher tree is main → WATCH_PID → sub-watchers → transient workers;
+# just TERM-ing WATCH_PID lets its own trap kill the sub-watchers, but a sub-watcher's
+# nested subshell can reparent away and linger. Walking the tree bottom-up closes that.
+_kill_tree() {
+  local _root=$1 _kid
+  [ -n "$_root" ] || return 0
+  for _kid in $(pgrep -P "$_root" 2>/dev/null); do _kill_tree "$_kid"; done
+  kill -TERM "$_root" 2>/dev/null || true
+}
+_shutdown_watcher() {
+  _kill_tree "${WATCH_PID:-}"
+  wait ${WATCH_PID:-} 2>/dev/null || true
+  # A kill DURING the initial snapshot leaves transient `_snapshot_one_plist &` workers
+  # briefly writing into the tmpdir, so a single rm races and loses. Nothing respawns once
+  # the tree is dead; retry until the in-flight handful drains (~1s) and the rm wins.
+  local _i
+  for _i in 1 2 3 4 5 6; do
+    /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
+    [ -d "$PREFWATCH_TMPDIR" ] || break
+    sleep 0.3
+  done
+}
+trap '_shutdown_watcher; exit 143' TERM
+trap '_shutdown_watcher; exit 130' INT
+trap '_shutdown_watcher; exit 129' HUP
+
 if is_console_running; then
   while is_console_running; do
     sleep 1
