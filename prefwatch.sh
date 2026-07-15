@@ -2874,8 +2874,8 @@ _note_menubar_positions() {
         | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1 || true)
   [ -n "$_k" ] || return 0
   _note_should_show __menubar_pos__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: menu bar item positions changed — pixel offsets, one per app in its own"
-  _log_kind "$kind" "Cmd: #       domain, not emitted. A display being connected or removed recomputes them too."
+  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed — item positions are per-app pixel offsets, not"
+  _log_kind "$kind" "Cmd: #       portable, so not emitted. A reorder OR a display connect/disconnect triggers this."
 }
 
 # Detect a pure Dock reorder — persistent-apps/others hold the SAME apps in a
