@@ -17,6 +17,7 @@
 - Filter geometry/telemetry churn: `screencapture` `last-selection*`, OmniGroup `OSURunTimeStatistics`/`OSULastRun*`, SketchUp `WebDialog.*` window positions.
 - Filter `com.apple.Passwords` system state: `WBSPrivacyProxyAvailability*` (Private Relay availability, which flips with the network) and content-refresh stamps. The real toggles stay.
 - Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` — the policy toggles stay.
+- Exclude `com.apple.AMPLibraryAgent` (media-library daemon: migration flags, persistent IDs, store capability flags — no user prefs).
 
 ## 1.3.2 — 2026-07-06
 

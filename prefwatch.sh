@@ -468,6 +468,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.Music"
   "com.apple.itunescloud"
   "com.apple.itunescloudd"
+  # Media library daemon: only migration flags, persistent IDs, daemon-written
+  # store capability flags and an update counter — no user prefs. (Capital AMP;
+  # the com.apple.amp* glob is case-sensitive and misses it.)
+  "com.apple.AMPLibraryAgent"
 
   # ShazamKit: CloudKit account cache, boot tasks and an access token only — no
   # user preferences (the SHLibrary…UserID churn is internal iCloud identity state)
