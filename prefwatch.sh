@@ -2859,9 +2859,8 @@ _run_py_diff_workers() {
 # Cmd+drag reorder otherwise emits nothing — surface a NOTE.
 # Fires only on a VALUE change of an existing key: a key added/removed means an item was
 # shown/hidden, whose real command (the Control Center module value) is already emitted.
-# A display being connected or removed recomputes the offsets identically (verified:
-# unplugging an external screen moved Bluetooth 439 -> 401 with no user action), so the
-# NOTE must not claim a reorder — it says what is true in both cases.
+# A display connect/disconnect can recompute the offsets too (seen once), but not
+# reliably — so the NOTE never claims a reorder, only that positions changed.
 _note_menubar_positions() {
   local kind="$1" prev="$2" curr="$3" _k
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
