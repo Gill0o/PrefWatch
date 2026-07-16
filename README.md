@@ -8,7 +8,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
 - **Beyond plists** (sudo) — toggles stored outside plists, with the matching command: Remote Login / Screen Sharing / Remote Management, printer sharing, per-user ARD privileges
 - **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), or why a real change produced no command
-- **ByHost auto-detection** — adds `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
+- **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3
 
