@@ -1948,20 +1948,21 @@ _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: this ColorSync key targets a monitor by its CoreGraphics UUID (Device.mntr.…),"
-  _log_kind "$kind" "Cmd: #       which differs per display and per Mac. --mdm can't templatize it: resolve the"
-  _log_kind "$kind" "Cmd: #       target's display UUID (CGDisplayCreateUUIDFromDisplayID) before deploying."
+  _log_kind "$kind" "Cmd: # NOTE: the Device.mntr.<UUID> in the key is the DISPLAY's own UUID (per-monitor), not the Mac's —"
+  _log_kind "$kind" "Cmd: #       --mdm can't templatize it; resolve it on the target (CGDisplayCreateUUIDFromDisplayID)."
 }
 
 _note_byhost_uuid() {
   local kind="$1" path="$2"
   case "$path" in
-    # MDM mode: mdm_plist_path templatized it — without the resolver $UUID is
-    # undefined and the command targets a broken path, so this NOTE is required.
+    # MDM mode: mdm_plist_path templatized the path with $UUID + $loggedInUser. Emit
+    # BOTH resolvers as EXECUTABLE lines (no leading #) so a pasted block actually sets
+    # the vars — a commented resolver left them empty and the path became /Users//….plist.
     *'$UUID'*)
       _note_should_show __byhost_uuid__ || return 0
-      _log_kind "$kind" "Cmd: # NOTE: a ByHost file is named after the Mac's hardware UUID — resolve it at run time so this works on any Mac:"
-      _log_kind "$kind" "Cmd: #       UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+      _log_kind "$kind" "Cmd: # NOTE: the ByHost path uses \$UUID (this Mac) + \$loggedInUser — run these two lines first, then the commands deploy on any Mac:"
+      _log_kind "$kind" "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
+      _log_kind "$kind" "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
       ;;
     # Normal mode: the literal UUID is correct for replay HERE, and useless
     # anywhere else — say so, and point at the flag that makes it deployable.
@@ -2735,7 +2736,7 @@ for top_key in sorted(curr.keys()):
     if top_key not in prev:
         # New top-level dict/list: emit Add commands for entire tree
         if not _first_create_noted:
-            print("PBCMD\t# NOTE: New top-level key — PlistBuddy requires the full dict tree to exist before Set. Run Add commands in order; subsequent changes will only emit Set")
+            print("PBCMD\t# NOTE: new key tree — the Add commands build it top-down; later changes to it emit Set.")
             _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
