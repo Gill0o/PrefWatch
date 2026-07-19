@@ -47,7 +47,7 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state (sudo — see *Beyond plists*).
 
-Anything stored elsewhere won't be detected: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon-owned state (the Desktop wallpaper), and the hardware itself (display and keyboard brightness, HDR, display presets, battery charge limit). **No output there is expected, not a bug** — none of it reaches a plist PrefWatch watches, so there is nothing to capture or reproduce.
+Anything stored elsewhere won't be detected: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon-owned state (the Desktop wallpaper), and the hardware itself (display and keyboard brightness, HDR, battery charge limit). **No output there is expected, not a bug** — none of it reaches a plist PrefWatch watches, so there is nothing to capture or reproduce.
 
 Inline `# NOTE:` comments cover two cases: how to apply a change (logout/login, `killall`, restart a service, run as root), and why a real change produced no command (a new user account, a Dock reorder). Out-of-reach settings get no note either.
 
