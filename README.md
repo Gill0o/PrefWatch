@@ -4,9 +4,8 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy`, `pmset` for energy, `lpadmin` for printer queues
+- **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy`, `pmset` (energy), `lpadmin` (printers), and — with sudo — sharing services, Remote Management and per-user ARD privileges that live outside any plist
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
-- **Beyond plists** (sudo) — toggles stored outside plists, with the matching command: Remote Login / Screen Sharing / Remote Management, printer sharing, per-user ARD privileges
 - **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), or why a real change produced no command
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules, so only real changes surface
@@ -45,7 +44,7 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 ## Scope
 
-PrefWatch monitors plist files and out-of-plist state: energy (`pmset`), printers (CUPS), and sudo-gated sharing / Remote Management (see *Beyond plists*).
+PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and — with sudo — sharing services and Remote Management.
 
 Anything stored elsewhere won't be detected: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon-owned state (the Desktop wallpaper), and the hardware itself (display and keyboard brightness, HDR, battery charge limit). **No output there is expected, not a bug** — none of it reaches a plist PrefWatch watches, so there is nothing to capture or reproduce.
 
