@@ -2355,6 +2355,7 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
 
 diff(prev, curr, [])
 
+_array_add_noted = False
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
@@ -2365,6 +2366,11 @@ for prefix, index, item in results:
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
     if arr_name not in prev:
         continue
+    # Adding to an EXISTING array: the index is positional. Warn once — a target
+    # whose array has a different length won't get the element at the same spot.
+    if not _array_add_noted:
+        print("PBCMD\t# NOTE: array element added at a positional index (:N) — PlistBuddy addresses arrays by position, not content, so on a target whose array differs it may land wrong")
+        _array_add_noted = True
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
         # Output metadata line (for _skip_keys in shell)
