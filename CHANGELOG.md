@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.3.3 — unreleased
+## 1.3.4 — unreleased
+
+
+## 1.3.3 — 2026-07-19
 
 ### Feature
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
