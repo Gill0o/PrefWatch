@@ -1,127 +1,73 @@
 # Contributing to PrefWatch
 
-Thank you for your interest in contributing to PrefWatch! This document provides guidelines and instructions for contributing to the project.
+Thanks for your interest in contributing to PrefWatch! This guide covers how the project is developed and how to get a change merged.
 
 ## Table of Contents
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
-- [Development Workflow](#development-workflow)
 - [Branching Strategy](#branching-strategy)
+- [Development Workflow](#development-workflow)
 - [Commit Guidelines](#commit-guidelines)
-- [Version Management](#version-management)
+- [CHANGELOG](#changelog)
 - [Testing](#testing)
 - [Pull Request Process](#pull-request-process)
 - [Coding Standards](#coding-standards)
 
 ## Code of Conduct
 
-This project follows a code of conduct to ensure a welcoming environment for all contributors:
 - Be respectful and inclusive
 - Accept constructive criticism gracefully
-- Focus on what's best for the community
-- Show empathy towards other community members
+- Focus on what's best for the project and its users
 
 ## Getting Started
 
-1. **Fork the repository** on GitHub
+1. **Fork the repository** on GitHub.
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/Gill0o/PrefWatch.git
+   git clone https://github.com/<you>/PrefWatch.git
    cd PrefWatch
    ```
 3. **Add the upstream remote**:
    ```bash
    git remote add upstream https://github.com/Gill0o/PrefWatch.git
    ```
-4. **Install the pre-commit hook** (optional but recommended):
+4. **Install the pre-commit hook** (optional — reminds you to update the CHANGELOG):
    ```bash
    cp pre-commit .git/hooks/pre-commit
    chmod +x .git/hooks/pre-commit
    ```
 
-## Development Workflow
+## Branching Strategy
 
-### 1. Create a Feature Branch
-Always create a new branch for your work:
+- **`main`** — release-only. Every commit is a squashed release cut by the maintainer; it is protected and **cannot be pushed to directly**. Do not target it.
+- **`dev`** — the integration branch where all work lands. **Open your PRs against `dev`.** Releases are cut from `dev` by the maintainer.
+
+Create a topic branch from `dev` in your fork:
 ```bash
-git checkout main
-git pull upstream main
-git checkout -b feature/your-feature-name
+git remote add upstream https://github.com/Gill0o/PrefWatch.git   # once
+git fetch upstream
+git checkout -b feature/short-description upstream/dev
 ```
 
-Branch naming conventions:
+Branch naming:
 - Features: `feature/description`
 - Bug fixes: `fix/description`
 - Documentation: `docs/description`
-- Hotfixes: `hotfix/description`
 
-### 2. Make Your Changes
-- Keep changes focused and atomic
-- Test thoroughly on your local machine
-- Update documentation as needed
-- Add or update tests if applicable
+## Development Workflow
 
-### 3. Commit Your Changes
-Follow the commit message guidelines (see below).
+1. **Branch** from `dev` (above).
+2. **Make focused, atomic changes.** `prefwatch.sh` is a single zsh script — keep new logic in the matching section (see [Coding Standards](#coding-standards)).
+3. **Test thoroughly** (see [Testing](#testing)) — especially round-tripping any emitted `defaults`/`PlistBuddy` command.
+4. **Update the CHANGELOG** (see below) and any affected docs (README).
+5. **Commit** following the guidelines below.
+6. **Push to your fork** and **open a PR against `dev`**.
 
-### 4. Push to Your Fork
-```bash
-git push origin feature/your-feature-name
-```
-
-### 5. Create a Pull Request
-- Go to GitHub and create a PR from your branch to the upstream `main` branch
-- Fill out the PR template completely
-- Link any related issues
-
-## Branching Strategy
-
-This project uses a simplified Git Flow:
-
-### Main Branches
-- **`main`**: Production-ready code. Protected branch requiring PR reviews.
-- **`develop`**: (Optional) Integration branch for features before release.
-
-### Supporting Branches
-
-#### Feature Branches
-- Naming: `feature/short-description`
-- Created from: `main` (or `develop`)
-- Merged back into: `main` (or `develop`)
-- Used for: New features or enhancements
-
-Example:
-```bash
-git checkout -b feature/add-json-export main
-# ... make changes ...
-git push origin feature/add-json-export
-# Create PR to main
-```
-
-#### Fix Branches
-- Naming: `fix/short-description`
-- Created from: `main`
-- Merged back into: `main`
-- Used for: Bug fixes
-
-#### Hotfix Branches
-- Naming: `hotfix/description`
-- Created from: `main`
-- Merged back into: `main` AND `develop` (if exists)
-- Used for: Critical production fixes that can't wait for the next release
-
-Example:
-```bash
-git checkout -b hotfix/critical-parsing-error main
-# ... fix the issue ...
-git checkout main
-git merge --no-ff hotfix/critical-parsing-error
-git tag -a v2.4.1 -m "Hotfix: Critical parsing error"
-```
+> Versioning, release archiving (`release/`), tagging, and the merge to `main` are handled by the maintainer — you don't bump the version or tag anything.
 
 ## Commit Guidelines
 
-### Commit Message Format
+### Format
 ```
 <type>(<scope>): <subject>
 
@@ -129,185 +75,108 @@ git tag -a v2.4.1 -m "Hotfix: Critical parsing error"
 
 <footer>
 ```
+`scope` is optional (most commits omit it). Keep the subject imperative and under ~72 chars.
 
 ### Types
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, no logic change)
-- `refactor`: Code refactoring (no feature or bug fix)
-- `perf`: Performance improvements
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks, dependency updates
+- `feat` — new feature
+- `fix` — bug fix
+- `docs` — documentation only
+- `style` — formatting, no logic change
+- `refactor` — no feature or bug fix
+- `perf` — performance
+- `test` — tests
+- `chore` — maintenance
 
 ### Examples
-```bash
-feat(monitoring): add support for JSON export format
+```
+feat: emit a `killall Dock` NOTE for Dock preference changes
 
-Implements JSON export of preference changes to make it easier
-to parse output programmatically. Adds new parameter $9 for
-output format selection.
+fix: place -currentHost before the verb in emitted ByHost writes
 
-Closes #42
+  The flag after the key was rejected by `defaults`, so ByHost prefs
+  (Control Center modules, trackpad, ColorSync) wrote nothing.
 
----
-
-fix(parsing): correct PlistBuddy command generation for arrays
-
-The previous implementation didn't handle nested dictionaries
-correctly. This fix adds proper escaping and nesting.
-
-Fixes #38
-
----
-
-docs(readme): update installation instructions
-
-Added clarification for Jamf Pro deployment and macOS 15 compatibility.
+docs: clarify NOTE scope for undetectable settings
 ```
 
-## Version Management
+## CHANGELOG
 
-This project uses semantic versioning (MAJOR.MINOR.PATCH):
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
+Add an entry under the top **`## X.Y.Z — unreleased`** section in the same commit as your code change. Use the project's section headers — **`### Feature`**, **`### Fix`**, **`### Noise`**, **`### Performance`**, **`### UX`** (singular, not Keep-a-Changelog's `Added`/`Fixed`). One tight line per entry: what changed, briefly why.
 
-### Updating Version
+```markdown
+## X.Y.Z — unreleased
 
-1. **Update the version** in the script header:
-   ```bash
-   # Version: 2.5.0
-   ```
+### Feature
+- Short description of the change and why it matters.
+```
 
-2. **Update CHANGELOG.md** with your changes:
-   ```markdown
-   ## 2.5.0 — 2025-02-03
-   - **NEW FEATURE**: Description of your feature
-   - Added support for X
-   - Improved Y
-   ```
-
-3. **Commit both files**:
-   ```bash
-   git add prefwatch.sh CHANGELOG.md
-   git commit -m "feat: your feature description"
-   ```
-
-4. **The pre-commit hook** will automatically:
-   - Create a versioned copy in `versions/`
-   - Update the `latest` symlink
-   - Stage the new files
-
-5. **Tag the release** (after merge to main):
-   ```bash
-   git tag -a prefwatch-v2.5.0 -m "Version 2.5.0"
-   git push upstream main --tags
-   ```
+Leave the `— unreleased` marker as-is; the maintainer dates it at release.
 
 ## Testing
 
-### Manual Testing Checklist
-Before submitting a PR, test your changes:
+There is no automated test suite — testing is manual. Before opening a PR:
 
-- [ ] Test with a specific domain: `./prefwatch.sh com.apple.dock`
-- [ ] Test with ALL domains: `./prefwatch.sh ALL`
-- [ ] Test with various parameter combinations
-- [ ] Test on both zsh and bash (if possible)
-- [ ] Test on different macOS versions (if available)
-- [ ] Verify generated `defaults` commands work correctly
-- [ ] Check that exclusions still work properly
-- [ ] Verify log output is correct
+- [ ] **Syntax**: `zsh -n prefwatch.sh` passes (the CI runs this; the script is zsh-only).
+- [ ] **Specific domain**: `./prefwatch.sh com.apple.dock` (no sudo).
+- [ ] **ALL mode**: `sudo ./prefwatch.sh`.
+- [ ] **Round-trip emitted commands**: run each generated `defaults`/`PlistBuddy` command against a scratch domain and read it back — do NOT judge correctness by reading the command. Escaping, `-currentHost` placement, and array indexes have all bitten this way.
+- [ ] **Exclusions** still work (`--exclude 'com.apple.Safari*'`).
+- [ ] **Log output** is correct.
+- [ ] If possible, test on more than one macOS version (Sonoma / Sequoia / Tahoe behave differently).
 
-### Test Environment
-```bash
-# Basic test
-./prefwatch.sh com.apple.dock 30
-
-# Test with ONLY_CMDS
-./prefwatch.sh ALL 60 "" "" "" true true
-
-# Test with exclusions
-./prefwatch.sh ALL 60 "" "" "" true false "com.apple.Safari*"
-```
+Under Jamf, parameters start at `$4` (Jamf reserves `$1`–`$3`): `$4`=domain, `$5`=log, `$6`=include system, `$7`=only-cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains — relevant for deployment testing, not day-to-day dev.
 
 ## Pull Request Process
 
-1. **Update documentation** if you've changed functionality
-2. **Update CHANGELOG.md** with your changes
-3. **Ensure all tests pass** (manual testing)
-4. **Fill out the PR template** completely
-5. **Request review** from maintainers
-6. **Address review feedback** promptly
-7. **Squash commits** if requested before merge
+1. Target the **`dev`** branch.
+2. Update the **CHANGELOG** and any affected docs.
+3. Complete manual testing (above).
+4. Fill out the PR template.
+5. Request review and address feedback; squash if asked.
 
 ### PR Checklist
-- [ ] Branch is up to date with `main`
-- [ ] Code follows project style guidelines
-- [ ] Documentation is updated
-- [ ] CHANGELOG.md is updated
-- [ ] Version number is updated (if needed)
-- [ ] Manual testing is complete
-- [ ] PR template is filled out
-- [ ] No merge conflicts
+- [ ] Branch based on `upstream/dev`, no conflicts
+- [ ] Targets `dev` (not `main`)
+- [ ] Code follows the style below
+- [ ] CHANGELOG updated (under `— unreleased`)
+- [ ] Docs updated if behaviour changed
+- [ ] Manual testing complete (incl. round-trip of emitted commands)
 
 ## Coding Standards
 
-### Shell Script Guidelines
-- Use `#!/bin/bash` or `#!/bin/zsh` shebang as appropriate
-- Use `set -euo pipefail` for error handling
-- Quote all variables: `"$VARIABLE"`
-- Use lowercase for local variables: `local my_var="value"`
-- Use UPPERCASE for global constants: `TIMEOUT=300`
-- Add comments for complex logic
-- Keep functions focused and small
-- Use meaningful function and variable names
+### Shell
+- `prefwatch.sh` is **zsh** (`#!/bin/zsh`) and uses zsh-only constructs — validate with `zsh -n`. Helper scripts (`release.sh`, `pre-commit`) are bash.
+- The script runs under `set -e`; guard any command that may legitimately fail with `|| true` / `|| :`.
+- Quote variables: `"$var"`. Expand arrays as `"${arr[@]}"`.
+- Lowercase for locals (`local my_var`), UPPERCASE for globals/constants (`HOT_DOMAINS`).
+- Comment the *why*, not the *what*. Keep functions small and focused.
 
-### Code Organization
-The main script is organized into 10 sections:
-1. Configuration & Security
-2. Basic Utility Functions
-3. Filtering & Exclusion Functions
-4. Logging Functions
-5. Plist Manipulation Functions
-6. PlistBuddy Conversion Functions
-7. Array Operations Functions
-8. Diff & Comparison Functions
-9. Monitoring (Watch) Functions
-10. Main Execution
+### Where things live
+`prefwatch.sh` is a single zsh script split into sections marked by `# ----` banners:
 
-When adding new functionality, place it in the appropriate section.
+1. **Preflight & Environment** — CLI/Jamf argument parsing, execution security, environment setup
+2. **Utilities** — small shared helpers
+3. **Filtering** — `DEFAULT_EXCLUSIONS`, `is_excluded_domain`, `is_noisy_key` / `is_noisy_pbcmd` / `is_noisy_command`
+4. **Logging** — `log_line` / `log_user` / `log_system` / `_log`
+5. **Plist & PlistBuddy** — dump, type/value extraction, and PlistBuddy conversion helpers
+6. **Command Emission** — `_build_defaults_write_cmd` / `_build_defaults_delete_cmd`, `_emit_cmd`, `_process_*`
+7. **Diff Engine** — array / nested-dict diffing and the parallel Python workers
+8. **Domain Diff** — `show_domain_diff` (via `defaults export`)
+9. **Monitoring** — the watchers (`fs_watch`, `poll_watch`, `cups_*`, `pmset_watch`, `ard_privs_watch`, …) and the main loop
 
-### Documentation Standards
-- Add comments explaining "why", not "what"
-- Document function parameters and return values
-- Update README.md for user-facing changes
-- Update CHANGELOG.md for all changes
-- Keep code examples up to date
+Put new logic in the matching section and mirror the existing helper. Common cases:
+- **Exclude a noisy domain** → add a glob to `DEFAULT_EXCLUSIONS`
+- **Filter a noisy key** → add a pattern to `is_noisy_key`
+- **New contextual NOTE** → add a case to `_emit_contextual_note`
+- **New watcher** → add it to the Monitoring section and register it (start + trap + `_watch_active`)
 
-### Example Function Documentation
-```bash
-# Extracts the type and value from a plist entry
-# Parameters:
-#   $1 - Domain name (e.g., "com.apple.dock")
-#   $2 - Key path (e.g., "persistent-apps:0:tile-data")
-#   $3 - Plist file path
-# Returns:
-#   Echoes "type value" (e.g., "string MyValue")
-# Example:
-#   extract_type_value "com.apple.dock" "orientation" "/path/to/plist"
-function extract_type_value() {
-    # Implementation...
-}
-```
+### zsh gotchas to know
+- `local x` (no `=`) re-run inside a loop prints `x=value` to stdout — declare loop locals once before the loop or always initialise them.
+- `$(...)` and `&` are real subshells (global writes are lost); a `while … done < <(cmd)` or `<<<` does **not** subshell (unlike the last stage of a `|` pipe, which in zsh runs in the current shell).
 
 ## Questions?
 
-If you have questions not covered in this guide:
-- Open a [Question Issue](https://github.com/Gill0o/PrefWatch/issues/new?template=question.md)
-- Check existing [Issues](https://github.com/Gill0o/PrefWatch/issues)
-- Review [Discussions](https://github.com/Gill0o/PrefWatch/discussions)
+- Open a [Question issue](https://github.com/Gill0o/PrefWatch/issues/new?template=question.md)
+- Browse existing [Issues](https://github.com/Gill0o/PrefWatch/issues) and [Discussions](https://github.com/Gill0o/PrefWatch/discussions)
 
-## Thank You!
-
-Your contributions make this project better for everyone. We appreciate your time and effort! 🙏
+Thank you for helping make PrefWatch better! 🙏

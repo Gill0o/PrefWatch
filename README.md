@@ -4,13 +4,12 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — each detected change is emitted as the exact command to recreate it: `defaults`/`PlistBuddy` for plist preferences, `pmset` for energy, `lpadmin` for printer queues
-- **ALL mode** — watch every domain at once and find out which one changed, without naming it upfront (`fs_usage` + polling)
-- **Beyond plists** (needs sudo) — captures toggles stored outside plist files and emits the matching command: Remote Login / Screen Sharing / Remote Management, printer sharing, and per-user ARD privileges (`launchctl`, `kickstart`, `systemsetup`, `sharing`, `networksetup`, `cupsctl`, `dscl`)
-- **Contextual notes** — actionable comments with each command (`killall Dock`, `logout/login required`, human-readable values)
-- **ByHost auto-detection** — automatically adds `-currentHost` for per-hardware preferences (trackpad, Bluetooth)
-- **Noise filtering** — 450+ rules (domain exclusions, key-level filters, sub-key patterns) to surface only real changes
-- **Minimal dependencies** — single zsh script + Python 3 (for array/dict detection)
+- **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy`, `pmset` (energy), `lpadmin` (printers), and — with sudo — sharing services, Remote Management and per-user ARD privileges that live outside any plist
+- **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
+- **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), or why a real change produced no command
+- **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
+- **Noise filtering** — 450+ rules, so only real changes surface
+- **Minimal dependencies** — one zsh script + Python 3
 
 ## Quick Start
 
@@ -37,22 +36,22 @@ sudo ./prefwatch.sh -v
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
-| `--mdm` | -- | Replace user home path with `$loggedInUser` in PlistBuddy commands | Off |
+| `--mdm` | -- | Make PlistBuddy paths fleet-deployable: `$loggedInUser` for the home, `$UUID` for ByHost files | Off |
 
 ## Jamf Pro Integration
 
-Auto-detects Jamf mode when called with positional parameters (`$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains). Launches Console.app for live viewing, logs to stdout + file + syslog.
+Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains. Launches Console.app for live viewing; logs to stdout + file + syslog.
 
 ## Scope
 
-PrefWatch monitors plist files, energy settings (`pmset`), printer configuration (CUPS), and out-of-plist state changes (needs sudo — see *Beyond plists* above). Settings stored elsewhere — internal app databases, protected system stores, or state managed entirely by a daemon or OS framework — won't be detected (e.g. Safari, Mail, Calendar, the Desktop wallpaper, Privacy permissions); some are configurable via MDM configuration profiles instead.
+PrefWatch only sees what lands in a watched plist, plus the out-of-band cases above. Everything else is invisible: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon-owned state (the Desktop wallpaper), and the hardware itself (display and keyboard brightness, HDR, battery charge limit). **No output there is expected, not a bug.**
 
-For detected changes that need extra steps to apply (logout/login, `killall`, restarting a service, running as root, etc.), PrefWatch emits inline `# NOTE:` comments. This only covers changes it detects — settings outside its reach (see *Scope*) produce no output and no note.
+Inline `# NOTE:` comments cover two cases: how to apply a change (logout/login, `killall`, restart a service, run as root), and why a real change produced no command (a new user account, a Dock reorder). Out-of-reach settings get no note either.
 
-## Notes
+## Detection
 
 - ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
-- Detection latency depends on when `cfprefsd` flushes buffered writes to disk. In ALL mode, "hot" domains (the common System Settings panels by default — see `HOT_DOMAINS`) are flushed preemptively every 0.5s, forcing `cfprefsd` to sync them so changes surface within a second or two. Domains already detected once in the session stay hot for 30s after their last change. A cold (never-detected, non-hot) domain may take several seconds on its first change while `cfprefsd` buffers the write — pass it via `--hot-domains <list>` upfront if you need faster detection.
+- Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take several seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.3.3 — 2026-07-19
+
+### Feature
+- Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
+- A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
+- Adding an element to an existing array carries a `# NOTE:` — PlistBuddy addresses arrays by position, so the `:N` index may land wrong on a target whose array differs.
+- Menu bar position changes emit a `# NOTE:` — pixel offsets, filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them too, so the NOTE claims neither.
+- `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
+- A ColorSync display-profile change emits a `# NOTE:` — its `Device.mntr.<UUID>` is the monitor's own UUID (differs per physical display, not the Mac's), so `--mdm` can't templatize it; resolve it per target with `defaults -currentHost read`.
+
+### Fix
+- `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target — now `.$UUID.plist`.
+- `--mdm` emits the `$loggedInUser`/`$UUID` resolvers as executable lines once at startup, so the whole block deploys as pasted.
+- `--mdm` left the capture user's home literal in emitted VALUES (dock `_CFURLString`, path prefs) — now templatized to `/Users/$loggedInUser`.
+- A `kill`/`SIGHUP` on the main pid orphaned the watcher and leaked its `/tmp` dir — the cleanup trap lived only in the child. The main shell now tears down the whole tree and clears the tmpdir.
+- The sharing-exec `ssh.plist` label matched as a substring, so jamf's `startssh.plist` task load leaked as a Remote Login change — anchored to `/ssh.plist` (the real ssh LaunchDaemon).
+
+### Noise
+- Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.
+- Filter geometry/telemetry churn: `screencapture` `last-selection*`, OmniGroup `OSURunTimeStatistics`/`OSULastRun*`, SketchUp `WebDialog.*` window positions.
+- Filter `com.apple.Passwords` system state: `WBSPrivacyProxyAvailability*` (Private Relay availability, which flips with the network) and content-refresh stamps. The real toggles stay.
+- Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` — the policy toggles stay.
+- Exclude `com.apple.AMPLibraryAgent` (media-library daemon: migration flags, persistent IDs, store capability flags — no user prefs).
+- Filter FortiClient launchd churn (`com.fortinet.*` re-bootstraps its daemons on wake) and NetworkExtension VPN internal markers (`__NEVPN*`, re-registered on wake).
+
 ## 1.3.2 — 2026-07-06
 
 ### Feature
