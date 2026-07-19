@@ -7,7 +7,7 @@
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
 - Menu bar position changes emit a `# NOTE:` — pixel offsets, filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them too, so the NOTE claims neither.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
-- A ColorSync command targeting a monitor by its CoreGraphics UUID (`Device.mntr.<UUID>`) carries a `# NOTE:` — that UUID differs per display and per Mac, so `--mdm` cannot templatize it: resolve it on the target to deploy.
+- A ColorSync command targeting a monitor by its CoreGraphics UUID (`Device.mntr.<UUID>`) carries a `# NOTE:` — that UUID differs per display and per Mac, so `--mdm` cannot templatize it; the NOTE gives the `defaults -currentHost read` lookup to get the target's own UUID.
 
 ### Fix
 - `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target. Now `.$UUID.plist`, with an `ioreg` resolver NOTE.

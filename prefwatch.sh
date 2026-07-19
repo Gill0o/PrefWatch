@@ -1940,16 +1940,18 @@ _maybe_sys_note() {
 # the command would target a broken path, so this NOTE is not optional.
 # One-per-burst NOTE for a ColorSync command that targets a monitor by its CoreGraphics
 # UUID (`Device.mntr.<UUID>`). That UUID differs per display AND per Mac (proven: two
-# identical monitors → different UUIDs), no CLI resolves it, so mdm_plist_path can't
-# templatize it. SCOPED to `Device.mntr.` on purpose: a bare "any UUID in the key" match
+# identical monitors → different UUIDs); it's the TARGET's display and unknown when
+# authoring, so mdm_plist_path can't templatize it — the NOTE points at the runtime
+# `defaults -currentHost read` lookup instead. SCOPED to `Device.mntr.` on purpose: a bare "any UUID in the key" match
 # also fired on `NSToolbar Configuration <UUID>` (a toolbar-config id, already covered by
 # its own NOTE) and on account UUIDs, where the display-resolution advice is just wrong.
 _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: the Device.mntr.<UUID> in the key is the DISPLAY's own UUID (per-monitor), not the Mac's —"
-  _log_kind "$kind" "Cmd: #       --mdm can't templatize it; resolve it on the target (CGDisplayCreateUUIDFromDisplayID)."
+  _log_kind "$kind" "Cmd: # NOTE: the Device.mntr.<UUID> is the DISPLAY's own UUID (per-monitor), not the Mac's —"
+  _log_kind "$kind" "Cmd: #       --mdm can't templatize it. On the target, list displays and pick the one you set:"
+  _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
 }
 
 _note_byhost_uuid() {
