@@ -11,8 +11,8 @@
 - A ColorSync `Device.mntr.<UUID>` is per-display and per-Mac, so `--mdm` can't templatize it; the `# NOTE:` gives the `defaults -currentHost read` lookup to resolve it per target.
 
 ### Fix
-- `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target. Now `.$UUID.plist`, with an `ioreg` resolver NOTE.
-- `--mdm` emits the `$loggedInUser`/`$UUID` resolvers as executable lines once at startup (were commented, `$loggedInUser` missing) — the whole block deploys as pasted, no per-command repetition.
+- `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target — now `.$UUID.plist`.
+- `--mdm` emits the `$loggedInUser`/`$UUID` resolvers as executable lines once at startup, so the whole block deploys as pasted.
 - `--mdm` left the capture user's home literal in emitted VALUES (dock `_CFURLString`, path prefs) — now templatized to `/Users/$loggedInUser`.
 - A `kill`/`SIGHUP` on the main pid orphaned the watcher and leaked its `/tmp` dir — the cleanup trap lived only in the child. The main shell now tears down the whole tree and clears the tmpdir.
 - The sharing-exec `ssh.plist` label matched as a substring, so jamf's `startssh.plist` task load leaked as a Remote Login change — anchored to `/ssh.plist` (the real ssh LaunchDaemon).
