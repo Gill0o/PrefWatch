@@ -1975,7 +1975,11 @@ _note_device_uuid() {
 }
 
 _note_byhost_uuid() {
-  local kind="$1" path="$2"
+  local kind="$1" path="$2" key="${3:-}"
+  # A Device.mntr.<UUID> key carries the DISPLAY's own UUID that --mdm can't
+  # templatize — _note_device_uuid says exactly that, and this note's "re-run with
+  # --mdm for a deployable form" would contradict it. Let the device note own it.
+  [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] && return 0
   case "$path" in
     # MDM mode: the path is templatized to $UUID + $loggedInUser, whose resolvers are
     # emitted ONCE at startup (see MAIN) — so a templatized ByHost path adds nothing here.
@@ -2025,7 +2029,7 @@ _emit_cmd() {
           "# WARNING: Array deletion"*)
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
-          *)    _note_byhost_uuid "$kind" "$pb_line"
+          *)    _note_byhost_uuid "$kind" "$pb_line" "${${pb_line#*-c \'}%%\'*}"
                 # Key expression only — strip the trailing file path, whose ByHost
                 # UUID is the Mac's and is a different concern.
                 _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
@@ -2082,7 +2086,7 @@ _process_py_meta() {
         _pending_comments=()
       fi
       _mdm_path=$(mdm_plist_path "$plist_path")
-      _note_byhost_uuid "$kind" "$_mdm_path"
+      _note_byhost_uuid "$kind" "$_mdm_path" "$_pb_cmd"
       # $_pb_cmd = the key expression only; never the file path (whose ByHost UUID
       # is the Mac's, a different thing handled by _note_byhost_uuid above).
       _note_device_uuid "$kind" "$_pb_cmd"

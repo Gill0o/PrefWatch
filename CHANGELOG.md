@@ -7,6 +7,7 @@
 
 ### Fix
 - An empty-string key (`''`) in a plist made a `::` PlistBuddy path that silently collapses (the value landed a level too high) — those subtrees are now skipped with a `# NOTE:` instead of a wrong command.
+- A ColorSync display-profile change dropped the redundant ByHost "re-run with --mdm" NOTE — it contradicted the device-UUID NOTE (--mdm can't templatize a per-display UUID); the device NOTE stands alone.
 
 ## 1.3.3 — 2026-07-19
 
