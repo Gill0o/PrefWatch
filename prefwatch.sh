@@ -1586,6 +1586,13 @@ is_noisy_pbcmd() {
       return 0 ;;
   esac
 
+  # NetworkExtension VPN internal keychain markers (__NEVPNKeychainDomain, …):
+  # VPN clients (e.g. FortiClient) re-register their network service on wake,
+  # re-adding these internal refs. Not user VPN config (server/auth have no __ prefix).
+  case "$pb_cmd" in
+    *":__NEVPN"*) return 0 ;;
+  esac
+
   # Domain-specific sub-key patterns (need full path matching)
   case "$domain" in
     com.apple.finder|com.apple.Finder)
@@ -3625,8 +3632,10 @@ SCRIPT_INTERPRETERS = ("perl", "python", "python3", "ruby", "bash", "sh", "zsh")
 LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
 # Third-party apps (Zoom/MS/Adobe/VM updaters) churn their OWN LaunchAgents via
 # these same verbs, so whitelist Apple sharing labels only and drop the rest.
+# "/ssh.plist" keeps the leading slash so it matches only the real ssh LaunchDaemon
+# path — a bare "ssh.plist" substring also matched a jamf ".../startssh.plist" task.
 SHARING_LABELS = ("com.apple.smbd", "com.apple.screensharing", "com.openssh.sshd",
-                  "ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
+                  "/ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
 # networksetup/systemsetup are polled read-only by macOS daemons (Wi-Fi refresh,
 # Network scan, time sync). Drop queries — sometimes invoked WITHOUT the dash
 # (`networksetup listallhardwareports`), so strip dashes first; write verbs all
@@ -3733,6 +3742,7 @@ NOISE_PATTERNS = (
     "com.vmware.*",                   # VMware Fusion
     "org.virtualbox.*",               # VirtualBox
     "com.docker.*",                   # Docker Desktop
+    "com.fortinet.*",                 # FortiClient VPN/security agent — re-bootstraps its daemons on wake
     "com.apple.ManagedClient*",       # MDM enrollagent auto-disable post-enrollment
     "com.apple.bootpd",               # DHCP/BOOTP server — flaps with Internet Sharing/network
     "com.apple.dhcp6d",               # DHCPv6 server — flaps automatically

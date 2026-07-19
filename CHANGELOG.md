@@ -15,6 +15,7 @@
 - `--mdm` emits the `$loggedInUser`/`$UUID` resolvers as executable lines once at startup (were commented, `$loggedInUser` missing) — the whole block deploys as pasted, no per-command repetition.
 - `--mdm` left the capture user's home literal in emitted VALUES (dock `_CFURLString`, path prefs) — now templatized to `/Users/$loggedInUser`.
 - A `kill`/`SIGHUP` on the main pid orphaned the watcher and leaked its `/tmp` dir — the cleanup trap lived only in the child. The main shell now tears down the whole tree and clears the tmpdir.
+- The sharing-exec `ssh.plist` label matched as a substring, so jamf's `startssh.plist` task load leaked as a Remote Login change — anchored to `/ssh.plist` (the real ssh LaunchDaemon).
 
 ### Noise
 - Drop the `com.apple.preferences.accounts` `deletedUsers` churn — replaying it created a phantom deleted-user record; the account NOTE reports the real removal instead.
@@ -22,6 +23,7 @@
 - Filter `com.apple.Passwords` system state: `WBSPrivacyProxyAvailability*` (Private Relay availability, which flips with the network) and content-refresh stamps. The real toggles stay.
 - Extend the `com.apple.SoftwareUpdate` daemon-result filter to `AvailableUpdatesNotification*` — the policy toggles stay.
 - Exclude `com.apple.AMPLibraryAgent` (media-library daemon: migration flags, persistent IDs, store capability flags — no user prefs).
+- Filter FortiClient launchd churn (`com.fortinet.*` re-bootstraps its daemons on wake) and NetworkExtension VPN internal markers (`__NEVPN*`, re-registered on wake).
 
 ## 1.3.2 — 2026-07-06
 
