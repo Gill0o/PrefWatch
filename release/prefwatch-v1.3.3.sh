@@ -235,14 +235,33 @@ ONLY_CMDS=$(to_bool "$ONLY_CMDS_RAW")
 INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
 MDM_OUTPUT=$(to_bool "$MDM_OUTPUT_RAW")
 
-# Replace user home path with $loggedInUser variable for MDM deployment scripts
+# Make an emitted PlistBuddy path deployable fleet-wide (MDM mode only):
+#  - user home       -> /Users/$loggedInUser/...
+#  - ByHost filename -> ...<domain>.$UUID.plist
+# A ByHost file is named after THIS Mac's hardware UUID, so a literal path is
+# valid nowhere else. The caller emits a NOTE with the one-liner resolving $UUID.
+# (`defaults -currentHost write` needs none of this — the flag resolves the UUID.)
 mdm_plist_path() {
-  if [ "$MDM_OUTPUT" = "true" ] && [[ "$1" == "$TARGET_HOME"* ]]; then
-    printf '%s' "/Users/\$loggedInUser${1#$TARGET_HOME}"
-  else
-    printf '%s' "$1"
+  local _p="$1"
+  if [ "$MDM_OUTPUT" = "true" ]; then
+    [[ "$_p" == "$TARGET_HOME"* ]] && _p="/Users/\$loggedInUser${_p#$TARGET_HOME}"
+    if [[ "$_p" == */ByHost/* ]]; then
+      _p=$(printf '%s' "$_p" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}\.plist$/.$UUID.plist/') || _p="$1"
+    fi
   fi
+  printf '%s' "$_p"
 }
+
+# Literal replacement for the console user's home in MDM output. mdm_plist_path
+# rewrites the plist FILE path; the emission code uses this to also rewrite home
+# paths embedded in emitted VALUES (e.g. a dock _CFURLString, a path pref).
+typeset -g _MDM_HOME_REPL='/Users/$loggedInUser'
+# For a PlistBuddy VALUE the whole `-c '…'` expression is single-quoted, which
+# would store the literal `$loggedInUser`. Break out of the quotes around it so
+# the shell expands it: `…/Users/'$loggedInUser'/…`. _MDM_LIU is the bare token
+# to find (post-escape); _MDM_LIU_QB is its quote-broken form.
+typeset -g _MDM_LIU='$loggedInUser'
+typeset -g _MDM_LIU_QB="'${_MDM_LIU}'"
 
 # Disable shell trace so -v/--verbose only toggles our own logging.
 unsetopt xtrace verbose 2>/dev/null || true
@@ -460,6 +479,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.Music"
   "com.apple.itunescloud"
   "com.apple.itunescloudd"
+  # Media library daemon: only migration flags, persistent IDs, daemon-written
+  # store capability flags and an update counter — no user prefs. (Capital AMP;
+  # the com.apple.amp* glob is case-sensitive and misses it.)
+  "com.apple.AMPLibraryAgent"
 
   # ShazamKit: CloudKit account cache, boot tasks and an access token only — no
   # user preferences (the SHLibrary…UserID churn is internal iCloud identity state)
@@ -706,13 +729,6 @@ elif command -v python3 >/dev/null 2>&1; then
   if [ "$_candidate" != "/usr/bin/python3" ] && _python3_validate "$_candidate"; then
     : # validated via alternative python3
   fi
-fi
-
-if [ -z "$PYTHON3_BIN" ]; then
-  # Python3 not available or Command Line Tools not installed
-  # Script will still work but without array change detection (JSON diff)
-  _py_warn="Python3 not available — array change detection disabled."
-  _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
 fi
 
 # Temp directory + EXIT trap — covers every MAIN exit path (sub-shells
@@ -1006,7 +1022,8 @@ is_noisy_key() {
     parent-mod-date|file-mod-date|mod-count|file-type)
       return 0 ;;
 
-    # Note: removed global `last-selection` — too generic, move to domain-specific if needed
+    # Note: `last-selection` is NOT global (too generic) — filtered domain-specific
+    # for com.apple.screencapture below.
 
     # Recent items & history
     # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
@@ -1138,6 +1155,37 @@ is_noisy_key() {
       esac
       ;;
 
+    # Screenshot: last-selection rectangle + display (rewritten on every region capture)
+    com.apple.screencapture)
+      case "$keyname" in
+        last-selection*) return 0 ;;
+      esac
+      ;;
+
+    # Passwords: iCloud Private Relay availability is observed network state (it flips
+    # on its own as the network changes, and Traffic is a byte counter), plus content
+    # refresh stamps. Keep: ShowServiceNamesInPasswords, showMenuBarExtra.
+    com.apple.Passwords)
+      case "$keyname" in
+        WBSPrivacyProxyAvailability*|WBS*LastUpdate*|WebsiteNameProviderLastUpdateTime|DidReportHistorySettings)
+          return 0 ;;
+      esac
+      ;;
+
+    # OmniGroup apps: OmniSoftwareUpdate run statistics / timestamps (telemetry, not prefs)
+    com.omnigroup.*)
+      case "$keyname" in
+        OSURunTimeStatistics|OSULastRun*) return 0 ;;
+      esac
+      ;;
+
+    # SketchUp / LayOut: web-dialog window geometry (X/Y/Width/Height)
+    com.sketchup.*)
+      case "$keyname" in
+        WebDialog.*.X|WebDialog.*.Y|WebDialog.*.Width|WebDialog.*.Height) return 0 ;;
+      esac
+      ;;
+
     # Control Center: Filter UI positioning state
     com.apple.controlcenter)
       case "$keyname" in
@@ -1177,7 +1225,7 @@ is_noisy_key() {
     # SoftwareUpdate: drop daemon-written check results, keep the policy toggles
     com.apple.SoftwareUpdate)
       case "$keyname" in
-        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful|FirstOfferDateDictionary)
+        LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful|FirstOfferDateDictionary|AvailableUpdatesNotification*)
           return 0 ;;
         # Keep: AutomaticCheckEnabled, AutomaticDownload, AutomaticallyInstall*, etc.
       esac
@@ -1531,6 +1579,13 @@ is_noisy_pbcmd() {
       return 0 ;;
   esac
 
+  # NetworkExtension VPN internal keychain markers (__NEVPNKeychainDomain, …):
+  # VPN clients (e.g. FortiClient) re-register their network service on wake,
+  # re-adding these internal refs. Not user VPN config (server/auth have no __ prefix).
+  case "$pb_cmd" in
+    *":__NEVPN"*) return 0 ;;
+  esac
+
   # Domain-specific sub-key patterns (need full path matching)
   case "$domain" in
     com.apple.finder|com.apple.Finder)
@@ -1548,6 +1603,14 @@ is_noisy_pbcmd() {
       case "$pb_cmd" in
         *":modifiedDate "*|*":tombstones "*)
           return 0 ;;
+      esac
+      ;;
+    com.apple.preferences.accounts)
+      # 'deletedUsers' is a bookkeeping record of removed accounts — replaying
+      # the Add commands just creates a phantom entry, it does NOT delete a
+      # user. useracct_watch reports the real add/remove via a NOTE instead.
+      case "$pb_cmd" in
+        *":deletedUsers"*) return 0 ;;
       esac
       ;;
     com.apple.TimeMachine)
@@ -1883,6 +1946,43 @@ _maybe_sys_note() {
   _log_kind "$1" "Cmd: # NOTE: system-level pref (/Library/Preferences) — replay these commands as root (sudo)"
 }
 
+# One-per-burst NOTE when an emitted path was templatized to $UUID (MDM mode,
+# ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
+# the command would target a broken path, so this NOTE is not optional.
+# One-per-burst NOTE for a ColorSync command that targets a monitor by its CoreGraphics
+# UUID (`Device.mntr.<UUID>`). That UUID differs per display AND per Mac (proven: two
+# identical monitors → different UUIDs); it's the TARGET's display and unknown when
+# authoring, so mdm_plist_path can't templatize it — the NOTE points at the runtime
+# `defaults -currentHost read` lookup instead. SCOPED to `Device.mntr.` on purpose: a bare "any UUID in the key" match
+# also fired on `NSToolbar Configuration <UUID>` (a toolbar-config id, already covered by
+# its own NOTE) and on account UUIDs, where the display-resolution advice is just wrong.
+_note_device_uuid() {
+  local kind="$1" key="$2"
+  [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
+  _note_should_show __device_uuid__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: the Device.mntr.<UUID> is the DISPLAY's own UUID (per-monitor), not the Mac's —"
+  _log_kind "$kind" "Cmd: #       --mdm can't templatize it. On the target, list displays and pick the one you set:"
+  _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
+}
+
+_note_byhost_uuid() {
+  local kind="$1" path="$2"
+  case "$path" in
+    # MDM mode: the path is templatized to $UUID + $loggedInUser, whose resolvers are
+    # emitted ONCE at startup (see MAIN) — so a templatized ByHost path adds nothing here.
+    # (Return early so it doesn't fall through to the non-mdm */ByHost/* note below.)
+    *'$UUID'*)
+      return 0
+      ;;
+    # Normal mode: the literal UUID is correct for replay HERE, and useless
+    # anywhere else — say so, and point at the flag that makes it deployable.
+    */ByHost/*)
+      _note_should_show __byhost_uuid__ || return 0
+      _log_kind "$kind" "Cmd: # NOTE: this ByHost filename holds THIS Mac's hardware UUID — the path is valid on this Mac only; re-run with --mdm for a deployable form"
+      ;;
+  esac
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -1916,13 +2016,22 @@ _emit_cmd() {
           "# WARNING: Array deletion"*)
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
-          *)    _log_kind "$kind" "Cmd: $pb_line" ;;
+          *)    _note_byhost_uuid "$kind" "$pb_line"
+                # Key expression only — strip the trailing file path, whose ByHost
+                # UUID is the Mac's and is a different concern.
+                _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
+                _log_kind "$kind" "Cmd: $pb_line" ;;
         esac
       done <<< "$pb_delete"
     else
       _log_kind "$kind" "Cmd: $cmd"
     fi
   else
+    # MDM: templatize a user-home path embedded in a string VALUE the same way
+    # (mdm_plist_path only touches the plist file path, not values like a path pref).
+    if [ "$MDM_OUTPUT" = "true" ] && [[ "$cmd" == *"$TARGET_HOME"* ]]; then
+      cmd="${cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
+    fi
     _log_kind "$kind" "Cmd: $cmd"
   fi
 }
@@ -1964,9 +2073,24 @@ _process_py_meta() {
         _pending_comments=()
       fi
       _mdm_path=$(mdm_plist_path "$plist_path")
+      _note_byhost_uuid "$kind" "$_mdm_path"
+      # $_pb_cmd = the key expression only; never the file path (whose ByHost UUID
+      # is the Mac's, a different thing handled by _note_byhost_uuid above).
+      _note_device_uuid "$kind" "$_pb_cmd"
+      # MDM: mdm_plist_path templatized the FILE path; also rewrite the capture user's
+      # home inside the VALUE (a dock _CFURLString / login-item path in ~ would otherwise
+      # leak the capture user). Quote the pattern so it matches literally, not as a glob.
+      local _mdm_home_hit=false
+      if [ "$MDM_OUTPUT" = "true" ] && [[ "$_pb_cmd" == *"$TARGET_HOME"* ]]; then
+        _pb_cmd="${_pb_cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
+        _mdm_home_hit=true
+      fi
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
       _pb_esc=$(printf '%s' "$_pb_cmd" | /usr/bin/sed "s/'/'\\\\''/g")
+      # …then break out of those single quotes around the templatized $loggedInUser
+      # so the shell actually expands it at run time (single quotes would keep it literal).
+      [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
       pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
       _log_kind "$kind" "Cmd: $pb_full"
       continue
@@ -2217,6 +2341,7 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
 
 diff(prev, curr, [])
 
+_array_add_noted = False
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
@@ -2227,6 +2352,11 @@ for prefix, index, item in results:
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
     if arr_name not in prev:
         continue
+    # Adding to an EXISTING array: the index is positional. Warn once — a target
+    # whose array has a different length won't get the element at the same spot.
+    if not _array_add_noted:
+        print("PBCMD\t# NOTE: array element added at a positional index (:N) — PlistBuddy addresses arrays by position, not content, so on a target whose array differs it may land wrong")
+        _array_add_noted = True
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
         # Output metadata line (for _skip_keys in shell)
@@ -2270,10 +2400,9 @@ typeset -gA _NOTED_DOMAIN=()
 typeset -g _NOTE_BURST_GAP=15   # seconds of quiet between bursts; tune to taste
 
 # Sliding-window per-burst dedup: return 0 to SHOW the notice keyed by $1, 1 to
-# suppress. Updates the timestamp on EVERY call, so a continuous stream of changes
-# keeps re-suppressing; the notice re-shows only after _NOTE_BURST_GAP seconds of
-# QUIET (not _NOTE_BURST_GAP since it was last shown — that made independent keys
-# re-fire mid-sequence and interleave oddly).
+# suppress. The timestamp updates on EVERY call, so the notice re-shows only after
+# _NOTE_BURST_GAP seconds of QUIET — not that long since it was last shown, which
+# would let it re-fire mid-burst.
 _note_should_show() {
   local _last=${_NOTED_DOMAIN[$1]:-0}
   _NOTED_DOMAIN[$1]=$EPOCHSECONDS
@@ -2327,6 +2456,12 @@ _emit_contextual_note() {
   case "$array_base" in
     com.apple.ColorSync.Devices)
       _note="Color profile changes require logout/login to take effect" ;;
+    # AppKit toolbar config, written by any app: the first window open dumps the
+    # whole item list. NOT filtered — a customized toolbar IS a real preference
+    # (deliberately un-filtered in an earlier version) — so annotate instead.
+    # Both spellings: metadata reports the top-level key or the nested array name.
+    NSToolbar\ Configuration*|TB\ Item\ Identifiers*)
+      _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations" ;;
   esac
   [ -n "$_note" ] || return 0
   # Dedup per burst (sliding window): show once, re-show only after quiet
@@ -2633,7 +2768,7 @@ for top_key in sorted(curr.keys()):
     if top_key not in prev:
         # New top-level dict/list: emit Add commands for entire tree
         if not _first_create_noted:
-            print("PBCMD\t# NOTE: New top-level key — PlistBuddy requires the full dict tree to exist before Set. Run Add commands in order; subsequent changes will only emit Set")
+            print("PBCMD\t# NOTE: new key tree — the Add commands build it top-down; later changes to it emit Set.")
             _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
@@ -2752,6 +2887,65 @@ _run_py_diff_workers() {
   /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
 }
 
+# Menu bar item positions (`NSStatusItem Preferred Position <Item>`) are pixel offsets,
+# each app storing its own in its OWN domain. They are filtered as UI churn, so a
+# Cmd+drag reorder otherwise emits nothing — surface a NOTE.
+# Fires only on a VALUE change of an existing key: a key added/removed means an item was
+# shown/hidden, whose real command (the Control Center module value) is already emitted.
+# A display connect/disconnect can recompute the offsets too (seen once), but not
+# reliably — so the NOTE never claims a reorder, only that positions changed.
+_note_menubar_positions() {
+  local kind="$1" prev="$2" curr="$3" _k
+  [ -s "$prev" ] && [ -s "$curr" ] || return 0
+  # `|| true` INSIDE the $() — diff exits 1 when the files differ, and pipefail
+  # propagates that, which an outer `|| _k=""` would use to wipe the captured key
+  # (the bug that kept this NOTE from ever firing). Keep the stdout, drop the status.
+  _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
+        | /usr/bin/grep -E '^[<>].*"NSStatusItem Preferred Position' \
+        | /usr/bin/sed -E 's/^[<>][[:space:]]*//; s/[[:space:]]*=.*//' \
+        | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1 || true)
+  [ -n "$_k" ] || return 0
+  _note_should_show __menubar_pos__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed — item positions are per-app pixel offsets, not"
+  _log_kind "$kind" "Cmd: #       portable, so not emitted. A reorder OR a display connect/disconnect triggers this."
+}
+
+# Detect a pure Dock reorder — persistent-apps/others hold the SAME apps in a
+# different order. The positional churn (GUID/book/file-mod-date) is filtered as
+# noise, so a reorder otherwise emits nothing; surface a NOTE. Reproducing the
+# order needs a full persistent-apps rewrite, which the per-key diff doesn't emit.
+_note_dock_reorder() {
+  local kind="$1" pj="$2" cj="$3" _r
+  [ -n "$PYTHON3_BIN" ] || return 0
+  [ -s "$pj" ] && [ -s "$cj" ] || return 0
+  _r=$("$PYTHON3_BIN" - "$pj" "$cj" 2>/dev/null <<'PY'
+import json, sys
+def ids(doc, key):
+    out = []
+    for el in (doc.get(key) or []):
+        td = (el or {}).get("tile-data") or {}
+        i = td.get("bundle-identifier")
+        if not i:
+            fd = td.get("file-data") or {}
+            i = fd.get("_CFURLString") or td.get("file-label")
+        if i:
+            out.append(i)
+    return out
+try:
+    p = json.load(open(sys.argv[1])); c = json.load(open(sys.argv[2]))
+except Exception:
+    sys.exit(0)
+for key in ("persistent-apps", "persistent-others"):
+    po, co = ids(p, key), ids(c, key)
+    if po and co and sorted(po) == sorted(co) and po != co:
+        print("1"); break
+PY
+)
+  if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
+    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted (reproducing the order needs a full persistent-apps rewrite)"
+  fi
+}
+
 # Display plist file diff
 show_plist_diff() {
   local kind="$1" path="$2" mode="${3:-normal}" silent="false"
@@ -2863,6 +3057,10 @@ show_plist_diff() {
       _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
     fi
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
+    # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
+    [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
+    # Same for menu bar offsets — any domain, so no guard.
+    _note_menubar_positions "$kind" "$prev" "$curr"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -2975,6 +3173,18 @@ launch_console() {
   fi
 }
 
+# MDM: emit the $loggedInUser (+ $UUID for ByHost) resolvers ONCE, as executable
+# Cmd: lines, so every templatized command below deploys as-is — no per-line repeat.
+# Called from the watcher startup so it lands with the other setup NOTEs, right
+# before the user makes changes (ALL mode: between the watcher summary and the
+# "changes may take a few seconds" NOTE; single-domain: right after the Mode line).
+_emit_mdm_resolver_header() {
+  [ "$MDM_OUTPUT" = "true" ] || return 0
+  log_line "Cmd: # NOTE: --mdm paths use \$loggedInUser (and \$UUID for ByHost) — set both once here, then every command below deploys on any Mac:"
+  log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
+  log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+}
+
 # Start monitoring a specific domain
 start_watch() {
   local POLL_PID="" plist_path last_mtime current_mtime
@@ -3032,6 +3242,8 @@ start_watch() {
     ) &
     POLL_PID=$!
   fi
+
+  _emit_mdm_resolver_header
 
   trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
@@ -3150,9 +3362,11 @@ start_watch_all() {
       _watch_active+=("cups_sharing")
     fi
     [ -x /usr/bin/dscl ] && _watch_active+=("ard_privs")
+    [ -x /usr/bin/dscl ] && _watch_active+=("useracct")
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
+    _emit_mdm_resolver_header
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
@@ -3411,8 +3625,10 @@ SCRIPT_INTERPRETERS = ("perl", "python", "python3", "ruby", "bash", "sh", "zsh")
 LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootout", "kickstart"}
 # Third-party apps (Zoom/MS/Adobe/VM updaters) churn their OWN LaunchAgents via
 # these same verbs, so whitelist Apple sharing labels only and drop the rest.
+# "/ssh.plist" keeps the leading slash so it matches only the real ssh LaunchDaemon
+# path — a bare "ssh.plist" substring also matched a jamf ".../startssh.plist" task.
 SHARING_LABELS = ("com.apple.smbd", "com.apple.screensharing", "com.openssh.sshd",
-                  "ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
+                  "/ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
 # networksetup/systemsetup are polled read-only by macOS daemons (Wi-Fi refresh,
 # Network scan, time sync). Drop queries — sometimes invoked WITHOUT the dash
 # (`networksetup listallhardwareports`), so strip dashes first; write verbs all
@@ -3519,6 +3735,7 @@ NOISE_PATTERNS = (
     "com.vmware.*",                   # VMware Fusion
     "org.virtualbox.*",               # VirtualBox
     "com.docker.*",                   # Docker Desktop
+    "com.fortinet.*",                 # FortiClient VPN/security agent — re-bootstraps its daemons on wake
     "com.apple.ManagedClient*",       # MDM enrollagent auto-disable post-enrollment
     "com.apple.bootpd",               # DHCP/BOOTP server — flaps with Internet Sharing/network
     "com.apple.dhcp6d",               # DHCPv6 server — flaps automatically
@@ -3730,7 +3947,7 @@ PY
   # miss them. Poll `dscl . -list /Users naprivs` and emit the replayable write.
   ard_privs_watch() {
     local snap="$PREFWATCH_TMPDIR/ardprivs.snap" curr="$PREFWATCH_TMPDIR/ardprivs.curr"
-    local line u v oldv _changed
+    local u v oldv _changed
     local _ks=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
     /usr/bin/dscl . -list /Users naprivs 2>/dev/null | /usr/bin/sort > "$snap" 2>/dev/null || true
 
@@ -3771,6 +3988,36 @@ PY
     done
   }
 
+  # Detect local user account add/remove (real users, UID >= 501). The account
+  # itself (UID/home/password) lives in OpenDirectory/dslocal, not a plist, so
+  # it is NOT reproducible via `defaults` — emit a factual NOTE only, no command.
+  # `dscl -list` needs no root and works in every mode (same approach as ard_privs).
+  # Also suppresses the misleading com.apple.preferences.accounts 'deletedUsers'
+  # churn (see is_noisy_pbcmd) so the NOTE is the single source of truth.
+  useracct_watch() {
+    local snap="$PREFWATCH_TMPDIR/useracct.snap" curr="$PREFWATCH_TMPDIR/useracct.curr"
+    local u
+    /usr/bin/dscl . -list /Users UniqueID 2>/dev/null | /usr/bin/awk '$2 >= 501 {print $1}' | /usr/bin/sort > "$snap" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      /usr/bin/dscl . -list /Users UniqueID 2>/dev/null | /usr/bin/awk '$2 >= 501 {print $1}' | /usr/bin/sort > "$curr" 2>/dev/null || true
+      # Guard empty curr: a transient dscl failure must not report every user as
+      # removed. (Cost: removing the very last real user is missed — negligible.)
+      if [ -s "$curr" ] && ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
+        while IFS= read -r u; do
+          [ -n "$u" ] || continue
+          log_line "Cmd: # NOTE: user account '$u' added — the account itself (UID/home/password) is NOT reproducible via defaults; use sysadminctl/dscl or a config profile"
+        done < <(/usr/bin/comm -13 "$snap" "$curr" 2>/dev/null)
+        while IFS= read -r u; do
+          [ -n "$u" ] || continue
+          log_line "Cmd: # NOTE: user account '$u' removed — not reproducible via defaults; use sysadminctl/dscl"
+        done < <(/usr/bin/comm -23 "$snap" "$curr" 2>/dev/null)
+        /bin/cp -f "$curr" "$snap" 2>/dev/null || true
+      fi
+    done
+  }
+
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
@@ -3799,6 +4046,8 @@ PY
   local PMSET_PID=$!
   ard_privs_watch &
   local ARD_PRIVS_PID=$!
+  useracct_watch &
+  local USERACCT_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
@@ -3807,7 +4056,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 
@@ -3896,6 +4145,40 @@ else
   start_watch &
 fi
 WATCH_PID=$!
+
+# Tear the watcher down on a termination signal aimed at the MAIN pid, then remove the
+# tmpdir. Without this, a SIGTERM/SIGHUP to the main pid (a supervisor, launchd,
+# `kill <pid>`) kills this shell by default disposition — the EXIT trap is skipped on
+# signal death — orphaning the watcher child and leaking $PREFWATCH_TMPDIR. Ctrl-C
+# already works (process-group SIGINT reaches the child's own trap); this makes
+# single-pid signals safe too, which matters most in Jamf/root where the process is
+# killed non-interactively by pid.
+# Kill a process and its whole subtree, leaves first, so nothing gets reparented to init
+# and survives. The watcher tree is main → WATCH_PID → sub-watchers → transient workers;
+# just TERM-ing WATCH_PID lets its own trap kill the sub-watchers, but a sub-watcher's
+# nested subshell can reparent away and linger. Walking the tree bottom-up closes that.
+_kill_tree() {
+  local _root=$1 _kid
+  [ -n "$_root" ] || return 0
+  for _kid in $(pgrep -P "$_root" 2>/dev/null); do _kill_tree "$_kid"; done
+  kill -TERM "$_root" 2>/dev/null || true
+}
+_shutdown_watcher() {
+  _kill_tree "${WATCH_PID:-}"
+  wait ${WATCH_PID:-} 2>/dev/null || true
+  # A kill DURING the initial snapshot leaves transient `_snapshot_one_plist &` workers
+  # briefly writing into the tmpdir, so a single rm races and loses. Nothing respawns once
+  # the tree is dead; retry until the in-flight handful drains (~1s) and the rm wins.
+  local _i
+  for _i in 1 2 3 4 5 6; do
+    /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
+    [ -d "$PREFWATCH_TMPDIR" ] || break
+    sleep 0.3
+  done
+}
+trap '_shutdown_watcher; exit 143' TERM
+trap '_shutdown_watcher; exit 130' INT
+trap '_shutdown_watcher; exit 129' HUP
 
 if is_console_running; then
   while is_console_running; do
