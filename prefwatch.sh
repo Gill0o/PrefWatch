@@ -4125,7 +4125,7 @@ PY
     [ -n "$PYTHON3_BIN" ] || return 0
     local secure="$TARGET_HOME/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
     local snap="$PREFWATCH_TMPDIR/defapps.snap" curr="$PREFWATCH_TMPDIR/defapps.curr"
-    local _kind _what _app _noted
+    local _kind _what _app
     _read_lshandlers() {
       [ -f "$secure" ] || return 0
       "$PYTHON3_BIN" - "$secure" <<'PY'
@@ -4164,15 +4164,13 @@ PY
       _read_lshandlers > "$curr" 2>/dev/null || true
       # Guard empty curr (transient read failure) so we don't churn the snapshot.
       if [ -s "$curr" ] && ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
-        _noted=false
         # comm -13 = associations present now but not before (new or re-pointed);
         # removals (comm -23) aren't reproducible as a `set`, so we skip them.
         while IFS=$'\t' read -r _kind _what _app; do
           [ -n "$_kind" ] || continue
-          if [ "$_noted" = false ]; then
-            log_line "Cmd: # NOTE: default-app change — reproduce with utiluti (github.com/scriptingosx/utiluti); macOS shows a confirmation prompt the user must accept (http/https always; file types on macOS 26.4+)"
-            _noted=true
-          fi
+          # One explanatory NOTE per burst (deduped for 15s of quiet), then just
+          # the commands — the reminder is the same for every default-app change.
+          _note_should_show __default_apps__ && log_line "Cmd: # NOTE: default-app change — reproduce with utiluti (github.com/scriptingosx/utiluti); macOS may prompt the user to confirm it"
           log_line "Cmd: utiluti $_kind set $_what $_app"
         done < <(/usr/bin/comm -13 "$snap" "$curr" 2>/dev/null)
         /bin/cp -f "$curr" "$snap" 2>/dev/null || true
