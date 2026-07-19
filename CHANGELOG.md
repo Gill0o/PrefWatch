@@ -5,7 +5,7 @@
 ### Feature
 - Local user account add/remove emits a `# NOTE:` — the account lives in OpenDirectory, not a plist, so it isn't reproducible via `defaults`.
 - A pure Dock reorder emits a `# NOTE:` — the order would need a full `persistent-apps` rewrite, so it previously produced no output at all.
-- Adding an element to an existing array carries a `# NOTE:` — PlistBuddy addresses arrays by position, so the `:N` index may land wrong on a target whose array differs (input sources, Dock, menu extras).
+- Adding an element to an existing array carries a `# NOTE:` — PlistBuddy addresses arrays by position, so the `:N` index may land wrong on a target whose array differs.
 - Menu bar position changes emit a `# NOTE:` — pixel offsets, filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them too, so the NOTE claims neither.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
 - A ColorSync `Device.mntr.<UUID>` is per-display and per-Mac, so `--mdm` can't templatize it; the `# NOTE:` gives the `defaults -currentHost read` lookup to resolve it per target.
