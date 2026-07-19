@@ -527,6 +527,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # user prefs (the actual toggles live in com.apple.suggestions/sirisuggestions)
   "com.apple.parsecd"
 
+  # Siri voice-services daemon: subscribedAssets/subscribedPreviousAssets = which
+  # TTS/dictation voices are downloaded (bookkeeping under an empty-string key).
+  # Downloading a voice is an action, not a reproducible `defaults` pref.
+  "com.apple.voiceservices"
+
   # iStat Menus status data (satellite TLE, sensor readings)
   "com.bjango.istatmenus.status"
 
@@ -1257,6 +1262,15 @@ is_noisy_key() {
       ;;
 
     # Spotlight: Filter UI state and counters
+    # Siri: internal stash of the menu-bar icon visibility, set on disable and
+    # deleted on enable — state preservation, not a pref (StatusMenuVisible is the
+    # real one; VoiceTriggerUserEnabled stays too).
+    com.apple.Siri)
+      case "$keyname" in
+        SiriPrefStashedStatusMenuVisible) return 0 ;;
+      esac
+      ;;
+
     com.apple.Spotlight)
       case "$keyname" in
         # Noisy: usage counters, window state, timestamps, binary data
@@ -3785,6 +3799,11 @@ def load(p):
         return {}
 prev = load(prev_path)
 curr = load(curr_path)
+# gui/<uid> services live in the console user's domain — a root replay needs
+# `launchctl asuser <uid> …`, not a bare `launchctl … gui/<uid>/…`. System stays.
+def _lc(verb, k):
+    base = f"/bin/launchctl {verb} {domain}/{k}"
+    return f"/bin/launchctl asuser {domain.split('/',1)[1]} {base}" if domain.startswith("gui/") else base
 for k in sorted(set(prev) | set(curr)):
     if is_noisy(k):
         continue
@@ -3792,9 +3811,9 @@ for k in sorted(set(prev) | set(curr)):
     if pv == cv:
         continue
     if cv is False or cv is None:  # newly enabled, or removed from disabled list
-        print(f"/bin/launchctl enable {domain}/{k}")
+        print(_lc("enable", k))
     elif cv is True:
-        print(f"/bin/launchctl disable {domain}/{k}")
+        print(_lc("disable", k))
 PY
     }
 
