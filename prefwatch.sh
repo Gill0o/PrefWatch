@@ -2314,11 +2314,18 @@ def pb_escape(s):
     """Escape spaces in PlistBuddy key paths"""
     return s.replace(' ', '\\ ')
 
+_arr_empty_noted = [False]
 def emit_plistbuddy(array_name, index, item, path_prefix=""):
     """Recursively generate PlistBuddy Add commands for nested dicts"""
     cmds = []
     if isinstance(item, dict):
         for k, v in item.items():
+            if k == '':
+                # Empty-string key → a bare '::' PlistBuddy can't address; skip the subtree.
+                if not _arr_empty_noted[0]:
+                    cmds.append("PBCMD\t# NOTE: an empty-string key ('') was skipped — PlistBuddy can't address it")
+                    _arr_empty_noted[0] = True
+                continue
             key_path = f"{path_prefix}{pb_escape(k)}"
             if isinstance(v, dict):
                 cmds.append(f"PBCMD\tAdd :{array_name}:{index}:{key_path} dict")
@@ -2715,8 +2722,19 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
             changes.append((path_parts, tv))
     return changes, additions, deletions
 
+# An empty-string key ('') makes the ':'.join path a bare '::', which PlistBuddy
+# collapses — the value lands one level too high (verified by round-trip). No CLI
+# addresses it, so skip the whole subtree from that key down and note it once.
+_empty_key_noted = [False]
+def _note_empty_key():
+    if not _empty_key_noted[0]:
+        print("PBCMD\t# NOTE: a key path has an empty-string key ('') — PlistBuddy can't address it, so that subtree is skipped (not reproducible)")
+        _empty_key_noted[0] = True
+
 # Recursively emit PlistBuddy Add commands for an entire dict/value tree
 def emit_add_tree(base_parts, obj):
+    if any(p == '' for p in base_parts):
+        _note_empty_key(); return
     if isinstance(obj, dict):
         path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
         print(f"PBCMD\tAdd :{path} dict")
@@ -2831,6 +2849,8 @@ for top_key in sorted(curr.keys()):
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
     # Emit PlistBuddy Delete commands first (must precede Add for array replacements)
     for (path_parts,) in deletions:
+        if any(p == '' for p in path_parts):
+            _note_empty_key(); continue
         full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tDelete :{full_path}")
     # Emit PlistBuddy Add commands for new sub-keys and replaced arrays
@@ -2843,6 +2863,8 @@ for top_key in sorted(curr.keys()):
             settings_key = path_parts[2]
             if settings_key not in _PRINT_PRESET_KEEP and not any(settings_key.startswith(p) for p in _PRINT_PRESET_PREFIXES):
                 continue
+        if any(p == '' for p in path_parts):
+            _note_empty_key(); continue
         full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
