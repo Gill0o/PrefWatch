@@ -1968,14 +1968,11 @@ _note_device_uuid() {
 _note_byhost_uuid() {
   local kind="$1" path="$2"
   case "$path" in
-    # MDM mode: mdm_plist_path templatized the path with $UUID + $loggedInUser. Emit
-    # BOTH resolvers as EXECUTABLE lines (no leading #) so a pasted block actually sets
-    # the vars — a commented resolver left them empty and the path became /Users//….plist.
+    # MDM mode: the path is templatized to $UUID + $loggedInUser, whose resolvers are
+    # emitted ONCE at startup (see MAIN) — so a templatized ByHost path adds nothing here.
+    # (Return early so it doesn't fall through to the non-mdm */ByHost/* note below.)
     *'$UUID'*)
-      _note_should_show __byhost_uuid__ || return 0
-      _log_kind "$kind" "Cmd: # NOTE: the ByHost path uses \$UUID (this Mac) + \$loggedInUser — run these two lines first, then the commands deploy on any Mac:"
-      _log_kind "$kind" "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
-      _log_kind "$kind" "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+      return 0
       ;;
     # Normal mode: the literal UUID is correct for replay HERE, and useless
     # anywhere else — say so, and point at the flag that makes it deployable.
@@ -4104,6 +4101,14 @@ if [ "$ALL_MODE" = "true" ]; then
   log_line "Starting: monitoring ALL preferences"
 else
   log_line "Starting monitoring on $DOMAIN"
+fi
+
+# MDM: emit the $loggedInUser (+ $UUID for ByHost) resolvers ONCE up front, so every
+# templatized command below deploys as-is — no need to repeat the resolver per line.
+if [ "$MDM_OUTPUT" = "true" ]; then
+  log_line "Cmd: # NOTE: --mdm paths use \$loggedInUser (and \$UUID for ByHost) — set both once here, then every command below deploys on any Mac:"
+  log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
+  log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
 fi
 
 # Python3 status — user already consented at pre-flight; log/warn only
