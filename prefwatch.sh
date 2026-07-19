@@ -623,8 +623,13 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Data sync daemons (CalDAV/CardDAV/Exchange account refresh states)
   "com.apple.dataaccess*"
 
-  # Siri assistant (account validation token renewal)
-  "com.apple.assistant*"
+  # Siri assistant daemon/backup churn (experiment IDs, trial configs, sync
+  # counters, check dates, CloudKit cache). NOTE: com.apple.assistant.support is
+  # deliberately NOT excluded — real Siri prefs live there (Assistant Enabled,
+  # dictation settings, data-sharing opt-ins); a narrow list keeps .support visible.
+  "com.apple.assistant"
+  "com.apple.assistant.backedup"
+  "com.apple.assistantd"
 
   # Tips, personalization & time sync (notification counters, ML internals, clock daemon)
   "com.apple.tipsd"

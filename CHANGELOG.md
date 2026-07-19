@@ -9,6 +9,7 @@
 - An empty-string key (`''`) in a plist made a `::` PlistBuddy path that silently collapses (the value landed a level too high) — those subtrees are now skipped with a `# NOTE:` instead of a wrong command.
 - A ColorSync display-profile change dropped the redundant ByHost "re-run with --mdm" NOTE — it contradicted the device-UUID NOTE (--mdm can't templatize a per-display UUID); the device NOTE stands alone.
 - User-domain launchd toggles (Siri agent, etc.) emitted a bare `launchctl enable gui/<uid>/…` a root replay can't run — now wrapped in `launchctl asuser <uid> …` (system-domain unchanged).
+- `com.apple.assistant.support` un-excluded to surface real Siri prefs (`Assistant Enabled`, dictation, data-sharing opt-ins) — `com.apple.assistant*` hid them with the daemon/backup churn, now excluded by exact name.
 
 ### Noise
 - Filter Siri enable/disable churn: exclude `com.apple.voiceservices` (voice-download bookkeeping) and drop `com.apple.Siri` `SiriPrefStashedStatusMenuVisible` (internal menu-bar-icon stash).
