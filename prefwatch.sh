@@ -1983,15 +1983,6 @@ _note_byhost_uuid() {
   esac
 }
 
-# One-per-burst NOTE when --mdm rewrote a user-home path INSIDE an emitted value (not the
-# plist file path — mdm_plist_path handles that). The value now uses /Users/$loggedInUser,
-# but the file it points at must actually exist at that path on each target.
-_note_home_value() {
-  _note_should_show __mdm_home_value__ || return 0
-  _log_kind "$1" "Cmd: # NOTE: a value above points inside the user's home (rewritten to /Users/\$loggedInUser) —"
-  _log_kind "$1" "Cmd: #       it only works if that file exists at the same path on the target (an app in ~ won't; /Applications will)."
-}
-
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -2040,7 +2031,6 @@ _emit_cmd() {
     # (mdm_plist_path only touches the plist file path, not values like a path pref).
     if [ "$MDM_OUTPUT" = "true" ] && [[ "$cmd" == *"$TARGET_HOME"* ]]; then
       cmd="${cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
-      _note_home_value "$kind"
     fi
     _log_kind "$kind" "Cmd: $cmd"
   fi
@@ -2094,7 +2084,6 @@ _process_py_meta() {
       if [ "$MDM_OUTPUT" = "true" ] && [[ "$_pb_cmd" == *"$TARGET_HOME"* ]]; then
         _pb_cmd="${_pb_cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
         _mdm_home_hit=true
-        _note_home_value "$kind"
       fi
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
@@ -3184,6 +3173,18 @@ launch_console() {
   fi
 }
 
+# MDM: emit the $loggedInUser (+ $UUID for ByHost) resolvers ONCE, as executable
+# Cmd: lines, so every templatized command below deploys as-is — no per-line repeat.
+# Called from the watcher startup so it lands with the other setup NOTEs, right
+# before the user makes changes (ALL mode: between the watcher summary and the
+# "changes may take a few seconds" NOTE; single-domain: right after the Mode line).
+_emit_mdm_resolver_header() {
+  [ "$MDM_OUTPUT" = "true" ] || return 0
+  log_line "Cmd: # NOTE: --mdm paths use \$loggedInUser (and \$UUID for ByHost) — set both once here, then every command below deploys on any Mac:"
+  log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
+  log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+}
+
 # Start monitoring a specific domain
 start_watch() {
   local POLL_PID="" plist_path last_mtime current_mtime
@@ -3241,6 +3242,8 @@ start_watch() {
     ) &
     POLL_PID=$!
   fi
+
+  _emit_mdm_resolver_header
 
   trap 'kill -TERM ${POLL_PID:-} 2>/dev/null || true; wait ${POLL_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
@@ -3363,6 +3366,7 @@ start_watch_all() {
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
+    _emit_mdm_resolver_header
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
@@ -4101,14 +4105,6 @@ if [ "$ALL_MODE" = "true" ]; then
   log_line "Starting: monitoring ALL preferences"
 else
   log_line "Starting monitoring on $DOMAIN"
-fi
-
-# MDM: emit the $loggedInUser (+ $UUID for ByHost) resolvers ONCE up front, so every
-# templatized command below deploys as-is — no need to repeat the resolver per line.
-if [ "$MDM_OUTPUT" = "true" ]; then
-  log_line "Cmd: # NOTE: --mdm paths use \$loggedInUser (and \$UUID for ByHost) — set both once here, then every command below deploys on any Mac:"
-  log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
-  log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
 fi
 
 # Python3 status — user already consented at pre-flight; log/warn only
