@@ -252,6 +252,17 @@ mdm_plist_path() {
   printf '%s' "$_p"
 }
 
+# Literal replacement for the console user's home in MDM output. mdm_plist_path
+# rewrites the plist FILE path; the emission code uses this to also rewrite home
+# paths embedded in emitted VALUES (e.g. a dock _CFURLString, a path pref).
+typeset -g _MDM_HOME_REPL='/Users/$loggedInUser'
+# For a PlistBuddy VALUE the whole `-c '…'` expression is single-quoted, which
+# would store the literal `$loggedInUser`. Break out of the quotes around it so
+# the shell expands it: `…/Users/'$loggedInUser'/…`. _MDM_LIU is the bare token
+# to find (post-escape); _MDM_LIU_QB is its quote-broken form.
+typeset -g _MDM_LIU='$loggedInUser'
+typeset -g _MDM_LIU_QB="'${_MDM_LIU}'"
+
 # Disable shell trace so -v/--verbose only toggles our own logging.
 unsetopt xtrace verbose 2>/dev/null || true
 
@@ -1975,6 +1986,15 @@ _note_byhost_uuid() {
   esac
 }
 
+# One-per-burst NOTE when --mdm rewrote a user-home path INSIDE an emitted value (not the
+# plist file path — mdm_plist_path handles that). The value now uses /Users/$loggedInUser,
+# but the file it points at must actually exist at that path on each target.
+_note_home_value() {
+  _note_should_show __mdm_home_value__ || return 0
+  _log_kind "$1" "Cmd: # NOTE: a value above points inside the user's home (rewritten to /Users/\$loggedInUser) —"
+  _log_kind "$1" "Cmd: #       it only works if that file exists at the same path on the target (an app in ~ won't; /Applications will)."
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -2019,6 +2039,12 @@ _emit_cmd() {
       _log_kind "$kind" "Cmd: $cmd"
     fi
   else
+    # MDM: templatize a user-home path embedded in a string VALUE the same way
+    # (mdm_plist_path only touches the plist file path, not values like a path pref).
+    if [ "$MDM_OUTPUT" = "true" ] && [[ "$cmd" == *"$TARGET_HOME"* ]]; then
+      cmd="${cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
+      _note_home_value "$kind"
+    fi
     _log_kind "$kind" "Cmd: $cmd"
   fi
 }
@@ -2064,9 +2090,21 @@ _process_py_meta() {
       # $_pb_cmd = the key expression only; never the file path (whose ByHost UUID
       # is the Mac's, a different thing handled by _note_byhost_uuid above).
       _note_device_uuid "$kind" "$_pb_cmd"
+      # MDM: mdm_plist_path templatized the FILE path; also rewrite the capture user's
+      # home inside the VALUE (a dock _CFURLString / login-item path in ~ would otherwise
+      # leak the capture user). Quote the pattern so it matches literally, not as a glob.
+      local _mdm_home_hit=false
+      if [ "$MDM_OUTPUT" = "true" ] && [[ "$_pb_cmd" == *"$TARGET_HOME"* ]]; then
+        _pb_cmd="${_pb_cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
+        _mdm_home_hit=true
+        _note_home_value "$kind"
+      fi
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
       _pb_esc=$(printf '%s' "$_pb_cmd" | /usr/bin/sed "s/'/'\\\\''/g")
+      # …then break out of those single quotes around the templatized $loggedInUser
+      # so the shell actually expands it at run time (single quotes would keep it literal).
+      [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
       pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
       _log_kind "$kind" "Cmd: $pb_full"
       continue
