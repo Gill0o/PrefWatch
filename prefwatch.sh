@@ -731,13 +731,6 @@ elif command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
-if [ -z "$PYTHON3_BIN" ]; then
-  # Python3 not available or Command Line Tools not installed
-  # Script will still work but without array change detection (JSON diff)
-  _py_warn="Python3 not available — array change detection disabled."
-  _py_warn="$_py_warn Install Command Line Tools: xcode-select --install"
-fi
-
 # Temp directory + EXIT trap — covers every MAIN exit path (sub-shells
 # still arm their own TERM/INT traps to kill workers before EXIT fires).
 PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
@@ -3954,7 +3947,7 @@ PY
   # miss them. Poll `dscl . -list /Users naprivs` and emit the replayable write.
   ard_privs_watch() {
     local snap="$PREFWATCH_TMPDIR/ardprivs.snap" curr="$PREFWATCH_TMPDIR/ardprivs.curr"
-    local line u v oldv _changed
+    local u v oldv _changed
     local _ks=/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart
     /usr/bin/dscl . -list /Users naprivs 2>/dev/null | /usr/bin/sort > "$snap" 2>/dev/null || true
 
