@@ -12,7 +12,7 @@
 ### Fix
 - `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target. Now `.$UUID.plist`, with an `ioreg` resolver NOTE.
 - `--mdm` emitted the `$UUID` resolver commented out (and none for `$loggedInUser`), so pasting the block ran PlistBuddy with empty vars. Both resolvers are now executable lines the admin can paste as-is.
-- `--mdm` left the capture user's home literal inside emitted VALUES (a dock `_CFURLString`, a path pref) — mdm_plist_path only touched the file path. Now `/Users/$loggedInUser`, with a NOTE that the file must exist there on the target.
+- `--mdm` left the capture user's home literal in emitted VALUES (dock `_CFURLString`, path prefs) — now `/Users/$loggedInUser`, with a NOTE that the file must exist there on the target.
 - A `kill`/`SIGHUP` on the main pid orphaned the watcher and leaked its `/tmp` dir — the cleanup trap lived only in the child. The main shell now tears down the whole tree and clears the tmpdir.
 
 ### Noise
