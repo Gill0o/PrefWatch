@@ -4168,9 +4168,12 @@ PY
         # removals (comm -23) aren't reproducible as a `set`, so we skip them.
         while IFS=$'\t' read -r _kind _what _app; do
           [ -n "$_kind" ] || continue
-          # One explanatory NOTE per burst (deduped for 15s of quiet), then just
-          # the commands — the reminder is the same for every default-app change.
-          _note_should_show __default_apps__ && log_line "Cmd: # NOTE: default-app change — reproduce with utiluti (github.com/scriptingosx/utiluti); macOS may prompt the user to confirm it"
+          # One "install utiluti" reminder per burst (deduped for 15s of quiet).
+          _note_should_show __default_apps__ && log_line "Cmd: # NOTE: needs utiluti (github.com/scriptingosx/utiluti)"
+          # Only the default-browser change (http) pops a macOS confirmation
+          # prompt; file types and other schemes apply silently.
+          [ "$_kind" = url ] && [ "$_what" = http ] && _note_should_show __default_browser__ \
+            && log_line "Cmd: # NOTE: changing the default browser prompts the user to confirm"
           log_line "Cmd: utiluti $_kind set $_what $_app"
         done < <(/usr/bin/comm -13 "$snap" "$curr" 2>/dev/null)
         /bin/cp -f "$curr" "$snap" 2>/dev/null || true
