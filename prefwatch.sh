@@ -3418,6 +3418,7 @@ start_watch_all() {
     [ -x /usr/bin/dscl ] && _watch_active+=("ard_privs")
     [ -x /usr/bin/dscl ] && _watch_active+=("useracct")
     [ -x /usr/sbin/scutil ] && _watch_active+=("hostname")
+    [ -n "$PYTHON3_BIN" ] && _watch_active+=("default_apps")
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
@@ -4115,6 +4116,70 @@ PY
     done
   }
 
+  # LaunchServices default-app handlers (URL schemes + file types) live in the
+  # user's launchservices.secure.plist, whose domain is EXCLUDED (churny, and a
+  # raw PlistBuddy Set won't re-register a handler). This watcher diffs the
+  # LSHandlers array and emits `utiluti`, which changes the real default AND
+  # waits for the macOS confirmation prompt the user must accept.
+  default_apps_watch() {
+    [ -n "$PYTHON3_BIN" ] || return 0
+    local secure="$TARGET_HOME/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+    local snap="$PREFWATCH_TMPDIR/defapps.snap" curr="$PREFWATCH_TMPDIR/defapps.curr"
+    local _kind _what _app _noted
+    _read_lshandlers() {
+      [ -f "$secure" ] || return 0
+      "$PYTHON3_BIN" - "$secure" <<'PY'
+import sys, plistlib
+try:
+    with open(sys.argv[1], 'rb') as f: d = plistlib.load(f)
+except Exception:
+    sys.exit(0)
+# http/https + public.html + com.apple.default-app.web-browser are LINKED by
+# macOS: collapse them to a single canonical "url http" so one browser change
+# emits one command (setting http cascades to the rest).
+BROWSER_SCHEMES = {"http", "https"}
+BROWSER_TYPES = {"public.html", "com.apple.default-app.web-browser"}
+seen = set(); rows = []
+for e in d.get("LSHandlers", []):
+    app = e.get("LSHandlerRoleAll") or e.get("LSHandlerRoleViewer") or e.get("LSHandlerRoleEditor")
+    if not app: continue
+    scheme = e.get("LSHandlerURLScheme"); ctype = e.get("LSHandlerContentType")
+    if scheme in BROWSER_SCHEMES or ctype in BROWSER_TYPES:
+        key = "url\thttp"
+    elif scheme:
+        key = "url\t" + scheme
+    elif ctype:
+        key = "type\t" + ctype
+    else:
+        continue
+    if key in seen: continue
+    seen.add(key); rows.append(key + "\t" + app)
+for r in sorted(rows): print(r)
+PY
+    }
+    _read_lshandlers > "$snap" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      _read_lshandlers > "$curr" 2>/dev/null || true
+      # Guard empty curr (transient read failure) so we don't churn the snapshot.
+      if [ -s "$curr" ] && ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
+        _noted=false
+        # comm -13 = associations present now but not before (new or re-pointed);
+        # removals (comm -23) aren't reproducible as a `set`, so we skip them.
+        while IFS=$'\t' read -r _kind _what _app; do
+          [ -n "$_kind" ] || continue
+          if [ "$_noted" = false ]; then
+            log_line "Cmd: # NOTE: default-app change — reproduce with utiluti (github.com/scriptingosx/utiluti); macOS shows a confirmation prompt the user must accept (http/https always; file types on macOS 26.4+)"
+            _noted=true
+          fi
+          log_line "Cmd: utiluti $_kind set $_what $_app"
+        done < <(/usr/bin/comm -13 "$snap" "$curr" 2>/dev/null)
+        /bin/cp -f "$curr" "$snap" 2>/dev/null || true
+      fi
+    done
+  }
+
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
@@ -4147,6 +4212,8 @@ PY
   local USERACCT_PID=$!
   hostname_watch &
   local HOSTNAME_PID=$!
+  default_apps_watch &
+  local DEFAULT_APPS_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
@@ -4155,7 +4222,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID $HOSTNAME_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID $HOSTNAME_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID $HOSTNAME_PID $DEFAULT_APPS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID $HOSTNAME_PID $DEFAULT_APPS_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 

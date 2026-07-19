@@ -3,6 +3,7 @@
 ## 1.3.4 — unreleased
 
 ### Feature
+- Default-app changes (browser, mail, PDF, images — any URL scheme or file type) emit `utiluti url set` / `utiluti type set` — they live in the excluded LaunchServices secure plist where a raw write won't re-register the handler; a `# NOTE:` flags the macOS confirmation prompt. http/https/public.html collapse to one `url set http`.
 - Hostname changes (LocalHostName / ComputerName / HostName) emit `sudo scutil --set` — they live in the configd-managed SystemConfiguration plist where a raw PlistBuddy write is unreliable, so that write is now filtered.
 
 ### Fix
