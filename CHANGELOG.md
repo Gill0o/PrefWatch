@@ -8,7 +8,7 @@
 - Adding an element to an existing array carries a `# NOTE:` — PlistBuddy addresses arrays by position, so the `:N` index may land wrong on a target whose array differs.
 - Menu bar position changes emit a `# NOTE:` — pixel offsets, filtered as churn, so a Cmd+drag reorder emitted nothing; a display change recomputes them too, so the NOTE claims neither.
 - `NSToolbar Configuration` (any app) carries a `# NOTE:` — the first window open dumps the whole toolbar layout; only later changes are real customizations. Kept visible, not filtered.
-- A ColorSync `Device.mntr.<UUID>` is per-display and per-Mac, so `--mdm` can't templatize it; the `# NOTE:` gives the `defaults -currentHost read` lookup to resolve it per target.
+- A ColorSync display-profile change emits a `# NOTE:` — its `Device.mntr.<UUID>` is the monitor's own UUID (differs per physical display, not the Mac's), so `--mdm` can't templatize it; resolve it per target with `defaults -currentHost read`.
 
 ### Fix
 - `--mdm` left the capture machine's literal hardware UUID in the ByHost path, so PlistBuddy seeded a stray plist on every target — now `.$UUID.plist`.
