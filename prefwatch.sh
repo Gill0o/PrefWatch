@@ -1613,6 +1613,15 @@ is_noisy_pbcmd() {
         *":deletedUsers"*) return 0 ;;
       esac
       ;;
+    preferences)
+      # Hostnames in the configd-managed SystemConfiguration/preferences.plist:
+      # LocalHostName/HostName (:System:Network:HostNames:) + ComputerName and
+      # ComputerNameEncoding (:System:System:ComputerName*). A raw PlistBuddy Set
+      # is unreliable; hostname_watch emits the documented `scutil --set` instead.
+      case "$pb_cmd" in
+        *":System:Network:HostNames:"*|*":System:System:ComputerName"*) return 0 ;;
+      esac
+      ;;
     com.apple.TimeMachine)
       # Noisy: disk space metrics (change on every backup), snapshot counters,
       # filesystem state detection. Keeps: ID, Kind, QuotaGB, Name (user config)
@@ -3385,6 +3394,7 @@ start_watch_all() {
     fi
     [ -x /usr/bin/dscl ] && _watch_active+=("ard_privs")
     [ -x /usr/bin/dscl ] && _watch_active+=("useracct")
+    [ -x /usr/sbin/scutil ] && _watch_active+=("hostname")
     if (( ${#_watch_active[@]} > 0 )); then
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
@@ -4040,6 +4050,43 @@ PY
     done
   }
 
+  # Hostname changes (LocalHostName / ComputerName / HostName) land in the
+  # configd-managed SystemConfiguration/preferences.plist; a raw PlistBuddy Set
+  # to that file is unreliable (configd caches it), so the plist diff's write is
+  # filtered (is_noisy_pbcmd, domain 'preferences') and this watcher emits the
+  # documented `scutil --set` instead. `scutil --get` needs no root; the set does.
+  hostname_watch() {
+    [ -x /usr/sbin/scutil ] || return 0
+    local snap="$PREFWATCH_TMPDIR/hostname.snap" curr="$PREFWATCH_TMPDIR/hostname.curr"
+    local _n _oldv _newv
+    _read_hostnames() {
+      local n v
+      for n in LocalHostName ComputerName HostName; do
+        # `--get` exits non-zero + prints "<Name>: not set" when unset → treat as empty.
+        v=$(/usr/sbin/scutil --get "$n" 2>/dev/null) || v=""
+        printf '%s\t%s\n' "$n" "$v"
+      done
+    }
+    _read_hostnames > "$snap" 2>/dev/null || true
+
+    while true; do
+      /bin/sleep 2
+      _read_hostnames > "$curr" 2>/dev/null || true
+      # LocalHostName is always set — if it read empty, scutil hiccuped; skip so a
+      # transient failure can't emit a phantom set / churn the snapshot.
+      /usr/bin/awk -F'\t' '$1=="LocalHostName" && $2!=""{ok=1} END{exit !ok}' "$curr" 2>/dev/null || continue
+      if ! /usr/bin/cmp -s "$snap" "$curr" 2>/dev/null; then
+        while IFS=$'\t' read -r _n _newv; do
+          [ -n "$_n" ] || continue
+          _oldv=$(/usr/bin/awk -F'\t' -v k="$_n" '$1==k{print $2}' "$snap" 2>/dev/null)
+          [ "$_oldv" = "$_newv" ] && continue
+          [ -n "$_newv" ] && log_line "Cmd: sudo /usr/sbin/scutil --set $_n \"$(_escape_dq "$_newv")\""
+        done < "$curr"
+        /bin/cp -f "$curr" "$snap" 2>/dev/null || true
+      fi
+    done
+  }
+
   # Pre-initialize poll markers so first iteration only sees post-snapshot changes
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.user" 2>/dev/null || true
   /usr/bin/touch "$PREFWATCH_TMPDIR/poll.marker.sys" 2>/dev/null || true
@@ -4070,6 +4117,8 @@ PY
   local ARD_PRIVS_PID=$!
   useracct_watch &
   local USERACCT_PID=$!
+  hostname_watch &
+  local HOSTNAME_PID=$!
   local SHARING_EXEC_PID="" LAUNCHD_STATE_PID=""
   if [ "$(id -u)" -eq 0 ]; then
     sharing_exec_watch &
@@ -4078,7 +4127,7 @@ PY
     LAUNCHD_STATE_PID=$!
   fi
 
-  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap 'kill -TERM ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID $HOSTNAME_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; wait ${FS_PID:-} $POLL_PID $CUPS_PID $CUPS_SHARING_PID $PMSET_PID $ARD_PRIVS_PID $USERACCT_PID $HOSTNAME_PID ${SHARING_EXEC_PID:-} ${LAUNCHD_STATE_PID:-} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
   wait
 }
 

@@ -2,6 +2,9 @@
 
 ## 1.3.4 — unreleased
 
+### Feature
+- Hostname changes (LocalHostName / ComputerName / HostName) emit `sudo scutil --set` — they live in the configd-managed SystemConfiguration plist where a raw PlistBuddy write is unreliable, so that write is now filtered.
+
 ### Fix
 - An empty-string key (`''`) in a plist made a `::` PlistBuddy path that silently collapses (the value landed a level too high) — those subtrees are now skipped with a `# NOTE:` instead of a wrong command.
 
