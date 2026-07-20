@@ -14,6 +14,7 @@
 
 ### Noise
 - Filter Siri enable/disable churn: exclude `com.apple.voiceservices` (voice-download bookkeeping) and drop `com.apple.Siri` `SiriPrefStashedStatusMenuVisible` (internal menu-bar-icon stash).
+- Drop Finder `axTextSize` — an Accessibility per-app Text Size change writes a named `universalaccess FontSizeCategory` (the reproducer) and the Finder recomputes an `axTextSize` in every view dict (~18 derived writes); that ax-prefixed churn is filtered while the real Cmd+J `iconSize`/`textSize`/`FontSize` stay.
 
 ## 1.3.3 — 2026-07-19
 

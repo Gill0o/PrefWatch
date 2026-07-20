@@ -1608,9 +1608,17 @@ is_noisy_pbcmd() {
   # Domain-specific sub-key patterns (need full path matching)
   case "$domain" in
     com.apple.finder|com.apple.Finder)
-      # Filter column widths (resize noise)
       case "$pb_cmd" in
+        # Column widths (resize noise).
         *":columns:"*":width "*)
+          return 0 ;;
+        # axTextSize (ax-prefixed) is the accessibility-derived per-view text
+        # size — the Finder recomputes it in every view dict from the chosen
+        # `universalaccess FontSizeCategory`. It is never set from the Finder UI
+        # (Cmd+J uses textSize/iconSize/FontSize, which stay real), so one
+        # Accessibility text-size change would otherwise flood ~18 Set lines.
+        # The FontSizeCategory command reproduces the change; this is derived.
+        *":axTextSize "*)
           return 0 ;;
       esac
       ;;
