@@ -363,6 +363,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Note: com.apple.security* narrowed — catch only known noisy sub-domains,
   # not "com.apple.security.authorization" or similar which may have real prefs
   "com.apple.security.cloudkeychainproxy3*"  # glob: also covers .keysToRegister sidecar (sync queue)
+  "com.apple.security.sosaccount"            # iCloud Keychain sync-circle state (SOSEnabled/ghostbustdate) — securityd-managed, not a defaults-settable pref
   "com.apple.security.smartcard"
   "com.apple.securityagent"
   "com.apple.securityd"
@@ -964,6 +965,14 @@ is_noisy_key() {
     NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
       return 0 ;;
 
+    # NSToolbar Configuration <UUID> — a per-instance toolbar layout an app dumps
+    # on first window open (e.g. Console). The UUID is regenerated per instance,
+    # so the command isn't portable. NAMED configs (NSToolbar Configuration
+    # Browser) ARE reproducible and are kept — the pattern requires a UUID
+    # (8-4-4-4-12 hex) right after the name, which "Browser" etc. never match.
+    NSToolbar\ Configuration\ [0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f]*)
+      return 0 ;;
+
     # Sparkle updater internals (auto-update framework state)
     # Note: SUSendProfileInfo kept — it's a user-toggleable opt-in for stats
     SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSkippedVersion|SUUpdateRelaunchingMarker)
@@ -1524,6 +1533,18 @@ is_noisy_key() {
     com.apple.RemoteDesktop)
       case "$keyname" in
         RSAKeySize|DOCAllowRemoteConnections) return 0 ;;
+      esac
+      ;;
+
+    com.trendmicro.ztnasase)
+      # Trend Micro ZTNA/SASE agent — mixes real config with agent state. Filter
+      # the STATE: version numbers (all "0"), the per-device DeviceId (not
+      # portable), transient/empty state and runtime validity flags. KEEP the
+      # reproducible prefs (dontShowSignInPopupAgain, requireAuth*, separateAuth,
+      # LoginURL/SwgServer/pacUrl, CompanyId, *IsEnable).
+      case "$keyname" in
+        *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid)
+          return 0 ;;
       esac
       ;;
 
@@ -3803,6 +3824,7 @@ NOISE_PATTERNS = (
     "com.apple.ManagedClient*",       # MDM enrollagent auto-disable post-enrollment
     "com.apple.bootpd",               # DHCP/BOOTP server — flaps with Internet Sharing/network
     "com.apple.dhcp6d",               # DHCPv6 server — flaps automatically
+    "com.apple.FolderActionsDispatcher",  # Folder Actions dispatcher — system auto-toggles it (enable+disable in one burst = net no-op flap)
 )
 def is_noisy(svc):
     return any(fnmatch.fnmatchcase(svc, p) for p in NOISE_PATTERNS)

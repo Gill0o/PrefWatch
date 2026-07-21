@@ -15,6 +15,10 @@
 ### Noise
 - Filter Siri enable/disable churn: exclude `com.apple.voiceservices` (voice-download bookkeeping) and drop `com.apple.Siri` `SiriPrefStashedStatusMenuVisible` (internal menu-bar-icon stash).
 - Drop Finder `axTextSize` — an Accessibility per-app Text Size change writes a named `universalaccess FontSizeCategory` (the reproducer) and the Finder recomputes an `axTextSize` in every view dict (~18 derived writes); that ax-prefixed churn is filtered while the real Cmd+J `iconSize`/`textSize`/`FontSize` stay.
+- Exclude `com.apple.security.sosaccount` — iCloud Keychain sync-circle state (`SOSEnabled`, `ghostbustdate`) managed by securityd; a `defaults write` doesn't join/leave the circle, so it isn't reproducible.
+- Filter `NSToolbar Configuration <UUID>` — a per-instance toolbar layout an app dumps on first window open (e.g. Console); the UUID is regenerated per instance, so the command isn't portable. Named configs (`NSToolbar Configuration Browser`) stay — they're reproducible.
+- Filter Trend Micro ZTNA/SASE agent state in `com.trendmicro.ztnasase` — version numbers, the per-device `DeviceId`, transient/empty state and runtime validity flags (`*IsInvalid`); the real prefs (`dontShowSignInPopupAgain`, auth policy, endpoint URLs, `CompanyId`) stay reproducible.
+- Filter `com.apple.FolderActionsDispatcher` launchd churn — the system auto-toggles this dispatcher (an enable+disable pair in one burst is a net no-op flap), like the existing `bootpd`/`dhcp6d` flappers.
 
 ## 1.3.3 — 2026-07-19
 
