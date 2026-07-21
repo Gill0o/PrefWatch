@@ -41,6 +41,10 @@ Temporary Items
 # Local-only test tracking (never publish)
 TESTING.md
 
+# Local-only test harnesses — roundtrip.zsh + vm-persistence.zsh are dev tooling,
+# NEVER committed/pushed (also covers their vmtest-state.tsv/vmtest-report.txt output)
+/tests/
+
 # IDE files
 .vscode/
 .idea/
