@@ -16,6 +16,7 @@
 - Hostname (LocalHostName / ComputerName / HostName) → `sudo scutil --set` (the unreliable raw configd-plist write is now filtered).
 
 ### Fix
+- Privileged emissions that were missing it now carry `sudo` (`pmset`, system-domain `launchctl` incl. bootstrap/bootout, `lpadmin`, the re-emitted sharing CLIs) — a non-root copy-paste of those used to fail, while `scutil`/`spctl`/`systemsetup`/`socketfilterfw`/`mdutil`/`dscl`/`cupsctl` already had it.
 - Empty-string key (`''`) made a `::` PlistBuddy path that collapses — those subtrees are now skipped with a `# NOTE:`.
 - ColorSync display-profile change dropped the redundant ByHost "re-run with --mdm" NOTE (it contradicted the device-UUID NOTE).
 - User-domain launchd toggles now wrap in `launchctl asuser <uid> …` — a root replay couldn't run the bare `gui/<uid>` form.

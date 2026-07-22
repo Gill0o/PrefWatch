@@ -3848,7 +3848,7 @@ start_watch_all() {
         local opts=""
         opts=$( { /usr/bin/lpoptions -p "$printer" 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/grep -E '^(media|sides|print-color-mode|print-quality|printer-is-shared)=' | while IFS= read -r o; do printf " -o %s" "$o"; done; } || true)  # grep exits 1 if the printer has none of these → guard set -e
 
-        local cmd="lpadmin -p \"$printer\""
+        local cmd="sudo lpadmin -p \"$printer\""
         [ -n "$uri" ] && cmd="$cmd -v \"$uri\""
         cmd="$cmd -m everywhere -E${opts}"
         log_line "Cmd: $cmd"
@@ -3858,7 +3858,7 @@ start_watch_all() {
       /usr/bin/comm -23 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
         log_line "Cmd: # CUPS: printer removed — $printer"
-        log_line "Cmd: lpadmin -x \"$printer\""
+        log_line "Cmd: sudo lpadmin -x \"$printer\""
       done
 
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
@@ -3971,7 +3971,9 @@ while True:
 ' 2>/dev/null \
       | while IFS= read -r cmd; do
           [ -n "$cmd" ] || continue
-          log_line "Cmd: $cmd"
+          # Re-emitted sharing CLIs (systemsetup/sharing/networksetup/kickstart/
+          # launchctl) all need root — prefix sudo like every other privileged emit.
+          log_line "Cmd: sudo $cmd"
           # Drop a timestamped marker per service so launchd_state_watch can
           # detect when it's about to emit an equivalent form and add a NOTE.
           # Match: launchctl <verb> -w <…/com.apple.<svc>.plist>
@@ -4092,7 +4094,9 @@ PY
           fi
         fi
       fi
-      log_line "Cmd: $cmd"
+      # launchctl in the system domain (and `asuser` for gui) needs root, like
+      # every other privileged emit — prefix sudo for a copy-paste deploy.
+      log_line "Cmd: sudo $cmd"
 
       # Bootstrap/bootout companion (system daemons only — gui agent plist
       # paths vary; for those a reboot also applies the enable/disable).
@@ -4101,9 +4105,9 @@ PY
         if [ "$_verb" = "enable" ]; then
           local _ld_plist=""
           _ld_plist=$(_resolve_launchd_plist "$_svc") || _ld_plist=""
-          [ -n "$_ld_plist" ] && _companion="/bin/launchctl bootstrap system \"$_ld_plist\""
+          [ -n "$_ld_plist" ] && _companion="sudo /bin/launchctl bootstrap system \"$_ld_plist\""
         else
-          _companion="/bin/launchctl bootout system/${_svc}"
+          _companion="sudo /bin/launchctl bootout system/${_svc}"
         fi
         # Burst-dedup (like every other NOTE) not once-per-session: show it once
         # per service-toggle burst, re-show after 15s of quiet — so a later,
@@ -4218,7 +4222,7 @@ PY
           else
             log_line "Cmd: # Energy: ${section} — ${key} set to ${new_label}"
           fi
-          log_line "Cmd: pmset ${flag} ${key} ${val}"
+          log_line "Cmd: sudo /usr/bin/pmset ${flag} ${key} ${val}"
         done <<< "$curr_parsed"
       fi
 
