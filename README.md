@@ -6,7 +6,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 - **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy` for plist prefs, and the matching tool for settings stored outside plists — `scutil` (hostname), `systemsetup` (time zone, NTP), `spctl`/`socketfilterfw` (Gatekeeper, firewall), `mdutil` (Spotlight indexing), `utiluti` (default apps), plus `pmset` (energy), `lpadmin` (printers), sharing services & ARD (with sudo)
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
-- **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), or why a real change produced no command
+- **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), the tool that reproduces it when `defaults` can't (`dockutil`, `desktoppr`, `utiluti`), or why a change isn't reproducible at all
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3

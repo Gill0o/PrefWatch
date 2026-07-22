@@ -4565,7 +4565,7 @@ PY
         [ -n "$_path" ] || continue
         _oldstate=$(/usr/bin/awk -F'\t' -v p="$_path" '$1==p{print $2}' "$_snap" 2>/dev/null)
         [ "$_oldstate" = "$_state" ] && continue
-        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule (Firewall > Options) — replay as root (sudo)"
+        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule (Firewall > Options)"
         if [ -z "$_oldstate" ]; then log_line "Cmd: sudo $sfw --add \"$_path\""; fi
         [ "$_state" = block ] && log_line "Cmd: sudo $sfw --blockapp \"$_path\"" || log_line "Cmd: sudo $sfw --unblockapp \"$_path\""
       done < "$_curr"
@@ -4573,7 +4573,7 @@ PY
       while IFS=$'\t' read -r _path _state; do
         [ -n "$_path" ] || continue
         /usr/bin/awk -F'\t' -v p="$_path" '$1==p{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
-        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule removed — replay as root (sudo)"
+        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule removed (Firewall > Options)"
         log_line "Cmd: sudo $sfw --remove \"$_path\""
       done < "$_snap"
       return 0
