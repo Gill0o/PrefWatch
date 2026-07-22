@@ -1,24 +1,43 @@
 # Changelog
 
-## 1.3.4 — unreleased
+## 1.4.0 — unreleased
 
 ### Feature
-- Default-app changes (browser, mail, PDF, images — any URL scheme or file type) emit `utiluti url set` / `utiluti type set` — they live in the excluded LaunchServices secure plist where a raw write won't re-register the handler; a `# NOTE:` flags the macOS confirmation prompt. http/https/public.html collapse to one `url set http`.
-- Hostname changes (LocalHostName / ComputerName / HostName) emit `sudo scutil --set` — they live in the configd-managed SystemConfiguration plist where a raw PlistBuddy write is unreliable, so that write is now filtered.
+- New `--no-console` flag: don't open Console.app or stop when it closes (run until Ctrl+C) — for interactive/VM testing.
+- New `--debug` flag (Jamf `$11`) logs `# FILTERED: <domain> <key> (reason)` for suppressed changes. Off by default; also gates the startup `# Watchers active:` line.
+- Spotlight indexing → `sudo mdutil -i on/off /` (state lives in the metadata store, not a plist).
+- Dock add/remove also prints a `# dockutil --add`/`--remove` line (folders carry `--view`/`--display`/`--sort`), preceded by a `# NOTE:` that it's an alternative to the PlistBuddy commands (run one, not both).
+- Dock-reorder `# NOTE:` now points at [dockutil](https://github.com/kcrawford/dockutil) (`dockutil --move <app> --position <N>`).
+- Per-app firewall rules (Firewall ▸ Options — the per-app allow/block list, e.g. `smbd`) → `socketfilterfw --add`/`--blockapp`/`--unblockapp`/`--remove`, polled via `--listapps` (modern macOS dropped the diffable `com.apple.alf.plist`). Complements the global firewall below.
+- Security posture (FileVault / Gatekeeper / firewall — state, stealth, block-all, allow-signed) → `fdesetup`/`spctl`/`socketfilterfw`; FileVault emits a `# NOTE:` (enabling needs a recovery key). Gatekeeper also detects the App Store-only vs +identified-developers sub-mode (`spctl --status --verbose`) → `# NOTE:` (GUI/MDM-profile setting).
+- Time zone → `sudo systemsetup -settimezone "<Zone>"` (read from the `/etc/localtime` symlink); NTP server → `-setnetworktimeserver`. A `# NOTE:` flags automatic time zone.
+- Wallpaper change → `# NOTE:` pointing at [desktoppr](https://github.com/scriptingosx/desktoppr) (it lives in the `com.apple.wallpaper` Store, not reproducible via `defaults`).
+- Default-app changes (any URL scheme / file type) → `utiluti url set`/`type set`; http/https/public.html collapse to one `url set http`. Thanks to Armin Briegel (scriptingosx) for [utiluti](https://github.com/scriptingosx/utiluti) and desktoppr.
+- Hostname (LocalHostName / ComputerName / HostName) → `sudo scutil --set` (the unreliable raw configd-plist write is now filtered).
 
 ### Fix
-- An empty-string key (`''`) in a plist made a `::` PlistBuddy path that silently collapses (the value landed a level too high) — those subtrees are now skipped with a `# NOTE:` instead of a wrong command.
-- A ColorSync display-profile change dropped the redundant ByHost "re-run with --mdm" NOTE — it contradicted the device-UUID NOTE (--mdm can't templatize a per-display UUID); the device NOTE stands alone.
-- User-domain launchd toggles (Siri agent, etc.) emitted a bare `launchctl enable gui/<uid>/…` a root replay can't run — now wrapped in `launchctl asuser <uid> …` (system-domain unchanged).
-- `com.apple.assistant.support` un-excluded to surface real Siri prefs (`Assistant Enabled`, dictation, data-sharing opt-ins) — `com.apple.assistant*` hid them with the daemon/backup churn, now excluded by exact name.
+- Empty-string key (`''`) made a `::` PlistBuddy path that collapses — those subtrees are now skipped with a `# NOTE:`.
+- ColorSync display-profile change dropped the redundant ByHost "re-run with --mdm" NOTE (it contradicted the device-UUID NOTE).
+- User-domain launchd toggles now wrap in `launchctl asuser <uid> …` — a root replay couldn't run the bare `gui/<uid>` form.
+- `com.apple.assistant.support` un-excluded to surface real Siri prefs (`Assistant Enabled`, dictation); narrowed `com.apple.assistant*` to exact names.
+- Watchers no longer abort under `set -e -o pipefail` when a `var=$(… | grep | head)` finds no match (`mdutil`, `fdesetup`/`spctl`/`socketfilterfw`, NTP, `pmset`/`cups`) — `|| true` inside each pipe.
+- Console-close detection now needs 5 consecutive `pgrep -x Console` misses (a single transient miss under load no longer stops monitoring) and guards the sleep (`|| true`).
+- Battery charge limit no longer emits a bogus `defaults write …batteryui.charging.mac …prior.limit` (UI state, daemon-reverted — not the SMC control); filtered, with a `# NOTE:` pointing at System Settings ▸ Battery.
 
 ### Noise
-- Filter Siri enable/disable churn: exclude `com.apple.voiceservices` (voice-download bookkeeping) and drop `com.apple.Siri` `SiriPrefStashedStatusMenuVisible` (internal menu-bar-icon stash).
-- Drop Finder `axTextSize` — an Accessibility per-app Text Size change writes a named `universalaccess FontSizeCategory` (the reproducer) and the Finder recomputes an `axTextSize` in every view dict (~18 derived writes); that ax-prefixed churn is filtered while the real Cmd+J `iconSize`/`textSize`/`FontSize` stay.
-- Exclude `com.apple.security.sosaccount` — iCloud Keychain sync-circle state (`SOSEnabled`, `ghostbustdate`) managed by securityd; a `defaults write` doesn't join/leave the circle, so it isn't reproducible.
-- Filter `NSToolbar Configuration <UUID>` — a per-instance toolbar layout an app dumps on first window open (e.g. Console); the UUID is regenerated per instance, so the command isn't portable. Named configs (`NSToolbar Configuration Browser`) stay — they're reproducible.
-- Filter Trend Micro ZTNA/SASE agent state in `com.trendmicro.ztnasase` — version numbers, the per-device `DeviceId`, transient/empty state and runtime validity flags (`*IsInvalid`); the real prefs (`dontShowSignInPopupAgain`, auth policy, endpoint URLs, `CompanyId`) stay reproducible.
-- Filter `com.apple.FolderActionsDispatcher` launchd churn — the system auto-toggles this dispatcher (an enable+disable pair in one burst is a net no-op flap), like the existing `bootpd`/`dhcp6d` flappers.
+- Filter Date & Time picker breadcrumbs (`com.apple.TimeZonePref.*` city coords, `com.apple.preferences.timezone.*` `AppleMapID`, `com.apple.AppleModemSettingTool.LastCountryCode`) — none set the zone (the timezone watcher does) and they're not portable.
+- Siri enable/disable churn: exclude `com.apple.voiceservices`, drop `com.apple.Siri` `SiriPrefStashedStatusMenuVisible`.
+- Filter `com.apple.voicetrigger` internal state written when Siri is enabled — `Remote Darwin VoiceTrigger Enabled` (inter-device routing, no UI toggle) and `Accessory <Alarm|Media|Timer> Playback Status` (accessory runtime state); the real toggles (`VoiceTrigger Enabled` = Listen for "Hey Siri", `UserPreferredVoiceTriggerPhraseType`) stay.
+- Filter `com.apple.assistant.support` `Offline Dictation Status` — per-locale offline-dictation model-download flags (`Installed`/`High Quality`/`Continuous Listening`/…), daemon-written, not settings; the real prefs (`Assistant Enabled`, `Dictation Auto Punctuation Enabled`) stay.
+- Finder `axTextSize` — Accessibility Text Size writes a reproducible `universalaccess FontSizeCategory`; the ~18 derived per-view `axTextSize` writes are churn (real Cmd+J `iconSize`/`textSize`/`FontSize` stay).
+- Exclude `com.apple.security.sosaccount` (iCloud Keychain sync-circle state, not settable via `defaults`).
+- Exclude `com.apple.filevault` (ByHost daemon state written after enabling — no reproducible pref; the security watcher's FileVault NOTE is the signal).
+- Filter `NSToolbar Configuration <UUID>` (per-instance, non-portable); named configs stay.
+- Filter Trend Micro `com.trendmicro.ztnasase` agent state (`*Version`, `DeviceId`, `*IsInvalid`); real prefs stay.
+- Filter `com.apple.FolderActionsDispatcher` launchd flap (system auto-toggles it).
+
+### Refactor
+- Watcher subsystem restructured, no behavior change: a PID registry replaces the teardown trap that listed every PID twice, a declarative `_WATCHERS` table drives launch + the `# Watchers active:` summary from one source (adding a watcher is one line), and the nine state-polling watchers share one generic `_snapshot_watch` loop instead of near-identical copies. Every emitted command is unchanged.
 
 ## 1.3.3 — 2026-07-19
 
