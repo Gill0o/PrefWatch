@@ -4,9 +4,9 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy` for plist prefs, and the matching tool for settings stored outside plists — `scutil` (hostname), `systemsetup` (time zone, NTP), `spctl`/`socketfilterfw` (Gatekeeper, firewall), `mdutil` (Spotlight indexing), `utiluti` (default apps), plus `pmset` (energy), `lpadmin` (printers), sharing services & ARD (with sudo)
+- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`scutil`, `systemsetup`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `launchctl`, `dscl`)
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
-- **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), the tool that reproduces it when `defaults` can't (`dockutil`, `desktoppr`, `utiluti`), or why a change isn't reproducible at all
+- **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
 - **Noise filtering** — 450+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3
@@ -46,9 +46,23 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 ## Scope
 
-PrefWatch only sees what lands in a watched plist, plus the out-of-band cases above. Everything else is invisible: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), and the hardware itself (display and keyboard brightness, HDR, battery charge limit). **No output there is expected, not a bug.**
+PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-Inline `# NOTE:` comments cover two cases: how to apply a change (logout/login, `killall`, restart a service, run as root), and why a real change isn't a single reproducible command — pointing at the right tool instead (`desktoppr` for the wallpaper, `dockutil` for a Dock reorder, `fdesetup` for FileVault) or explaining it (a new user account). Out-of-reach settings get no note either.
+A few changes it **detects but can't reduce to one built-in command** — it emits an explanatory `# NOTE:` instead: the wallpaper, FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+
+Everything else is **invisible** — no output is expected, not a bug: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy/TCC permissions), and hardware state (display & keyboard brightness, HDR).
+
+A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command — a positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
+
+## Third-party tools
+
+For settings with no built-in command, a `# NOTE:` names the tool — and emits its command outright for default apps:
+
+- [`utiluti`](https://github.com/scriptingosx/utiluti) — default apps (URL schemes & file types)
+- [`dockutil`](https://github.com/kcrawford/dockutil) — Dock items and order
+- [`desktoppr`](https://github.com/scriptingosx/desktoppr) — desktop wallpaper
+
+All three are standout, widely-used tools — essential kit for any Mac admin.
 
 ## Detection
 
