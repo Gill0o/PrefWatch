@@ -8,7 +8,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
 - **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
-- **Noise filtering** — 450+ rules, so only real changes surface
+- **Noise filtering** — 500+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3
 
 ## Quick Start
