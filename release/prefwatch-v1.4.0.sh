@@ -450,6 +450,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Input analytics / telemetry
   "com.apple.inputAnalytics*"
   "com.apple.appleintelligencereporting"
+  # Apple's analytics agent — sync timestamps / usage counters only (AppUsageSyncTime)
+  "com.apple.analyticsagent"
   "com.apple.GenerativeFunctions*"
 
   # MetricKit daemon (per-app diagnostic bookkeeping, MX* keys touched on every
@@ -497,6 +499,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Address Book UI state (window geometry, selection)
   "com.apple.AddressBook"
+
+  # Directory Utility app UI state (toolbar layout, last-browsed perHost node) —
+  # real directory bindings (AD/LDAP) live in OpenDirectory / config profiles,
+  # NOT this user plist, so nothing here is deployable.
+  "com.apple.DirectoryUtility"
 
   # Calendar internals (account UUIDs, UI state)
   "com.apple.iCal"
@@ -664,6 +671,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Background event counters & sync telemetry
   "com.apple.cseventlistener"
   "com.apple.spotlightknowledge"
+  "com.apple.SpotlightKnowledge"   # zsh globs are case-sensitive — the real domain is CamelCase (hdbCutover.*.evaluationCount counters)
   "com.apple.amsengagementd"
   "com.apple.StatusKitAgent"
   "com.apple.Accessibility.Assets"
@@ -1006,7 +1014,7 @@ is_noisy_key() {
     # NOT table-view UI state — must precede the NSTableView* noise glob below
     NSTableViewDefaultSizeMode) return 1 ;;
     # Window positions & UI state (changes on every resize/move)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|SidebarWidth)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -1094,7 +1102,7 @@ is_noisy_key() {
 
     # Recent items & history
     # Note: keeps real prefs like HistoryAgeInDaysLimit, EnableHistory
-    *RecentFolders|*RecentDocuments|*RecentSearches|*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*|*RecentlyUsed*)
+    *RecentFolders|*RecentDocuments|*RecentSearches|*HistoryItems*|*HistoryMetadata*|*HistoryList*|NSRecentDocumentsHistory|*HistoryDatabase*|*RecentlyUsed*|*recency*|*Recency*)
       return 0 ;;
 
     # Finder sync state (iCloud Drive extension toolbar)
@@ -1338,6 +1346,16 @@ is_noisy_key() {
       esac
       ;;
 
+    # Siri setup wizard (macOS 27): which onboarding panes were last shown and at
+    # what version (`lastShownCoordinatorVersion:Data Sharing`, `:Voice Selection`)
+    # — bookkeeping the wizard writes as it runs, not a setting. The real opt-ins
+    # it produces live in com.apple.assistant.support and are kept.
+    com.apple.siri.setup)
+      case "$keyname" in
+        lastShownCoordinatorVersion*) return 0 ;;
+      esac
+      ;;
+
     # Assistant support: 'Offline Dictation Status' is per-locale model-download
     # status — Installed/High Quality/Continuous Listening/Emoji Recognition/…
     # flags the daemon writes when an offline dictation model downloads, keyed by
@@ -1384,6 +1402,14 @@ is_noisy_key() {
     us.zoom.xos)
       case "$keyname" in
         *@xmpp.zoom.us*|kIM_LastOpenedSession|ZMJoinMeetingFlowAnchor) return 0 ;;
+      esac
+      ;;
+
+    # Campo: per-target engagement counters (telemetry), e.g.
+    # engagementCountForDate-com.apple.Spotlight — a usage tally, not a setting.
+    com.apple.campo)
+      case "$keyname" in
+        engagementCount*|engagementDate*) return 0 ;;
       esac
       ;;
 
@@ -1791,6 +1817,16 @@ is_noisy_pbcmd() {
           return 0 ;;
       esac
       ;;
+    com.apple.iPod)
+      # Per-device sync bookkeeping nested under Devices:<hex-id>: — the Connected
+      # timestamp and Use Count counter, rewritten on every connect. is_noisy_key
+      # filters the TOP-LEVEL Connected/Use Count, but these arrive nested so they
+      # only match here as sub-paths.
+      case "$pb_cmd" in
+        *":Connected "*|*":Use\\ Count "*)
+          return 0 ;;
+      esac
+      ;;
   esac
 
   return 1
@@ -2011,7 +2047,16 @@ _build_defaults_write_cmd() {
   # appends .plist. A bare domain would replay into the console user's ~ copy.
   [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="/Library/Preferences/${dom}"
 
-  actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+  # Probe the type as the CONSOLE USER for user domains. In ALL mode prefwatch runs
+  # as root, where a bare `defaults read-type com.apple.dock …` reads ROOT's domain
+  # and fails ("Domain not found") — the empty probe then fell through to the 0/1
+  # heuristic below and emitted `-bool FALSE` for what is really `-int 0` (proven on
+  # wvous-tr-modifier). System prefs are a /Library/Preferences PATH: keep them root-read.
+  if [ "${_EMIT_SYS:-false}" = "true" ]; then
+    actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+  else
+    actual_type=$("${RUN_AS_USER[@]}" /usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+  fi
 
   if [ "$actual_type" = "float" ]; then
     cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${trimmed}"
@@ -2651,7 +2696,7 @@ _emit_contextual_note() {
     # (deliberately un-filtered in an earlier version) — so annotate instead.
     # Both spellings: metadata reports the top-level key or the nested array name.
     NSToolbar\ Configuration*|TB\ Item\ Identifiers*)
-      _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations" ;;
+      _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations; 'TB Is Shown' can also be rewritten by the app itself on window open/close" ;;
   esac
   [ -n "$_note" ] || return 0
   # Dedup per burst (sliding window): show once, re-show only after quiet
@@ -3105,18 +3150,24 @@ _run_py_diff_workers() {
 # A display connect/disconnect can recompute the offsets too (seen once), but not
 # reliably — so the NOTE never claims a reorder, only that positions changed.
 _note_menubar_positions() {
-  local kind="$1" prev="$2" curr="$3" _k
+  local kind="$1" prev="$2" curr="$3" dom="${4:-}" _k _pat
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
+  # Old form: every app stores its own `NSStatusItem Preferred Position <Item>`.
+  # macOS 27 moved them into ONE domain, com.apple.MenuBarAgent, as a flat dict
+  # `*ItemPreferredPositions` whose keys are `module:<id>` / `status:<bundleid>::<item>`
+  # and whose values are the offsets — so match those leaf keys in that domain.
+  _pat='"NSStatusItem Preferred Position'
+  [ "$dom" = "com.apple.MenuBarAgent" ] && _pat='"(module|status):'
   # `|| true` INSIDE the $() — diff exits 1 when the files differ, and pipefail
   # propagates that, which an outer `|| _k=""` would use to wipe the captured key
   # (the bug that kept this NOTE from ever firing). Keep the stdout, drop the status.
   _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
-        | /usr/bin/grep -E '^[<>].*"NSStatusItem Preferred Position' \
+        | /usr/bin/grep -E "^[<>].*$_pat" \
         | /usr/bin/sed -E 's/^[<>][[:space:]]*//; s/[[:space:]]*=.*//' \
         | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1 || true)
   [ -n "$_k" ] || return 0
   _note_should_show __menubar_pos__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed — item positions are per-app pixel offsets, not"
+  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed — item positions are pixel offsets, not"
   _log_kind "$kind" "Cmd: #       portable, so not emitted. A reorder OR a display connect/disconnect triggers this."
 }
 
@@ -3281,7 +3332,7 @@ show_plist_diff() {
     # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
     # Same for menu bar offsets — any domain, so no guard.
-    _note_menubar_positions "$kind" "$prev" "$curr"
+    _note_menubar_positions "$kind" "$prev" "$curr" "$_dom"
     # Battery charge limit lives in a UI-cache domain; real control is SMC — NOTE only.
     [ "$_dom" = "com.apple.batteryui.charging.mac" ] && _note_charge_limit "$kind"
   fi
@@ -3848,7 +3899,7 @@ start_watch_all() {
         local opts=""
         opts=$( { /usr/bin/lpoptions -p "$printer" 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/grep -E '^(media|sides|print-color-mode|print-quality|printer-is-shared)=' | while IFS= read -r o; do printf " -o %s" "$o"; done; } || true)  # grep exits 1 if the printer has none of these → guard set -e
 
-        local cmd="lpadmin -p \"$printer\""
+        local cmd="sudo lpadmin -p \"$printer\""
         [ -n "$uri" ] && cmd="$cmd -v \"$uri\""
         cmd="$cmd -m everywhere -E${opts}"
         log_line "Cmd: $cmd"
@@ -3858,7 +3909,7 @@ start_watch_all() {
       /usr/bin/comm -23 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
         log_line "Cmd: # CUPS: printer removed — $printer"
-        log_line "Cmd: lpadmin -x \"$printer\""
+        log_line "Cmd: sudo lpadmin -x \"$printer\""
       done
 
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
@@ -3971,7 +4022,9 @@ while True:
 ' 2>/dev/null \
       | while IFS= read -r cmd; do
           [ -n "$cmd" ] || continue
-          log_line "Cmd: $cmd"
+          # Re-emitted sharing CLIs (systemsetup/sharing/networksetup/kickstart/
+          # launchctl) all need root — prefix sudo like every other privileged emit.
+          log_line "Cmd: sudo $cmd"
           # Drop a timestamped marker per service so launchd_state_watch can
           # detect when it's about to emit an equivalent form and add a NOTE.
           # Match: launchctl <verb> -w <…/com.apple.<svc>.plist>
@@ -4092,7 +4145,9 @@ PY
           fi
         fi
       fi
-      log_line "Cmd: $cmd"
+      # launchctl in the system domain (and `asuser` for gui) needs root, like
+      # every other privileged emit — prefix sudo for a copy-paste deploy.
+      log_line "Cmd: sudo $cmd"
 
       # Bootstrap/bootout companion (system daemons only — gui agent plist
       # paths vary; for those a reboot also applies the enable/disable).
@@ -4101,9 +4156,9 @@ PY
         if [ "$_verb" = "enable" ]; then
           local _ld_plist=""
           _ld_plist=$(_resolve_launchd_plist "$_svc") || _ld_plist=""
-          [ -n "$_ld_plist" ] && _companion="/bin/launchctl bootstrap system \"$_ld_plist\""
+          [ -n "$_ld_plist" ] && _companion="sudo /bin/launchctl bootstrap system \"$_ld_plist\""
         else
-          _companion="/bin/launchctl bootout system/${_svc}"
+          _companion="sudo /bin/launchctl bootout system/${_svc}"
         fi
         # Burst-dedup (like every other NOTE) not once-per-session: show it once
         # per service-toggle burst, re-show after 15s of quiet — so a later,
@@ -4218,7 +4273,7 @@ PY
           else
             log_line "Cmd: # Energy: ${section} — ${key} set to ${new_label}"
           fi
-          log_line "Cmd: pmset ${flag} ${key} ${val}"
+          log_line "Cmd: sudo /usr/bin/pmset ${flag} ${key} ${val}"
         done <<< "$curr_parsed"
       fi
 
@@ -4565,7 +4620,7 @@ PY
         [ -n "$_path" ] || continue
         _oldstate=$(/usr/bin/awk -F'\t' -v p="$_path" '$1==p{print $2}' "$_snap" 2>/dev/null)
         [ "$_oldstate" = "$_state" ] && continue
-        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule (Firewall > Options) — replay as root (sudo)"
+        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule (Firewall > Options)"
         if [ -z "$_oldstate" ]; then log_line "Cmd: sudo $sfw --add \"$_path\""; fi
         [ "$_state" = block ] && log_line "Cmd: sudo $sfw --blockapp \"$_path\"" || log_line "Cmd: sudo $sfw --unblockapp \"$_path\""
       done < "$_curr"
@@ -4573,7 +4628,7 @@ PY
       while IFS=$'\t' read -r _path _state; do
         [ -n "$_path" ] || continue
         /usr/bin/awk -F'\t' -v p="$_path" '$1==p{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
-        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule removed — replay as root (sudo)"
+        _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule removed (Firewall > Options)"
         log_line "Cmd: sudo $sfw --remove \"$_path\""
       done < "$_snap"
       return 0
