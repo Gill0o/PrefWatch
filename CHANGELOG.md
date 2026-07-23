@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.4.0 — unreleased
+## 1.4.1 — unreleased
+
+
+## 1.4.0 — 2026-07-23
 
 ### Feature
 - New `--no-console` flag: don't open Console.app or stop when it closes (run until Ctrl+C) — for interactive/VM testing.
