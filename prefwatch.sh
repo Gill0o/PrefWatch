@@ -498,6 +498,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Address Book UI state (window geometry, selection)
   "com.apple.AddressBook"
 
+  # Directory Utility app UI state (toolbar layout, last-browsed perHost node) —
+  # real directory bindings (AD/LDAP) live in OpenDirectory / config profiles,
+  # NOT this user plist, so nothing here is deployable.
+  "com.apple.DirectoryUtility"
+
   # Calendar internals (account UUIDs, UI state)
   "com.apple.iCal"
 
@@ -1387,6 +1392,14 @@ is_noisy_key() {
       esac
       ;;
 
+    # Campo: per-target engagement counters (telemetry), e.g.
+    # engagementCountForDate-com.apple.Spotlight — a usage tally, not a setting.
+    com.apple.campo)
+      case "$keyname" in
+        engagementCount*|engagementDate*) return 0 ;;
+      esac
+      ;;
+
     # iPod/iPhone sync: Filter connection timestamps and counters
     com.apple.iPod)
       case "$keyname" in
@@ -1788,6 +1801,16 @@ is_noisy_pbcmd() {
       # Noisy: Scrutiny analytics (contact tracking, timestamps)
       case "$pb_cmd" in
         *":Scrutiny:"*|*":Scrutiny "*)
+          return 0 ;;
+      esac
+      ;;
+    com.apple.iPod)
+      # Per-device sync bookkeeping nested under Devices:<hex-id>: — the Connected
+      # timestamp and Use Count counter, rewritten on every connect. is_noisy_key
+      # filters the TOP-LEVEL Connected/Use Count, but these arrive nested so they
+      # only match here as sub-paths.
+      case "$pb_cmd" in
+        *":Connected "*|*":Use\\ Count "*)
           return 0 ;;
       esac
       ;;

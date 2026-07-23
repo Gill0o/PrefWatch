@@ -26,6 +26,9 @@
 - Battery charge limit no longer emits a bogus `defaults write …batteryui.charging.mac …prior.limit` (UI state, daemon-reverted — not the SMC control); filtered, with a `# NOTE:` pointing at System Settings ▸ Battery.
 
 ### Noise
+- Filter `com.apple.campo` `engagementCount*`/`engagementDate*` — per-target usage tallies (telemetry), not settings.
+- Exclude `com.apple.DirectoryUtility` (Directory Utility app UI state — toolbar layout, last-browsed `perHost` node; real AD/LDAP bindings live in OpenDirectory / config profiles, not this plist).
+- Filter `com.apple.iPod` per-device sync churn nested under `Devices:<id>:` — the `Connected` timestamp and `Use Count` counter, rewritten on every connect (the existing top-level filter missed the nested form).
 - Filter Date & Time picker breadcrumbs (`com.apple.TimeZonePref.*` city coords, `com.apple.preferences.timezone.*` `AppleMapID`, `com.apple.AppleModemSettingTool.LastCountryCode`) — none set the zone (the timezone watcher does) and they're not portable.
 - Siri enable/disable churn: exclude `com.apple.voiceservices`, drop `com.apple.Siri` `SiriPrefStashedStatusMenuVisible`.
 - Filter `com.apple.voicetrigger` internal state written when Siri is enabled — `Remote Darwin VoiceTrigger Enabled` (inter-device routing, no UI toggle) and `Accessory <Alarm|Media|Timer> Playback Status` (accessory runtime state); the real toggles (`VoiceTrigger Enabled` = Listen for "Hey Siri", `UserPreferredVoiceTriggerPhraseType`) stay.
