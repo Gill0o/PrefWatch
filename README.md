@@ -4,11 +4,11 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the command that recreates it: `defaults`/`PlistBuddy`, `pmset` (energy), `lpadmin` (printers), and — with sudo — sharing services, Remote Management and per-user ARD privileges that live outside any plist
+- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`scutil`, `systemsetup`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `launchctl`, `dscl`)
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
-- **Contextual notes** — inline `# NOTE:` comments: how to apply a change (`killall Dock`, logout/login), or why a real change produced no command
+- **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
-- **Noise filtering** — 450+ rules, so only real changes surface
+- **Noise filtering** — 500+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3
 
 ## Quick Start
@@ -32,21 +32,37 @@ sudo ./prefwatch.sh -v
 |--------|-------|-------------|---------|
 | `[domain]` | -- | Domain to monitor (no sudo needed) | `ALL` (sudo) |
 | `--verbose` | `-v` | Show diffs and debug info | Off |
+| `--debug` | -- | Log `# FILTERED: <dom> <key> (reason)` when a detected change is suppressed (answers "why didn't my change appear?") | Off |
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
 | `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make PlistBuddy paths fleet-deployable: `$loggedInUser` for the home, `$UUID` for ByHost files | Off |
+| `--no-console` | -- | Don't open Console.app or stop when it closes — run until Ctrl+C (interactive/VM testing) | Off |
 
 ## Jamf Pro Integration
 
-Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains. Launches Console.app for live viewing; logs to stdout + file + syslog.
+Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug. Launches Console.app for live viewing; logs to stdout + file + syslog.
 
 ## Scope
 
-PrefWatch only sees what lands in a watched plist, plus the out-of-band cases above. Everything else is invisible: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy permissions), daemon-owned state (the Desktop wallpaper), and the hardware itself (display and keyboard brightness, HDR, battery charge limit). **No output there is expected, not a bug.**
+PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-Inline `# NOTE:` comments cover two cases: how to apply a change (logout/login, `killall`, restart a service, run as root), and why a real change produced no command (a new user account, a Dock reorder). Out-of-reach settings get no note either.
+A few changes it **detects but can't reduce to one built-in command** — it emits an explanatory `# NOTE:` instead: the wallpaper, FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+
+Everything else is **invisible** — no output is expected, not a bug: internal app databases (Safari, Mail, Calendar), protected system stores (Privacy/TCC permissions), and hardware state (display & keyboard brightness, HDR).
+
+A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command — a positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
+
+## Third-party tools
+
+For settings with no built-in command, a `# NOTE:` names the tool — and emits its command outright for default apps:
+
+- [`utiluti`](https://github.com/scriptingosx/utiluti) — default apps (URL schemes & file types)
+- [`dockutil`](https://github.com/kcrawford/dockutil) — Dock items and order
+- [`desktoppr`](https://github.com/scriptingosx/desktoppr) — desktop wallpaper
+
+All three are standout, widely-used tools — essential kit for any Mac admin.
 
 ## Detection
 
