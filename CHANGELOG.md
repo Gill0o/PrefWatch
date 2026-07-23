@@ -16,6 +16,7 @@
 - Hostname (LocalHostName / ComputerName / HostName) → `sudo scutil --set` (the unreliable raw configd-plist write is now filtered).
 
 ### Fix
+- Integer keys valued `0`/`1` in a user domain were emitted as `-bool` instead of `-int` in ALL mode — the type probe ran `defaults read-type` as root, which can't see the console user's domain ("Domain not found"), so it fell back to guessing from the value shape (proven on `com.apple.dock wvous-tr-modifier`, a modifier bitmask). The probe now runs as the console user; system `/Library/Preferences` prefs stay root-read.
 - Privileged emissions that were missing it now carry `sudo` (`pmset`, system-domain `launchctl` incl. bootstrap/bootout, `lpadmin`, the re-emitted sharing CLIs) — a non-root copy-paste of those used to fail, while `scutil`/`spctl`/`systemsetup`/`socketfilterfw`/`mdutil`/`dscl`/`cupsctl` already had it.
 - Empty-string key (`''`) made a `::` PlistBuddy path that collapses — those subtrees are now skipped with a `# NOTE:`.
 - ColorSync display-profile change dropped the redundant ByHost "re-run with --mdm" NOTE (it contradicted the device-UUID NOTE).
@@ -26,6 +27,14 @@
 - Battery charge limit no longer emits a bogus `defaults write …batteryui.charging.mac …prior.limit` (UI state, daemon-reverted — not the SMC control); filtered, with a `# NOTE:` pointing at System Settings ▸ Battery.
 
 ### Noise
+- Filter `com.apple.siri.setup` `lastShownCoordinatorVersion*` — the Siri setup wizard's record of which onboarding panes it displayed (macOS 27); the real opt-ins it produces stay in `com.apple.assistant.support`.
+- Filter `*recency*`/`*Recency*` alongside the existing recent-items patterns — e.g. `com.apple.EmojiPreferences` `com.apple.stickers.recency.order`, the most-recently-used emoji ordering (usage history, rewritten on every emoji picked).
+- Restore `FK_SidebarWidth*` coverage — the global pattern had narrowed to an exact `SidebarWidth`, so the save-panel's `FK_SidebarWidth2` (UI geometry) leaked again.
+- The menu-bar reorder `# NOTE:` now also fires on macOS 27's central `com.apple.MenuBarAgent` store (it only knew the old per-app `NSStatusItem Preferred Position`), so a reorder isn't silent there; adding/removing an item still emits its real command instead.
+- Filter `*ItemPreferredPositions` (`com.apple.MenuBarAgent`) — macOS 27 moved menu-bar item offsets here: per-machine pixel values, and the key embeds a `:` so the emitted PlistBuddy path isn't even addressable. Same class as the already-filtered `NSStatusItem Preferred Position`.
+- The `NSToolbar Configuration …` NOTE now warns that `TB Is Shown` can be rewritten by the app itself on window open/close — the flag stays unfiltered, so a deliberate ⌥⌘T still surfaces.
+- Exclude `com.apple.SpotlightKnowledge` — the exclusion existed only in lowercase and zsh globs are case-sensitive, so the real CamelCase domain (`hdbCutover.*.evaluationCount` counters) still leaked. `com.apple.Spotlight` (real search settings) is untouched.
+- Exclude `com.apple.analyticsagent` (Apple's analytics agent — sync timestamps and usage counters, e.g. `AppUsageSyncTime`).
 - Filter `com.apple.campo` `engagementCount*`/`engagementDate*` — per-target usage tallies (telemetry), not settings.
 - Exclude `com.apple.DirectoryUtility` (Directory Utility app UI state — toolbar layout, last-browsed `perHost` node; real AD/LDAP bindings live in OpenDirectory / config profiles, not this plist).
 - Filter `com.apple.iPod` per-device sync churn nested under `Devices:<id>:` — the `Connected` timestamp and `Use Count` counter, rewritten on every connect (the existing top-level filter missed the nested form).
