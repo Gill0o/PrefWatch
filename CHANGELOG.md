@@ -2,6 +2,10 @@
 
 ## 1.4.1 — unreleased
 
+### Noise
+- Filter the network tree in `SystemConfiguration/preferences.plist` (`NetworkServices:<UUID>:…` and the `Sets:<UUID>:Network:` links / service order) — the service UUID is minted on the local Mac, so the path transplants nowhere, and a VPN client that recreates its service on wake mints a fresh one and re-emits the whole ~65-line subtree for an identical config (seen with `com.trendmicro.ztnasase` on every screen sleep). Proxies were also a duplicate of the `networksetup -set*proxystate` commands already emitted for the same toggle. A single `# NOTE:` now names the real reproducers (`networksetup`, or a configuration profile for a VPN).
+- Filter Trend Micro `com.trendmicro.ztnasase` `UserName` (the signed-in account's e-mail — per-user PII) and `swgConnectStatus` (live connection state); real prefs stay.
+- Filter Office `UAE*` crash-detection markers (`com.microsoft.*`, rewritten on every launch/quit) and the Monotype Fonts agent's `MFEPProcessId` (live PID) / `MFEPExecutablePath` (self-written install path).
 
 ## 1.4.0 — 2026-07-23
 

@@ -1645,9 +1645,34 @@ is_noisy_key() {
       # portable), transient/empty state and runtime validity flags. KEEP the
       # reproducible prefs (dontShowSignInPopupAgain, requireAuth*, separateAuth,
       # LoginURL/SwgServer/pacUrl, CompanyId, *IsEnable).
+      # UserName is the signed-in account's e-mail — per-user PII, never
+      # deployable. swgConnectStatus is the live connection state (the global
+      # *Status patterns were deliberately dropped as too broad, so it needs a
+      # per-domain rule). NOT filtered pending confirmation: swgUnprotectFlag,
+      # thirdPartyVPNExisted.
       case "$keyname" in
-        *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid)
+        *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid|UserName|swgConnectStatus)
           return 0 ;;
+      esac
+      ;;
+
+    # Office apps: UAE* = Unexpected Application Exit bookkeeping (the crash
+    # detector sets a marker on launch and clears it on a clean quit), rewritten
+    # on every launch/quit cycle. Never a setting. Real Office prefs don't carry
+    # this prefix, so the domain glob stays safe.
+    com.microsoft.*)
+      case "$keyname" in
+        UAE*) return 0 ;;
+      esac
+      ;;
+
+    # Monotype Fonts agent — MFEPProcessId is the helper's live PID (stored as a
+    # string, new on every launch) and MFEPExecutablePath is the install location
+    # the agent writes for itself. Both are daemon state, not admin-settable.
+    # Named explicitly rather than an MFEP* glob so a real MFEP setting survives.
+    com.monotype.fonts)
+      case "$keyname" in
+        MFEPProcessId|MFEPExecutablePath) return 0 ;;
       esac
       ;;
 
@@ -1779,8 +1804,19 @@ is_noisy_pbcmd() {
       # LocalHostName/HostName (:System:Network:HostNames:) + ComputerName and
       # ComputerNameEncoding (:System:System:ComputerName*). A raw PlistBuddy Set
       # is unreliable; hostname_watch emits the documented `scutil --set` instead.
+      #
+      # Same for the whole network tree — :NetworkServices:<UUID>:… and the
+      # :Sets:<UUID>:Network:… links/ServiceOrder that reference it. The service
+      # UUID is minted on THIS Mac, so the path transplants nowhere; and a VPN
+      # client that tears its service down and re-adds it on wake mints a fresh
+      # one, re-emitting the entire ~65-line subtree for an identical config
+      # (observed: com.trendmicro.ztnasase, every screen sleep). Proxies land
+      # here too and are already reproduced by the `networksetup -set*proxystate`
+      # commands sharing_exec_watch emits for the same toggle. _note_network_service
+      # replaces the lot with one NOTE naming the real reproducers.
       case "$pb_cmd" in
-        *":System:Network:HostNames:"*|*":System:System:ComputerName"*) return 0 ;;
+        *":System:Network:HostNames:"*|*":System:System:ComputerName"*|\
+        *":NetworkServices:"*|*":Sets:"*":Network:"*) return 0 ;;
       esac
       ;;
     com.apple.TimeMachine)
@@ -2154,6 +2190,30 @@ _note_device_uuid() {
   _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
 }
 
+# One-per-burst NOTE standing in for the filtered SystemConfiguration network
+# tree (see the `preferences` block in is_noisy_pbcmd). A network service is
+# identified by a UUID minted on THIS Mac when the service is created, so an
+# emitted `:NetworkServices:<UUID>:…` path addresses nothing anywhere else — and
+# nothing here either once the service is recreated (a VPN agent tearing its
+# service down and re-adding it on wake mints a fresh UUID, re-emitting the whole
+# ~65-line subtree for an identical config). Say what changed and point at the
+# real reproducers instead of printing commands that can't be replayed.
+_note_network_service() {
+  local kind="$1" dom="$2" cmd="$3"
+  [ "$dom" = preferences ] || return 0
+  case "$cmd" in
+    *":NetworkServices:"*|*":Sets:"*":Network:"*) ;;
+    *) return 0 ;;
+  esac
+  _note_should_show __network_service__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: network service configuration changed (VPN / proxies / DNS / service order)."
+  _log_kind "$kind" "Cmd: #       Not emitted: configd owns this file and each service is keyed by a UUID"
+  _log_kind "$kind" "Cmd: #       minted on this Mac (a VPN client recreating its service mints a new one)."
+  _log_kind "$kind" "Cmd: #       Reproduce with: networksetup (proxies, DNS, -ordernetworkservices),"
+  _log_kind "$kind" "Cmd: #       or a configuration profile for a VPN (a 'com.apple.payload' subtree means"
+  _log_kind "$kind" "Cmd: #       the service is already profile-managed — deploy the profile, not this file)."
+}
+
 _note_byhost_uuid() {
   local kind="$1" path="$2" key="${3:-}"
   # A Device.mntr.<UUID> key carries the DISPLAY's own UUID that --mdm can't
@@ -2257,7 +2317,12 @@ _process_py_meta() {
         continue
       fi
       [ -n "$plist_path" ] || continue
-      if is_noisy_pbcmd "$dom" "$_pb_cmd"; then _dbg_filtered "$dom — $_pb_cmd (noise-key)"; continue; fi
+      if is_noisy_pbcmd "$dom" "$_pb_cmd"; then
+        # A filtered SystemConfiguration network path still deserves an answer —
+        # emit the NOTE naming the real reproducer in place of the dropped command.
+        _note_network_service "$kind" "$dom" "$_pb_cmd"
+        _dbg_filtered "$dom — $_pb_cmd (noise-key)"; continue
+      fi
       if [ "$_domain_note_emitted" = "false" ]; then
         _emit_contextual_note "$dom" "$_last_array_base"
         _domain_note_emitted=true
