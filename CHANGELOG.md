@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.4.1 — unreleased
+## 1.4.2 — unreleased
+
+
+## 1.4.1 — 2026-07-31
 
 ### Fix
 - `--mdm` output now deploys from a root Jamf policy: every user-domain `defaults`/PlistBuddy command is emitted prefixed with a `runAsUser` helper, so it lands in the logged-in user's prefs, not root's. System-level (`/Library/Preferences`) commands stay plain root.
