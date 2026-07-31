@@ -2240,6 +2240,20 @@ _note_byhost_uuid() {
 # so "why didn't my change appear?" has an answer. Silent unless --debug.
 _dbg_filtered() { [ "${DEBUG_FILTER:-false}" = "true" ] && log_line "Cmd: # FILTERED: $1"; return 0; }  # ALWAYS return 0: called standalone in then-blocks under set -e, so a non-zero (debug OFF → the [ ] fails, && short-circuits) would ABORT the shell
 
+# --mdm: prefix a USER-domain command with `runAsUser` (defined in the --mdm
+# header). A `defaults`/PlistBuddy command for a user domain, replayed by a root
+# Jamf policy, would write ROOT's prefs (or reparent the user's plist to root:wheel
+# and bypass the user's cfprefsd) — so it must run in the logged-in user's context.
+# Gated on _EMIT_SYS: system-level commands (/Library/Preferences) stay plain root.
+# No-op outside --mdm, and on comment lines (only real command lines are passed in).
+_mdm_wrap() {
+  if [ "$MDM_OUTPUT" = "true" ] && [ "${_EMIT_SYS:-false}" != "true" ]; then
+    printf 'runAsUser %s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -2277,11 +2291,11 @@ _emit_cmd() {
                 # Key expression only — strip the trailing file path, whose ByHost
                 # UUID is the Mac's and is a different concern.
                 _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
-                _log_kind "$kind" "Cmd: $pb_line" ;;
+                _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
         esac
       done <<< "$pb_delete"
     else
-      _log_kind "$kind" "Cmd: $cmd"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
     fi
   else
     # MDM: templatize a user-home path embedded in a string VALUE the same way
@@ -2289,7 +2303,7 @@ _emit_cmd() {
     if [ "$MDM_OUTPUT" = "true" ] && [[ "$cmd" == *"$TARGET_HOME"* ]]; then
       cmd="${cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
     fi
-    _log_kind "$kind" "Cmd: $cmd"
+    _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
   fi
 }
 
@@ -2356,7 +2370,7 @@ _process_py_meta() {
       # so the shell actually expands it at run time (single quotes would keep it literal).
       [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
       pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
-      _log_kind "$kind" "Cmd: $pb_full"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_full")"
       continue
     fi
     # Metadata line — populate _SKIP_KEYS at every level the Python
@@ -2915,10 +2929,15 @@ emit_array_deletions() {
             "# WARNING: Array deletion"*)
               _note_should_show __array_del_warning__ || continue ;;
           esac
-          _log_kind "$kind" "Cmd: $pb_line"
+          # Comments pass through as-is; only the real PlistBuddy command is
+          # --mdm-wrapped so a root Jamf replay runs it in the user's context.
+          case "$pb_line" in
+            "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
+            *)    _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
+          esac
         done <<< "$pb_delete"
       else
-        _log_kind "$kind" "Cmd: $delete_cmd"
+        _log_kind "$kind" "Cmd: $(_mdm_wrap "$delete_cmd")"
       fi
     fi
   done <<< "$py_output"
@@ -3514,16 +3533,23 @@ launch_console() {
   fi
 }
 
-# MDM: emit the $loggedInUser (+ $UUID for ByHost) resolvers ONCE, as executable
-# Cmd: lines, so every templatized command below deploys as-is — no per-line repeat.
+# MDM: emit the deploy helpers ONCE, as executable Cmd: lines, so the commands
+# below are replayable from a Jamf policy (which runs as ROOT). Two distinct needs
+# — and this is why the resolvers alone are NOT enough:
+#   - PlistBuddy commands carry a $loggedInUser / $UUID FILE PATH; root edits the file.
+#   - `defaults` commands target a bare DOMAIN. For a USER domain, root would write
+#     ROOT's prefs (the app never sees the change) — so those must run in the user's
+#     context via the runAsUser wrapper. System-level defaults (/Library/Preferences,
+#     flagged by their own NOTE) run as plain root instead.
 # Called from the watcher startup so it lands with the other setup NOTEs, right
 # before the user makes changes (ALL mode: between the watcher summary and the
 # "changes may take a few seconds" NOTE; single-domain: right after the Mode line).
 _emit_mdm_resolver_header() {
   [ "$MDM_OUTPUT" = "true" ] || return 0
-  log_line "Cmd: # NOTE: --mdm paths use \$loggedInUser (and \$UUID for ByHost) — set both once here, then every command below deploys on any Mac:"
   log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
+  log_line "Cmd: uid=\$(/usr/bin/id -u \"\$loggedInUser\")"
   log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+  log_line "Cmd: runAsUser() { /bin/launchctl asuser \"\$uid\" /usr/bin/sudo -u \"\$loggedInUser\" \"\$@\"; }"
 }
 
 # Watcher PID registry. `_spawn <fn> [args…]` runs a watcher in the background

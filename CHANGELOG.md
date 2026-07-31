@@ -2,8 +2,11 @@
 
 ## 1.4.1 — unreleased
 
+### Fix
+- `--mdm` output now deploys from a root Jamf policy: every user-domain `defaults`/PlistBuddy command is emitted prefixed with a `runAsUser` helper (`launchctl asuser <uid> sudo -u <user>`), so it lands in the logged-in user's prefs, not root's. System-level (`/Library/Preferences`) commands stay plain root.
+
 ### Noise
-- Filter the network tree in `SystemConfiguration/preferences.plist` (`NetworkServices:<UUID>:…` and the `Sets:<UUID>:Network:` links / service order) — the service UUID is minted on the local Mac, so the path transplants nowhere, and a VPN client that recreates its service on wake mints a fresh one and re-emits the whole ~65-line subtree for an identical config (seen with `com.trendmicro.ztnasase` on every screen sleep). Proxies were also a duplicate of the `networksetup -set*proxystate` commands already emitted for the same toggle. A single `# NOTE:` now names the real reproducers (`networksetup`, or a configuration profile for a VPN).
+- Filter the whole `SystemConfiguration/preferences.plist` network tree (`NetworkServices:<UUID>:…`, `Sets:<UUID>:Network:`) — per-Mac UUID paths that transplant nowhere and churn on VPN reconnect; a `# NOTE:` names the real reproducers (`networksetup`, or a VPN profile).
 - Filter Trend Micro `com.trendmicro.ztnasase` `UserName` (the signed-in account's e-mail — per-user PII) and `swgConnectStatus` (live connection state); real prefs stay.
 - Filter Office `UAE*` crash-detection markers (`com.microsoft.*`, rewritten on every launch/quit) and the Monotype Fonts agent's `MFEPProcessId` (live PID) / `MFEPExecutablePath` (self-written install path).
 
