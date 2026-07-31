@@ -3,7 +3,7 @@
 ## 1.4.1 — unreleased
 
 ### Fix
-- `--mdm` output now deploys from a root Jamf policy: every user-domain `defaults`/PlistBuddy command is emitted prefixed with a `runAsUser` helper (`launchctl asuser <uid> sudo -u <user>`), so it lands in the logged-in user's prefs, not root's. System-level (`/Library/Preferences`) commands stay plain root.
+- `--mdm` output now deploys from a root Jamf policy: every user-domain `defaults`/PlistBuddy command is emitted prefixed with a `runAsUser` helper, so it lands in the logged-in user's prefs, not root's. System-level (`/Library/Preferences`) commands stay plain root.
 
 ### Noise
 - Filter the whole `SystemConfiguration/preferences.plist` network tree (`NetworkServices:<UUID>:…`, `Sets:<UUID>:Network:`) — per-Mac UUID paths that transplant nowhere and churn on VPN reconnect; a `# NOTE:` names the real reproducers (`networksetup`, or a VPN profile).

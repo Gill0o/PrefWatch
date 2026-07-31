@@ -24,8 +24,10 @@
 #     --debug               Log '# FILTERED: …' for suppressed detected changes
 #     -e, --exclude <glob>  Comma-separated glob patterns to exclude
 #     -h, --help            Show this help message
-#     --mdm                 MDM deployment mode: replace user home path with
-#                           $loggedInUser variable in PlistBuddy commands
+#     --mdm                 MDM deployment mode: wrap user-domain commands in a
+#                           runAsUser helper so a root Jamf policy applies them
+#                           in the logged-in user's context, and templatize
+#                           PlistBuddy paths ($loggedInUser home, $UUID ByHost)
 #     --no-console          Don't open Console.app / don't stop when it closes
 #                           (run until Ctrl+C) — for interactive/VM testing
 #
@@ -49,8 +51,9 @@
 #     $7 = ONLY_CMDS (true/false) — show only commands without debug (default: true)
 #     $8 = EXCLUDE_DOMAINS — comma-separated glob patterns to exclude
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
-#     $9 = MDM_OUTPUT (true/false) — replace user home path with $loggedInUser
-#          variable in PlistBuddy commands for MDM deployment (default: false)
+#     $9 = MDM_OUTPUT (true/false) — MDM deployment: wrap user-domain commands in
+#          a runAsUser helper (root Jamf policy applies them as the logged-in
+#          user) + templatize PlistBuddy paths ($loggedInUser, $UUID) (default: false)
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
 #          round-trip. Defaults: the common System Settings panels (Finder,
@@ -111,8 +114,10 @@ Options:
                         keyboard/trackpad/mouse, Accessibility, Spotlight, …).
                         Pass "NONE" to disable.
   -h, --help            Show this help message
-  --mdm                 MDM deployment mode: replace user home path with
-                        \$loggedInUser variable in PlistBuddy commands
+  --mdm                 MDM deployment mode: wrap user-domain commands in a
+                        runAsUser helper (a root Jamf policy applies them as the
+                        logged-in user) and templatize PlistBuddy paths
+                        ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
 
