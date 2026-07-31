@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.1 — 2026-07-31
+
+### Fix
+- `--mdm` output now deploys from a root Jamf policy: every user-domain `defaults`/PlistBuddy command is emitted prefixed with a `runAsUser` helper, so it lands in the logged-in user's prefs, not root's. System-level (`/Library/Preferences`) commands stay plain root.
+
+### Noise
+- Filter the whole `SystemConfiguration/preferences.plist` network tree (`NetworkServices:<UUID>:…`, `Sets:<UUID>:Network:`) — per-Mac UUID paths that transplant nowhere and churn on VPN reconnect; a `# NOTE:` names the real reproducers (`networksetup`, or a VPN profile).
+- Filter Trend Micro `com.trendmicro.ztnasase` `UserName` (the signed-in account's e-mail — per-user PII) and `swgConnectStatus` (live connection state); real prefs stay.
+- Filter Office `UAE*` crash-detection markers (`com.microsoft.*`, rewritten on every launch/quit) and the Monotype Fonts agent's `MFEPProcessId` (live PID) / `MFEPExecutablePath` (self-written install path).
+
 ## 1.4.0 — 2026-07-23
 
 ### Feature
