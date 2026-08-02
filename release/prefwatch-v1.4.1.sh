@@ -24,8 +24,10 @@
 #     --debug               Log '# FILTERED: …' for suppressed detected changes
 #     -e, --exclude <glob>  Comma-separated glob patterns to exclude
 #     -h, --help            Show this help message
-#     --mdm                 MDM deployment mode: replace user home path with
-#                           $loggedInUser variable in PlistBuddy commands
+#     --mdm                 MDM deployment mode: wrap user-domain commands in a
+#                           runAsUser helper so a root Jamf policy applies them
+#                           in the logged-in user's context, and templatize
+#                           PlistBuddy paths ($loggedInUser home, $UUID ByHost)
 #     --no-console          Don't open Console.app / don't stop when it closes
 #                           (run until Ctrl+C) — for interactive/VM testing
 #
@@ -49,8 +51,9 @@
 #     $7 = ONLY_CMDS (true/false) — show only commands without debug (default: true)
 #     $8 = EXCLUDE_DOMAINS — comma-separated glob patterns to exclude
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
-#     $9 = MDM_OUTPUT (true/false) — replace user home path with $loggedInUser
-#          variable in PlistBuddy commands for MDM deployment (default: false)
+#     $9 = MDM_OUTPUT (true/false) — MDM deployment: wrap user-domain commands in
+#          a runAsUser helper (root Jamf policy applies them as the logged-in
+#          user) + templatize PlistBuddy paths ($loggedInUser, $UUID) (default: false)
 #     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
 #          round-trip. Defaults: the common System Settings panels (Finder,
@@ -111,8 +114,10 @@ Options:
                         keyboard/trackpad/mouse, Accessibility, Spotlight, …).
                         Pass "NONE" to disable.
   -h, --help            Show this help message
-  --mdm                 MDM deployment mode: replace user home path with
-                        \$loggedInUser variable in PlistBuddy commands
+  --mdm                 MDM deployment mode: wrap user-domain commands in a
+                        runAsUser helper (a root Jamf policy applies them as the
+                        logged-in user) and templatize PlistBuddy paths
+                        ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
 
@@ -1645,9 +1650,34 @@ is_noisy_key() {
       # portable), transient/empty state and runtime validity flags. KEEP the
       # reproducible prefs (dontShowSignInPopupAgain, requireAuth*, separateAuth,
       # LoginURL/SwgServer/pacUrl, CompanyId, *IsEnable).
+      # UserName is the signed-in account's e-mail — per-user PII, never
+      # deployable. swgConnectStatus is the live connection state (the global
+      # *Status patterns were deliberately dropped as too broad, so it needs a
+      # per-domain rule). NOT filtered pending confirmation: swgUnprotectFlag,
+      # thirdPartyVPNExisted.
       case "$keyname" in
-        *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid)
+        *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid|UserName|swgConnectStatus)
           return 0 ;;
+      esac
+      ;;
+
+    # Office apps: UAE* = Unexpected Application Exit bookkeeping (the crash
+    # detector sets a marker on launch and clears it on a clean quit), rewritten
+    # on every launch/quit cycle. Never a setting. Real Office prefs don't carry
+    # this prefix, so the domain glob stays safe.
+    com.microsoft.*)
+      case "$keyname" in
+        UAE*) return 0 ;;
+      esac
+      ;;
+
+    # Monotype Fonts agent — MFEPProcessId is the helper's live PID (stored as a
+    # string, new on every launch) and MFEPExecutablePath is the install location
+    # the agent writes for itself. Both are daemon state, not admin-settable.
+    # Named explicitly rather than an MFEP* glob so a real MFEP setting survives.
+    com.monotype.fonts)
+      case "$keyname" in
+        MFEPProcessId|MFEPExecutablePath) return 0 ;;
       esac
       ;;
 
@@ -1779,8 +1809,19 @@ is_noisy_pbcmd() {
       # LocalHostName/HostName (:System:Network:HostNames:) + ComputerName and
       # ComputerNameEncoding (:System:System:ComputerName*). A raw PlistBuddy Set
       # is unreliable; hostname_watch emits the documented `scutil --set` instead.
+      #
+      # Same for the whole network tree — :NetworkServices:<UUID>:… and the
+      # :Sets:<UUID>:Network:… links/ServiceOrder that reference it. The service
+      # UUID is minted on THIS Mac, so the path transplants nowhere; and a VPN
+      # client that tears its service down and re-adds it on wake mints a fresh
+      # one, re-emitting the entire ~65-line subtree for an identical config
+      # (observed: com.trendmicro.ztnasase, every screen sleep). Proxies land
+      # here too and are already reproduced by the `networksetup -set*proxystate`
+      # commands sharing_exec_watch emits for the same toggle. _note_network_service
+      # replaces the lot with one NOTE naming the real reproducers.
       case "$pb_cmd" in
-        *":System:Network:HostNames:"*|*":System:System:ComputerName"*) return 0 ;;
+        *":System:Network:HostNames:"*|*":System:System:ComputerName"*|\
+        *":NetworkServices:"*|*":Sets:"*":Network:"*) return 0 ;;
       esac
       ;;
     com.apple.TimeMachine)
@@ -2154,6 +2195,30 @@ _note_device_uuid() {
   _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
 }
 
+# One-per-burst NOTE standing in for the filtered SystemConfiguration network
+# tree (see the `preferences` block in is_noisy_pbcmd). A network service is
+# identified by a UUID minted on THIS Mac when the service is created, so an
+# emitted `:NetworkServices:<UUID>:…` path addresses nothing anywhere else — and
+# nothing here either once the service is recreated (a VPN agent tearing its
+# service down and re-adding it on wake mints a fresh UUID, re-emitting the whole
+# ~65-line subtree for an identical config). Say what changed and point at the
+# real reproducers instead of printing commands that can't be replayed.
+_note_network_service() {
+  local kind="$1" dom="$2" cmd="$3"
+  [ "$dom" = preferences ] || return 0
+  case "$cmd" in
+    *":NetworkServices:"*|*":Sets:"*":Network:"*) ;;
+    *) return 0 ;;
+  esac
+  _note_should_show __network_service__ || return 0
+  _log_kind "$kind" "Cmd: # NOTE: network service configuration changed (VPN / proxies / DNS / service order)."
+  _log_kind "$kind" "Cmd: #       Not emitted: configd owns this file and each service is keyed by a UUID"
+  _log_kind "$kind" "Cmd: #       minted on this Mac (a VPN client recreating its service mints a new one)."
+  _log_kind "$kind" "Cmd: #       Reproduce with: networksetup (proxies, DNS, -ordernetworkservices),"
+  _log_kind "$kind" "Cmd: #       or a configuration profile for a VPN (a 'com.apple.payload' subtree means"
+  _log_kind "$kind" "Cmd: #       the service is already profile-managed — deploy the profile, not this file)."
+}
+
 _note_byhost_uuid() {
   local kind="$1" path="$2" key="${3:-}"
   # A Device.mntr.<UUID> key carries the DISPLAY's own UUID that --mdm can't
@@ -2179,6 +2244,20 @@ _note_byhost_uuid() {
 # --debug: log a diagnostic when a DETECTED change is dropped by a filter,
 # so "why didn't my change appear?" has an answer. Silent unless --debug.
 _dbg_filtered() { [ "${DEBUG_FILTER:-false}" = "true" ] && log_line "Cmd: # FILTERED: $1"; return 0; }  # ALWAYS return 0: called standalone in then-blocks under set -e, so a non-zero (debug OFF → the [ ] fails, && short-circuits) would ABORT the shell
+
+# --mdm: prefix a USER-domain command with `runAsUser` (defined in the --mdm
+# header). A `defaults`/PlistBuddy command for a user domain, replayed by a root
+# Jamf policy, would write ROOT's prefs (or reparent the user's plist to root:wheel
+# and bypass the user's cfprefsd) — so it must run in the logged-in user's context.
+# Gated on _EMIT_SYS: system-level commands (/Library/Preferences) stay plain root.
+# No-op outside --mdm, and on comment lines (only real command lines are passed in).
+_mdm_wrap() {
+  if [ "$MDM_OUTPUT" = "true" ] && [ "${_EMIT_SYS:-false}" != "true" ]; then
+    printf 'runAsUser %s' "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
 
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
@@ -2217,11 +2296,11 @@ _emit_cmd() {
                 # Key expression only — strip the trailing file path, whose ByHost
                 # UUID is the Mac's and is a different concern.
                 _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
-                _log_kind "$kind" "Cmd: $pb_line" ;;
+                _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
         esac
       done <<< "$pb_delete"
     else
-      _log_kind "$kind" "Cmd: $cmd"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
     fi
   else
     # MDM: templatize a user-home path embedded in a string VALUE the same way
@@ -2229,7 +2308,7 @@ _emit_cmd() {
     if [ "$MDM_OUTPUT" = "true" ] && [[ "$cmd" == *"$TARGET_HOME"* ]]; then
       cmd="${cmd//"$TARGET_HOME"/$_MDM_HOME_REPL}"
     fi
-    _log_kind "$kind" "Cmd: $cmd"
+    _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
   fi
 }
 
@@ -2257,7 +2336,12 @@ _process_py_meta() {
         continue
       fi
       [ -n "$plist_path" ] || continue
-      if is_noisy_pbcmd "$dom" "$_pb_cmd"; then _dbg_filtered "$dom — $_pb_cmd (noise-key)"; continue; fi
+      if is_noisy_pbcmd "$dom" "$_pb_cmd"; then
+        # A filtered SystemConfiguration network path still deserves an answer —
+        # emit the NOTE naming the real reproducer in place of the dropped command.
+        _note_network_service "$kind" "$dom" "$_pb_cmd"
+        _dbg_filtered "$dom — $_pb_cmd (noise-key)"; continue
+      fi
       if [ "$_domain_note_emitted" = "false" ]; then
         _emit_contextual_note "$dom" "$_last_array_base"
         _domain_note_emitted=true
@@ -2291,7 +2375,7 @@ _process_py_meta() {
       # so the shell actually expands it at run time (single quotes would keep it literal).
       [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
       pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
-      _log_kind "$kind" "Cmd: $pb_full"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_full")"
       continue
     fi
     # Metadata line — populate _SKIP_KEYS at every level the Python
@@ -2850,10 +2934,15 @@ emit_array_deletions() {
             "# WARNING: Array deletion"*)
               _note_should_show __array_del_warning__ || continue ;;
           esac
-          _log_kind "$kind" "Cmd: $pb_line"
+          # Comments pass through as-is; only the real PlistBuddy command is
+          # --mdm-wrapped so a root Jamf replay runs it in the user's context.
+          case "$pb_line" in
+            "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
+            *)    _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
+          esac
         done <<< "$pb_delete"
       else
-        _log_kind "$kind" "Cmd: $delete_cmd"
+        _log_kind "$kind" "Cmd: $(_mdm_wrap "$delete_cmd")"
       fi
     fi
   done <<< "$py_output"
@@ -3449,16 +3538,23 @@ launch_console() {
   fi
 }
 
-# MDM: emit the $loggedInUser (+ $UUID for ByHost) resolvers ONCE, as executable
-# Cmd: lines, so every templatized command below deploys as-is — no per-line repeat.
+# MDM: emit the deploy helpers ONCE, as executable Cmd: lines, so the commands
+# below are replayable from a Jamf policy (which runs as ROOT). Two distinct needs
+# — and this is why the resolvers alone are NOT enough:
+#   - PlistBuddy commands carry a $loggedInUser / $UUID FILE PATH; root edits the file.
+#   - `defaults` commands target a bare DOMAIN. For a USER domain, root would write
+#     ROOT's prefs (the app never sees the change) — so those must run in the user's
+#     context via the runAsUser wrapper. System-level defaults (/Library/Preferences,
+#     flagged by their own NOTE) run as plain root instead.
 # Called from the watcher startup so it lands with the other setup NOTEs, right
 # before the user makes changes (ALL mode: between the watcher summary and the
 # "changes may take a few seconds" NOTE; single-domain: right after the Mode line).
 _emit_mdm_resolver_header() {
   [ "$MDM_OUTPUT" = "true" ] || return 0
-  log_line "Cmd: # NOTE: --mdm paths use \$loggedInUser (and \$UUID for ByHost) — set both once here, then every command below deploys on any Mac:"
   log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
+  log_line "Cmd: uid=\$(/usr/bin/id -u \"\$loggedInUser\")"
   log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
+  log_line "Cmd: runAsUser() { /bin/launchctl asuser \"\$uid\" /usr/bin/sudo -u \"\$loggedInUser\" \"\$@\"; }"
 }
 
 # Watcher PID registry. `_spawn <fn> [args…]` runs a watcher in the background
