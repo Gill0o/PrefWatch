@@ -3649,6 +3649,7 @@ launch_console() {
 # "changes may take a few seconds" NOTE; single-domain: right after the Mode line).
 _emit_mdm_resolver_header() {
   [ "$MDM_OUTPUT" = "true" ] || return 0
+  log_line "Cmd: # NOTE: put these 4 lines at the top of your deployment script"
   log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
   log_line "Cmd: uid=\$(/usr/bin/id -u \"\$loggedInUser\")"
   log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"

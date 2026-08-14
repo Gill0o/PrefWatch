@@ -15,6 +15,9 @@
 - Opening/closing the Character Viewer no longer emits a half-built array element and its delete — whole elements are suppressed at the source, not line by line.
 - The array add/delete caveats are half as long.
 
+### Note
+- The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".
+
 ## 1.4.1 — 2026-07-31
 
 ### Fix
