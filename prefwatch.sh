@@ -1704,6 +1704,21 @@ is_noisy_command() {
   return 1
 }
 
+# Array ELEMENTS that are pure churn, identified by a marker value appearing
+# anywhere in the element's dict. is_noisy_pbcmd below can only judge ONE emitted
+# line at a time, so it drops the single line carrying the marker and leaves its
+# siblings — a half-built dict plus its Delete, repeating on every open/close.
+# Deletions are worse: the shell is only told the element's key NAMES, never the
+# values, so it cannot recognise the element at all. The Python workers do have
+# the whole element, so the LIST lives here (single source of truth) and is passed
+# to them as data — no second copy of the rule to drift out of sync.
+#
+# CharacterPaletteIM: the Character Viewer adds itself to AppleSelectedInputSources
+# when opened and removes itself when closed. Transient state, never a setting.
+# Deliberately NOT matching on "Non Keyboard Input Method" — com.apple.PressAndHold
+# is one too and does not behave this way.
+typeset -ga _ELEMENT_NOISE_MARKERS=(CharacterPaletteIM)
+
 # Filter noisy key paths in PlistBuddy commands
 # Extracts top-level key and delegates to is_noisy_key(), then checks sub-key patterns
 # Args: $1 = domain, $2 = PlistBuddy command (e.g., "Add :persistent-apps:0:tile-data dict")
@@ -2032,7 +2047,10 @@ convert_delete_to_plistbuddy() {
   if [ "$is_array_deletion" = "true" ]; then
     # WARNING is deduped by the caller (parent scope) — this function runs in a
     # $() subshell so setting the flag here would be lost.
-    printf '# WARNING: Array deletion - indexes shift after each delete; if removing several, run the commands in the order shown (do not reorder)\n'
+    # The "# WARNING: array deletes" prefix is a DEDUP KEY: _emit_cmd and
+    # emit_array_deletions match on it to show this once per burst. Changing the
+    # wording without updating both `case` patterns silently re-enables the spam.
+    printf '# WARNING: array deletes shift indexes — run these in the order shown\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
@@ -2294,7 +2312,7 @@ _emit_cmd() {
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
           # "Cmd: " prefix on comment lines too, else ONLY_CMDS (Jamf) drops them.
-          "# WARNING: Array deletion"*)
+          "# WARNING: array deletes"*)
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
           *)    _note_byhost_uuid "$kind" "$pb_line" "${${pb_line#*-c \'}%%\'*}"
@@ -2523,10 +2541,21 @@ emit_array_additions() {
   if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
     py_output=$(< "$precomputed")
   else
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Element-level noise markers, supplied by the shell (_ELEMENT_NOISE_MARKERS) so
+# the rule has ONE home. An array element whose dict carries one of these values
+# anywhere is pure churn and is skipped WHOLE — filtering it line by line would
+# leave a half-built dict behind (see the comment on _ELEMENT_NOISE_MARKERS).
+_NOISE_MARKERS = [m for m in (sys.argv[4] if len(sys.argv) > 4 else '').split(',') if m]
+def is_noise_element(item):
+    if not _NOISE_MARKERS:
+        return False
+    blob = json.dumps(item, sort_keys=True, default=str)
+    return any(m in blob for m in _NOISE_MARKERS)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2651,6 +2680,11 @@ _array_add_noted = False
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
+    # Whole-element noise (e.g. the Character Viewer re-adding itself): skip before
+    # anything is printed, so neither the element's Add lines NOR the positional
+    # NOTE that precedes them are emitted.
+    if is_noise_element(item):
+        continue
     # Skip reorders: if array length is the same, elements just moved (not added)
     arr_name = prefix[0]
     if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
@@ -2661,7 +2695,7 @@ for prefix, index, item in results:
     # Adding to an EXISTING array: the index is positional. Warn once — a target
     # whose array has a different length won't get the element at the same spot.
     if not _array_add_noted:
-        print("PBCMD\t# NOTE: array element added at positional index :N — PlistBuddy addresses by position, not content; may land wrong if the target's array differs")
+        print("PBCMD\t# NOTE: array index :N is positional — may land elsewhere if the target's array differs")
         _array_add_noted = True
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
@@ -2811,10 +2845,20 @@ _py_deletions_raw() {
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
-  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Element-level noise markers from the shell (_ELEMENT_NOISE_MARKERS). Deletions
+# are the case the shell CANNOT judge on its own: it is handed the element's key
+# names, never the values, so the marker is invisible to it.
+_NOISE_MARKERS = [m for m in (sys.argv[4] if len(sys.argv) > 4 else '').split(',') if m]
+def is_noise_element(item):
+    if not _NOISE_MARKERS:
+        return False
+    blob = json.dumps(item, sort_keys=True, default=str)
+    return any(m in blob for m in _NOISE_MARKERS)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2880,6 +2924,9 @@ for path_tuple, index, item in results:
         continue
     # Only handle top-level arrays (len 1), skip nested arrays
     if len(path_tuple) != 1:
+        continue
+    # Whole-element noise — the half the shell can never see (it gets key names, not values).
+    if is_noise_element(item):
         continue
     array_name = path_tuple[-1] if path_tuple else ""
     # Skip reorders: if array length is the same, elements just moved (not deleted)
@@ -2951,7 +2998,7 @@ emit_array_deletions() {
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
-            "# WARNING: Array deletion"*)
+            "# WARNING: array deletes"*)
               _note_should_show __array_del_warning__ || continue ;;
           esac
           # Comments pass through as-is; only the real PlistBuddy command is

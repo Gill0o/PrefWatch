@@ -3,15 +3,17 @@
 ## 1.4.2 — unreleased
 
 ### Fix
-- ByHost scalar writes were emitted with a guessed type: the `-currentHost` type probe passed `defaults` one malformed argument (zsh doesn't word-split `${flag:+$flag }`), so it always failed and the value shape decided — an integer `0`/`1` became `-bool`, a numeric-looking string `-int`. Affects `screensaver idleTime`/`askForPassword`, `controlcenter BatteryShowPercentage`, trackpad/mouse toggles. Same class as the 1.4.0 fix, which only covered non-ByHost keys.
-- Emitted keys are now escaped like values: a key containing `"`, `$` or a backtick produced a broken command — or ran a command substitution when pasted back into a shell.
-- A stale plist lock is now reclaimed even without `zsh/stat` (falls back to `stat -f %m`); previously a lock orphaned by a killed watcher was never released and that plist's changes went silently unreported for the rest of the run.
+- ByHost scalar writes were typed from the value shape: an integer `0`/`1` came out as `-bool`. Affects `screensaver idleTime`, `controlcenter BatteryShowPercentage`, trackpad toggles.
+- Emitted keys are escaped like values — a key holding `"`, `$` or a backtick broke the command, or ran a substitution when pasted.
+- A stale plist lock is reclaimed even without `zsh/stat`; an orphaned lock used to silence that plist for the rest of the run.
 
 ### Performance
-- ALL-mode startup scans hundreds of plists; deriving each domain forked `basename` + `sed`. Now pure zsh builtins — measured on 730 real plists: 1460 forks → 0, 4.7s → 76ms, identical output.
-- Hot-domain markers refresh in one `touch` instead of one per domain (was 20 forks every 0.5s, for the life of the process).
-- ALL mode no longer dumps a per-domain JSON snapshot that nothing reads (the Python workers are gated off there), and the retry loop reads mtime via `zstat` instead of forking `stat`.
-- Per-diff-line `sed`/`awk`/`tr` calls (key/value extraction, whitespace trim, snippet truncation, PlistBuddy quote escaping) are now zsh builtins — a handful of forks saved per changed key.
+- Domain derivation is fork-free: the ALL-mode startup snapshot went from 1460 forks to 0 (4.7s → 76ms over 730 plists).
+- Fewer forks elsewhere: one `touch` for all hot-domain markers (was 20 every 0.5s), no per-domain JSON dump in ALL mode, and zsh builtins for mtime and diff-line parsing.
+
+### Noise
+- Opening/closing the Character Viewer no longer emits a half-built array element and its delete — whole elements are suppressed at the source, not line by line.
+- The array add/delete caveats are half as long.
 
 ## 1.4.1 — 2026-07-31
 
