@@ -14,6 +14,7 @@
 ### Noise
 - Opening/closing the Character Viewer no longer emits a half-built array element and its delete — whole elements are suppressed at the source, not line by line.
 - The array add/delete caveats are half as long.
+- Filter Finder `PreviewPane*Width` — the default pane width the Finder writes when the pane appears, emitted alongside a real view-style change. `ShowPreviewPane` and `PreviewPaneSettings` stay.
 
 ### Note
 - The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".

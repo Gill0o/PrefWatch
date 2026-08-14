@@ -1202,6 +1202,14 @@ is_noisy_key() {
         # Noisy: View Options panel window position (Cmd+J panel)
         PreviewOptionsWindow.Location)
           return 0 ;;
+        # Preview-pane geometry: the Finder writes the default width (240) as a
+        # side-effect of showing the pane — switching to Gallery view emits it
+        # alongside the real FXPreferredViewStyle change. Same class as the
+        # already-filtered *SidebarWidth* / *.column.*.width. Scoped to the two
+        # width keys so ShowPreviewPane (⌘⇧P, a real toggle) and
+        # PreviewPaneSettings (attribute list, has its own NOTE) both survive.
+        PreviewPane*Width)
+          return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
       ;;
