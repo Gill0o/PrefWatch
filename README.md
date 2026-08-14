@@ -4,7 +4,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`scutil`, `systemsetup`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `launchctl`, `dscl`)
+- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`scutil`, `systemsetup`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `cupsctl`, `launchctl`, `dscl`)
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
 - **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
@@ -61,8 +61,6 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 - [`utiluti`](https://github.com/scriptingosx/utiluti) — default apps (URL schemes & file types)
 - [`dockutil`](https://github.com/kcrawford/dockutil) — Dock items and order
 - [`desktoppr`](https://github.com/scriptingosx/desktoppr) — desktop wallpaper
-
-All three are standout, widely-used tools — essential kit for any Mac admin.
 
 ## Detection
 
