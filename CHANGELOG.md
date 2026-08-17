@@ -12,7 +12,7 @@
 - Fewer forks elsewhere: one `touch` for all hot-domain markers (was 20 every 0.5s), no per-domain JSON dump in ALL mode, and zsh builtins for mtime and diff-line parsing.
 
 ### Noise
-- Opening/closing the Character Viewer no longer emits a half-built array element and its delete — whole elements are suppressed at the source, not line by line.
+- Opening/closing the Character Viewer no longer emits a half-built array element and its delete. Scoped to the active-sources array, so enabling it in Settings > Keyboard still emits.
 - The array add/delete caveats are half as long.
 - Filter Finder `PreviewPane*Width` — the default pane width the Finder writes when the pane appears, emitted alongside a real view-style change. `ShowPreviewPane` and `PreviewPaneSettings` stay.
 

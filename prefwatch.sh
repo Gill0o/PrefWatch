@@ -1721,11 +1721,15 @@ is_noisy_command() {
 # the whole element, so the LIST lives here (single source of truth) and is passed
 # to them as data — no second copy of the rule to drift out of sync.
 #
-# CharacterPaletteIM: the Character Viewer adds itself to AppleSelectedInputSources
-# when opened and removes itself when closed. Transient state, never a setting.
-# Deliberately NOT matching on "Non Keyboard Input Method" — com.apple.PressAndHold
-# is one too and does not behave this way.
-typeset -ga _ELEMENT_NOISE_MARKERS=(CharacterPaletteIM)
+# Format: domain|array|marker — scoped to ONE array on purpose. CharacterPaletteIM
+# appears in BOTH HIToolbox arrays and they mean opposite things:
+#   AppleSelectedInputSources = the ACTIVE source; the Character Viewer adds itself
+#     when opened and removes itself when closed → churn.
+#   AppleEnabledInputSources  = the list in Settings > Keyboard; enabling the viewer
+#     there is a deliberate, deployable setting → must survive.
+# A bare marker would silence both. Also NOT matching "Non Keyboard Input Method" —
+# com.apple.PressAndHold is one too and does not behave this way.
+typeset -ga _ELEMENT_NOISE_MARKERS=('com.apple.HIToolbox|AppleSelectedInputSources|CharacterPaletteIM')
 
 # Filter noisy key paths in PlistBuddy commands
 # Extracts top-level key and delegates to is_noisy_key(), then checks sub-key patterns
@@ -1848,9 +1852,13 @@ is_noisy_pbcmd() {
       esac
       ;;
     com.apple.HIToolbox)
-      # Noisy: Character Palette (Emoji viewer) add/remove on open/close
+      # Character Palette (Emoji viewer) add/remove on open/close — but ONLY in
+      # AppleSelectedInputSources (the active source). The same bundle id also sits
+      # in AppleEnabledInputSources, which is the Settings > Keyboard list: enabling
+      # the viewer there is a deliberate, deployable setting and must survive.
+      # A bare *CharacterPaletteIM* match silenced both.
       case "$pb_cmd" in
-        *"CharacterPaletteIM"*)
+        *":AppleSelectedInputSources:"*"CharacterPaletteIM"*)
           return 0 ;;
       esac
       ;;
@@ -2554,16 +2562,21 @@ import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
-# Element-level noise markers, supplied by the shell (_ELEMENT_NOISE_MARKERS) so
-# the rule has ONE home. An array element whose dict carries one of these values
-# anywhere is pure churn and is skipped WHOLE — filtering it line by line would
-# leave a half-built dict behind (see the comment on _ELEMENT_NOISE_MARKERS).
-_NOISE_MARKERS = [m for m in (sys.argv[4] if len(sys.argv) > 4 else '').split(',') if m]
-def is_noise_element(item):
-    if not _NOISE_MARKERS:
+# Element-level noise rules from the shell (_ELEMENT_NOISE_MARKERS), as
+# domain|array|marker triplets so the rule has ONE home AND a precise scope — the
+# same marker can be churn in one array and a real setting in its sibling. An
+# element whose dict carries the marker is skipped WHOLE; filtering it line by
+# line would leave a half-built dict behind.
+_NOISE_RULES = []
+for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
+    _parts = _spec.split('|')
+    if len(_parts) == 3:
+        _NOISE_RULES.append(tuple(_parts))
+def is_noise_element(arr_name, item):
+    if not _NOISE_RULES:
         return False
     blob = json.dumps(item, sort_keys=True, default=str)
-    return any(m in blob for m in _NOISE_MARKERS)
+    return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2688,13 +2701,14 @@ _array_add_noted = False
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
+    arr_name = prefix[0]
     # Whole-element noise (e.g. the Character Viewer re-adding itself): skip before
     # anything is printed, so neither the element's Add lines NOR the positional
-    # NOTE that precedes them are emitted.
-    if is_noise_element(item):
+    # NOTE that precedes them are emitted. Needs arr_name — the rule is scoped to
+    # one array, since the same marker is a real setting in the sibling array.
+    if is_noise_element(arr_name, item):
         continue
     # Skip reorders: if array length is the same, elements just moved (not added)
-    arr_name = prefix[0]
     if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
         continue
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
@@ -2858,15 +2872,20 @@ import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
-# Element-level noise markers from the shell (_ELEMENT_NOISE_MARKERS). Deletions
-# are the case the shell CANNOT judge on its own: it is handed the element's key
-# names, never the values, so the marker is invisible to it.
-_NOISE_MARKERS = [m for m in (sys.argv[4] if len(sys.argv) > 4 else '').split(',') if m]
-def is_noise_element(item):
-    if not _NOISE_MARKERS:
+# Element-level noise rules from the shell (_ELEMENT_NOISE_MARKERS), as
+# domain|array|marker triplets. Deletions are the case the shell CANNOT judge on
+# its own: it is handed the element's key names, never the values, so the marker
+# is invisible to it.
+_NOISE_RULES = []
+for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
+    _parts = _spec.split('|')
+    if len(_parts) == 3:
+        _NOISE_RULES.append(tuple(_parts))
+def is_noise_element(arr_name, item):
+    if not _NOISE_RULES:
         return False
     blob = json.dumps(item, sort_keys=True, default=str)
-    return any(m in blob for m in _NOISE_MARKERS)
+    return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2933,10 +2952,10 @@ for path_tuple, index, item in results:
     # Only handle top-level arrays (len 1), skip nested arrays
     if len(path_tuple) != 1:
         continue
-    # Whole-element noise — the half the shell can never see (it gets key names, not values).
-    if is_noise_element(item):
-        continue
     array_name = path_tuple[-1] if path_tuple else ""
+    # Whole-element noise — the half the shell can never see (it gets key names, not values).
+    if is_noise_element(array_name, item):
+        continue
     # Skip reorders: if array length is the same, elements just moved (not deleted)
     if array_name in prev and array_name in curr and isinstance(prev[array_name], list) and isinstance(curr[array_name], list) and len(prev[array_name]) == len(curr[array_name]):
         continue
