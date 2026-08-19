@@ -2040,9 +2040,17 @@ extract_type_value_with_plutil() {
   return 0
 }
 
-# Convert a defaults delete command to PlistBuddy
+# Convert a defaults delete command to PlistBuddy.
+# Args: $1 = the `defaults … delete …` command, $2 = OPTIONAL real plist path.
+#
+# $2 exists because the command's `-currentHost` flag cannot survive this
+# conversion: the regex below captures the flag group and discards it, and
+# get_plist_path has no ByHost branch — so a ByHost deletion was emitted against
+# ~/Library/Preferences/<dom>.plist instead of ByHost/<dom>.<UUID>.plist (a file
+# that may not even exist, or whose same-named key is unrelated). Callers that
+# know the file they diffed pass it here; without it the old behaviour stands.
 convert_delete_to_plistbuddy() {
-  local cmd="$1"
+  local cmd="$1" path_override="${2:-}"
 
   local domain target
   domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+([^[:space:]]+).*/\2/p')
@@ -2053,7 +2061,11 @@ convert_delete_to_plistbuddy() {
   [ -n "$target" ] || return 1
 
   local plist_path
-  plist_path="$(get_plist_path "$domain")"
+  if [ -n "$path_override" ]; then
+    plist_path="$path_override"
+  else
+    plist_path="$(get_plist_path "$domain")"
+  fi
 
   local is_array_deletion=false
   if [[ "$target" =~ ':[^:]+:[0-9]+$' ]]; then
@@ -2302,7 +2314,9 @@ _mdm_wrap() {
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
 _emit_cmd() {
-  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4"
+  # $5 = OPTIONAL real plist path, forwarded to convert_delete_to_plistbuddy so a
+  # ByHost deletion targets the ByHost file (see that function's comment).
+  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4" emit_plist_path="${5:-}"
 
   [ -n "$cmd" ] || return 0
   if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command)"; return 0; fi
@@ -2323,7 +2337,7 @@ _emit_cmd() {
 
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
-    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" 2>/dev/null); then
+    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
@@ -2452,7 +2466,11 @@ _process_py_meta() {
 # Args: kind dom hostflag prev curr type_src diff_label
 # Reads: _SKIP_KEYS, _HAS_ARRAY_ADDITIONS.
 _process_diff_lines() {
-  local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7"
+  # $8 = OPTIONAL real plist path for delete emission. Deliberately NOT type_src:
+  # show_plist_diff passes the real file there, but show_domain_diff passes a
+  # CACHE file ($tmpplist) — reusing it would point PlistBuddy at the cache.
+  # Domain mode passes empty and keeps the get_plist_path fallback.
+  local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7" emit_plist_path="${8:-}"
   [ -s "$prev" ] || return 0
 
   typeset -A _added_keys
@@ -2521,7 +2539,7 @@ _process_diff_lines() {
           continue
         fi
         delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
-        _emit_cmd "$kind" "$delete_cmd" "$dom" true
+        _emit_cmd "$kind" "$delete_cmd" "$dom" true "$emit_plist_path"
         ;;
     esac
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
@@ -2976,7 +2994,10 @@ PY
 
 # Detect and emit commands for array deletions
 emit_array_deletions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
+  # $6 = OPTIONAL real plist path. The delete_cmd built below carries no host
+  # flag at all, so without this a ByHost array deletion targeted the any-host
+  # file. _run_py_diff_workers already holds the path and forwards it.
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}" emit_plist_path="${6:-}"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
@@ -3021,7 +3042,7 @@ emit_array_deletions() {
       :
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
-      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
+      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
@@ -3326,7 +3347,7 @@ _run_py_diff_workers() {
     _HAS_ARRAY_ADDITIONS=true
     _process_py_meta "$kind" "$dom" "$_array_meta_raw" "$pb_plist_path"
   fi
-  emit_array_deletions "$kind" "$dom" "$prev_json" "$curr_json" "$_py_del"
+  emit_array_deletions "$kind" "$dom" "$prev_json" "$curr_json" "$_py_del" "$pb_plist_path"
   /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
 }
 
@@ -3536,7 +3557,7 @@ show_plist_diff() {
       _emit_hostflag="-currentHost"
       _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
     fi
-    _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
+    _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path" "$path"
     # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
     # Same for menu bar offsets — any domain, so no guard.

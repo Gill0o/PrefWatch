@@ -4,6 +4,7 @@
 
 ### Fix
 - ByHost scalar writes were typed from the value shape: an integer `0`/`1` came out as `-bool`. Affects `screensaver idleTime`, `controlcenter BatteryShowPercentage`, trackpad toggles.
+- ByHost deletions targeted the any-host plist: the host flag was dropped when converting to PlistBuddy, so the command hit the wrong file — or none, on a ByHost-only domain.
 - Emitted keys are escaped like values — a key holding `"`, `$` or a backtick broke the command, or ran a substitution when pasted.
 - A stale plist lock is reclaimed even without `zsh/stat`; an orphaned lock used to silence that plist for the rest of the run.
 
