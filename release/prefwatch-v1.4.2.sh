@@ -5034,7 +5034,11 @@ WATCH_PID=$!
 _kill_tree() {
   local _root=$1 _kid
   [ -n "$_root" ] || return 0
-  for _kid in $(pgrep -P "$_root" 2>/dev/null); do _kill_tree "$_kid"; done
+  # `|| true`: pgrep exits 1 when a process has no children, which is the normal
+  # case at every LEAF of the recursion — without the guard that non-zero status
+  # trips ERR_EXIT and aborts the teardown mid-tree (observed: three
+  # "# ABORT: set -e … (in _kill_tree)" lines on a single Console-close shutdown).
+  for _kid in $(pgrep -P "$_root" 2>/dev/null || true); do _kill_tree "$_kid"; done
   kill -TERM "$_root" 2>/dev/null || true
 }
 _shutdown_watcher() {
@@ -5073,8 +5077,15 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
     sleep 1 || true
   done
   log_line "Console.app closed — stopping monitoring"
-  kill -TERM "$WATCH_PID" 2>/dev/null || true
-  wait "$WATCH_PID" 2>/dev/null || true
+  # Reuse the signal traps' teardown — do NOT re-inline it. A bare
+  # `kill -TERM "$WATCH_PID"` here only reached the sub-watchers (via their own
+  # trap, which TERMs $_WATCH_PIDS); their pipeline members — eslogger/grep/python3
+  # for sharing_exec_watch, script/fs_usage/sed/awk for fs_watch — got no signal and
+  # were reparented to launchd, still running as root. And since Console closing is
+  # how a Jamf session ends, this is the PRODUCTION exit path: every run leaked an
+  # Endpoint Security client a standard user cannot even kill. Tell-tale signature:
+  # tmpdir correctly removed (the teardown's own rm ran) yet grandchildren alive.
+  _shutdown_watcher
   exit 0
 else
   if [ "$NO_CONSOLE" = "true" ]; then

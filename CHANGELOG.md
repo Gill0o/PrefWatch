@@ -3,6 +3,8 @@
 ## 1.4.2 — unreleased
 
 ### Fix
+- Stopping on Console.app close orphaned every watcher's pipeline children — a root `eslogger` survived each run, unkillable by the user. That exit path now reuses the traps' tree-walking teardown.
+- The teardown aborted mid-tree under `set -e`: `pgrep` exits 1 at each leaf of the recursion. 17 aborts on a single shutdown, now none.
 - ByHost scalar writes were typed from the value shape: an integer `0`/`1` came out as `-bool`. Affects `screensaver idleTime`, `controlcenter BatteryShowPercentage`, trackpad toggles.
 - ByHost deletions targeted the any-host plist: the host flag was dropped when converting to PlistBuddy, so the command hit the wrong file — or none, on a ByHost-only domain.
 - Emitted keys are escaped like values — a key holding `"`, `$` or a backtick broke the command, or ran a substitution when pasted.
