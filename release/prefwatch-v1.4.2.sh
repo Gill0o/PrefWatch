@@ -1649,6 +1649,20 @@ is_noisy_key() {
       esac
       ;;
 
+    # Setapp desktop client — writes short-lived work markers that it deletes as
+    # soon as the job ends, so each one surfaces as a spurious Delete. Observed
+    # seven in a single session. *ActiveRefreshSession* carries a fresh UUID per
+    # scheduled refresh (the global UUID rule misses it: the UUID is glued to the
+    # end of the key, it is not the whole key), and UpdatingSearchIndexItem-<id>
+    # marks an in-flight index update. Per-KEY, never the domain: this plist also
+    # holds ~89 keys of real settings — SUAutomaticallyUpdate, soundEffects,
+    # searchHistoryEnabled, assistantButtonPosition, <id>-favorites.
+    com.setapp.*)
+      case "$keyname" in
+        *ActiveRefreshSession*|UpdatingSearchIndexItem-*) return 0 ;;
+      esac
+      ;;
+
     # Office apps: UAE* = Unexpected Application Exit bookkeeping (the crash
     # detector sets a marker on launch and clears it on a clean quit), rewritten
     # on every launch/quit cycle. Never a setting. Real Office prefs don't carry
