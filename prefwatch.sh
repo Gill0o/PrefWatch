@@ -1988,13 +1988,16 @@ dump_plist_json() {
     : > "$out" 2>/dev/null || true
     return
   fi
-  # Try plutil first (fastest)
-  # Note: plutil -convert with -o writes output to file, error messages go to stdout (not stderr)
-  # so we must suppress both stdout and stderr to avoid visible errors on Sonoma
-  if /usr/bin/plutil -convert json -o "$out" "$src" >/dev/null 2>&1; then
-    [ -s "$out" ] && return
-  fi
-  # Fallback: Python plistlib (handles binary data like NSData in Dock plist)
+  # plistlib FIRST, plutil only as a fallback. `plutil -convert json` cannot
+  # represent a float whose value is integral: <real>2</real> becomes `2`, which
+  # json.load reads back as an int, so pb_type_value emits `integer 2` for what is
+  # really a real — a command that looks right and writes the wrong type (caught by
+  # the array-float case). Python's json.dump writes 2.0 and round-trips as float.
+  # This is not a new representation: plutil already FAILS on any plist holding
+  # <data> or <date> (JSON has no such types), so the plistlib output below is
+  # already what the diff engine sees for those. Cost is ~38ms vs ~5ms per plist,
+  # paid only when a plist actually changes — never during the startup snapshot,
+  # which passes skip_arrays=true and dumps no JSON at all.
   if [ -n "$PYTHON3_BIN" ]; then
     "$PYTHON3_BIN" - "$src" "$out" <<'PYJSON' 2>/dev/null && return
 import plistlib, json, sys, datetime
@@ -2016,6 +2019,11 @@ def sanitize(obj):
 with open(out, 'w') as f:
     json.dump(sanitize(data), f)
 PYJSON
+  fi
+  # Fallback when python3 is absent or plistlib chokes: plutil, lossy on integral
+  # floats but better than no JSON at all (the array/dict diff engine needs it).
+  if /usr/bin/plutil -convert json -o "$out" "$src" >/dev/null 2>&1; then
+    [ -s "$out" ] && return
   fi
   : > "$out" 2>/dev/null || true
 }
