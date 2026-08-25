@@ -3,6 +3,7 @@
 ## 1.4.2 — unreleased
 
 ### Fix
+- Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.
 - A float whose value is integral was emitted as `integer` inside arrays and dicts — the JSON dump ran through `plutil`, which cannot represent it. plistlib now leads, plutil is the fallback.
 - Stopping on Console.app close orphaned every watcher's pipeline children — a root `eslogger` survived each run, unkillable by the user. That exit path now reuses the traps' tree-walking teardown.
 - The teardown aborted mid-tree under `set -e`: `pgrep` exits 1 at each leaf of the recursion. 17 aborts on a single shutdown, now none.

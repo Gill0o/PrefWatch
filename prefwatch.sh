@@ -3812,8 +3812,15 @@ _snapshot_watch() {
 start_watch() {
   local plist_path last_mtime current_mtime
 
-  # Try to find the plist file for optimized mtime monitoring
-  plist_path=$(get_plist_path_for_domain "$DOMAIN")
+  # Try to find the plist file for optimized mtime monitoring.
+  # `|| plist_path=""`: the helper legitimately `return 1`s when the domain has no
+  # plist yet — a domain that has never been written, e.g. an app installed but not
+  # configured. Without the guard that non-zero status trips ERR_EXIT and KILLS the
+  # process at startup, so watching such a domain monitored nothing at all and the
+  # only trace was two "# ABORT: set -e" lines in a log file /var/log usually keeps
+  # out of sight. The `if [ -n "$plist_path" ]` below already handles the empty
+  # case — it falls back to full-domain polling, which is exactly right here.
+  plist_path=$(get_plist_path_for_domain "$DOMAIN") || plist_path=""
 
   if [ -n "$plist_path" ]; then
     # Optimized mode: monitor file mtime, only diff when changed
