@@ -1649,6 +1649,20 @@ is_noisy_key() {
       esac
       ;;
 
+    # Extensis Suitcase Fusion / Connect Fonts — last_sent_* are telemetry
+    # bookkeeping: the ISO-8601 instant at which the app last shipped diagnostics
+    # or metrics, rewritten on every send. "last sent" describes an event that
+    # already happened, never a setting. They escape the global timestamp patterns
+    # because those target CamelCase (*Date, *Time, *Timestamp) while these are
+    # snake_case with no time word in the name.
+    # Per-KEY, never the domain: it also holds real prefs — SUAutomaticallyUpdate
+    # (Sparkle auto-update) and vault.path (the font vault location).
+    com.extensis.*)
+      case "$keyname" in
+        last_sent_*) return 0 ;;
+      esac
+      ;;
+
     # Setapp desktop client — writes short-lived work markers that it deletes as
     # soon as the job ends, so each one surfaces as a spurious Delete. Observed
     # seven in a single session. *ActiveRefreshSession* carries a fresh UUID per

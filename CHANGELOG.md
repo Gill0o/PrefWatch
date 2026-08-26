@@ -17,6 +17,7 @@
 - Fewer forks elsewhere: one `touch` for all hot-domain markers (was 20 every 0.5s), no per-domain JSON dump in ALL mode, and zsh builtins for mtime and diff-line parsing.
 
 ### Noise
+- Filter Extensis `last_sent_*` telemetry stamps (Suitcase Fusion / Connect Fonts) — snake_case with no time word, so the global CamelCase patterns missed them. Its real prefs stay.
 - Filter Setapp's short-lived job markers (`*ActiveRefreshSession*`, `UpdatingSearchIndexItem-*`) — deleted as soon as the job ends, so each surfaced as a spurious Delete. Its real prefs stay.
 - Opening/closing the Character Viewer no longer emits a half-built array element and its delete. Scoped to the active-sources array, so enabling it in Settings > Keyboard still emits.
 - The array add/delete caveats are half as long.
