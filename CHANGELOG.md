@@ -3,7 +3,7 @@
 ## 1.4.2 — unreleased
 
 ### Fix
-- Real-time detection never ran: `fs_usage` was invoked at `/usr/sbin`, where it does not exist, and `2>/dev/null` hid it. Everything fell back to polling. The path is now resolved.
+- Real-time detection never ran, on three counts: `fs_usage` was invoked at `/usr/sbin` (it lives in `/usr/bin`), `script` died on a Jamf policy's socket stdin, and the path regex dropped the user prefix. Everything fell back to polling.
 - `poll_watch` advanced its scan marker AFTER processing, so any plist written during the scan — whose retry loop sleeps up to 1.8s — was never `-newer` next cycle and was lost for good.
 - The `[init]` startup lines never reached the log file in verbose mode: `cat; cat >> file` drains the pipe instead of duplicating it, so the second `cat` got nothing. `tee -a` does.
 - Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.

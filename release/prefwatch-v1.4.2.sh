@@ -4016,8 +4016,23 @@ start_watch_all() {
       log_line "Cmd: # NOTE: fs_usage not found — real-time detection off, polling only"
       return 0
     fi
-    script -q /dev/null "$_fsu" -w -f filesys 2>>"${PREFWATCH_TMPDIR}/fs_usage.err" |
-    /usr/bin/sed -l -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
+    # `</dev/null` is NOT cosmetic: script(1) calls tcgetattr on stdin, and under a
+    # Jamf Self Service policy stdin is a SOCKET — it dies with
+    # "script: tcgetattr/ioctl: Operation not supported on socket", the pipeline
+    # produces nothing and real-time detection is silently off. Measured: fails on a
+    # socket and on a pipe, works on a tty and on /dev/null. This is the second,
+    # independent reason fs_watch never ran — and the one that only bites in
+    # production, since a Terminal launch gets a pty and works either way.
+    script -q /dev/null "$_fsu" -w -f filesys </dev/null 2>>"${PREFWATCH_TMPDIR}/fs_usage.err" |
+    # The leading .* MUST NOT swallow the user prefix. With `.*(/.*Library/…)` the
+    # greedy prefix pushed the capture as late as possible, so
+    # /Users/gilles/Library/Preferences/x.plist came out as /Library/Preferences/x.plist —
+    # the awk below then classified it SYSTEM, show_plist_diff looked for a file that
+    # does not exist and returned at once. EVERY user preference fs_watch saw was
+    # silently dropped. Anchoring the capture on a space + a leading '/' fixes it;
+    # the inner (…/)? keeps /Library/… (no prefix) matching, and requiring the '/'
+    # stops the space inside 'Group Containers' from becoming the anchor.
+    /usr/bin/sed -l -nE 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
     /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
       path=$0;
       if (index(path, pu)==1)      { print "USER " path }
