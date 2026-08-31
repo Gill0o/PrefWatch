@@ -4002,7 +4002,21 @@ start_watch_all() {
     # block buffer waiting for more data (notably for idle domains).
     # script(1) allocates a pty so fs_usage line-buffers; /dev/null is its
     # typescript sink, NOT an output redirect. macOS has no stdbuf — don't drop it.
-    script -q /dev/null /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
+    # fs_usage lives in /usr/bin, NOT /usr/sbin. The hard-coded /usr/sbin path made
+    # `script` launch a nonexistent binary: the pipeline produced nothing, the while
+    # loop below ended at once, fs_watch returned 0, and 2>/dev/null swallowed the
+    # only clue — so real-time detection was dead and everything ran on poll_watch
+    # alone, with no error anywhere. Resolve the path, and say so when it is missing
+    # rather than failing silently a second time.
+    local _fsu=""
+    for _c in /usr/bin/fs_usage /usr/sbin/fs_usage /sbin/fs_usage; do
+      [ -x "$_c" ] && { _fsu="$_c"; break; }
+    done
+    if [ -z "$_fsu" ]; then
+      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off, polling only"
+      return 0
+    fi
+    script -q /dev/null "$_fsu" -w -f filesys 2>>"${PREFWATCH_TMPDIR}/fs_usage.err" |
     /usr/bin/sed -l -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
     /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
       path=$0;
@@ -4107,6 +4121,15 @@ start_watch_all() {
         fi
       fi
 
+      # Stamp the NEXT marker BEFORE scanning, and apply it after. Advancing the
+      # marker to "now" once the loop below has finished loses every plist written
+      # during the scan and its processing — and that processing is not brief: the
+      # retry loop in show_plist_diff sleeps up to ~1.8s per changed plist. Such a
+      # file is never `-newer` on the following cycle, so the change is dropped for
+      # good, silently. Proven on a minimal model of this exact pattern: a file
+      # written inside the window went undetected over six cycles with the marker
+      # advanced after, and was caught on the first cycle with it stamped before.
+      /usr/bin/touch "$marker_user.next" 2>/dev/null || true
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -4129,7 +4152,7 @@ start_watch_all() {
           log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
-      /usr/bin/touch "$marker_user" 2>/dev/null || true
+      /bin/mv -f "$marker_user.next" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
       /bin/sleep 0.5
     done
@@ -5013,11 +5036,21 @@ fi
 # Prepare log file
 LOGFILE="$(prepare_logfile "$LOGFILE")"
 
-# Announce the actually used log path
+# Announce the log path, plus the two facts every bug report needs and that no
+# user thinks to include: which prefwatch, and which macOS. Preference layouts
+# move between releases — Weather went to an internal DB in Sonoma, menu-bar
+# offsets to com.apple.MenuBarAgent in 27 — so a report without the OS version is
+# usually unactionable. Printed even under ONLY_CMDS: one extra line, once.
+_os_ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || printf '?')"
+_os_build="$(/usr/bin/sw_vers -buildVersion 2>/dev/null || printf '?')"
 if [ "${ONLY_CMDS:-false}" = "true" ]; then
-  printf "[init] Log file: %s\n" "$LOGFILE" >> "$LOGFILE" 2>/dev/null || true
+  { printf "[init] Log file: %s\n" "$LOGFILE"
+    printf "[init] prefwatch %s on macOS %s (%s)\n" "${SCRIPT_VERSION:-?}" "$_os_ver" "$_os_build"
+  } >> "$LOGFILE" 2>/dev/null || true
 else
-  { printf "[init] Log file: %s\n" "$LOGFILE"; } | { cat; cat >> "$LOGFILE" 2>/dev/null || true; }
+  { printf "[init] Log file: %s\n" "$LOGFILE"
+    printf "[init] prefwatch %s on macOS %s (%s)\n" "${SCRIPT_VERSION:-?}" "$_os_ver" "$_os_build"
+  } | /usr/bin/tee -a "$LOGFILE" 2>/dev/null || true
 fi
 /usr/bin/logger -t "prefwatch[init]" -- "Log file: $LOGFILE"
 

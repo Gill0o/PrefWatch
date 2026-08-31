@@ -3,6 +3,9 @@
 ## 1.4.2 — unreleased
 
 ### Fix
+- Real-time detection never ran: `fs_usage` was invoked at `/usr/sbin`, where it does not exist, and `2>/dev/null` hid it. Everything fell back to polling. The path is now resolved.
+- `poll_watch` advanced its scan marker AFTER processing, so any plist written during the scan — whose retry loop sleeps up to 1.8s — was never `-newer` next cycle and was lost for good.
+- The `[init]` startup lines never reached the log file in verbose mode: `cat; cat >> file` drains the pipe instead of duplicating it, so the second `cat` got nothing. `tee -a` does.
 - Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.
 - A float whose value is integral was emitted as `integer` inside arrays and dicts — the JSON dump ran through `plutil`, which cannot represent it. plistlib now leads, plutil is the fallback.
 - Stopping on Console.app close orphaned every watcher's pipeline children — a root `eslogger` survived each run, unkillable by the user. That exit path now reuses the traps' tree-walking teardown.
@@ -24,6 +27,7 @@
 - Filter Finder `PreviewPane*Width` — the default pane width the Finder writes when the pane appears, emitted alongside a real view-style change. `ShowPreviewPane` and `PreviewPaneSettings` stay.
 
 ### Note
+- The log header now records the prefwatch and macOS versions (`prefwatch 1.4.2 on macOS 26.6.2 (25G83)`) — the two facts a bug report needs and no one thinks to include.
 - The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".
 
 ## 1.4.1 — 2026-07-31
