@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.4.2 — 2026-09-01
+
+### Fix
+- The `fs_usage` watcher had never run, and nobody noticed — which is the finding: measured against plain polling it changes neither output nor latency. Whether it earns its cost is now an open question. It runs meanwhile, and the log says when ktrace, which allows one client, is taken.
+- `poll_watch` advanced its scan marker AFTER processing, so any plist written during the scan — whose retry loop sleeps up to 1.8s — was never `-newer` next cycle and was lost for good.
+- The `[init]` startup lines never reached the log file in verbose mode: `cat; cat >> file` drains the pipe instead of duplicating it, so the second `cat` got nothing. `tee -a` does.
+- Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.
+- A float whose value is integral was emitted as `integer` inside arrays and dicts — the JSON dump ran through `plutil`, which cannot represent it. plistlib now leads, plutil is the fallback.
+- Stopping on Console.app close orphaned every watcher's pipeline children — a root `eslogger` survived each run, unkillable by the user. That exit path now reuses the traps' tree-walking teardown.
+- The teardown aborted mid-tree under `set -e`: `pgrep` exits 1 at each leaf of the recursion. 17 aborts on a single shutdown, now none.
+- ByHost scalar writes were typed from the value shape: an integer `0`/`1` came out as `-bool`. Affects `screensaver idleTime`, `controlcenter BatteryShowPercentage`, trackpad toggles.
+- ByHost deletions targeted the any-host plist: the host flag was dropped when converting to PlistBuddy, so the command hit the wrong file — or none, on a ByHost-only domain.
+- Emitted keys are escaped like values — a key holding `"`, `$` or a backtick broke the command, or ran a substitution when pasted.
+- A stale plist lock is reclaimed even without `zsh/stat`; an orphaned lock used to silence that plist for the rest of the run.
+
+### Performance
+- Domain derivation is fork-free: the ALL-mode startup snapshot went from 1460 forks to 0 (4.7s → 76ms over 730 plists).
+- Fewer forks elsewhere: one `touch` for all hot-domain markers (was 20 every 0.5s), no per-domain JSON dump in ALL mode, and zsh builtins for mtime and diff-line parsing.
+
+### Noise
+- Filter Extensis `last_sent_*` telemetry stamps (Suitcase Fusion / Connect Fonts) — snake_case with no time word, so the global CamelCase patterns missed them. Its real prefs stay.
+- Filter Setapp's short-lived job markers (`*ActiveRefreshSession*`, `UpdatingSearchIndexItem-*`) — deleted as soon as the job ends, so each surfaced as a spurious Delete. Its real prefs stay.
+- Opening/closing the Character Viewer no longer emits a half-built array element and its delete. Scoped to the active-sources array, so enabling it in Settings > Keyboard still emits.
+- The array add/delete caveats are half as long.
+- Filter Finder `PreviewPane*Width` — the default pane width the Finder writes when the pane appears, emitted alongside a real view-style change. `ShowPreviewPane` and `PreviewPaneSettings` stay.
+
+### Note
+- The display-UUID `# NOTE:` no longer explains what `--mdm` cannot do when you are not using `--mdm`; outside that mode it says what matters instead — the command names one monitor.
+- The `# NOTE:`s that caution a change may not be yours were swept. They only appear once a flood actually arrives, and each now states when its caveat applies instead of casting doubt on a single deliberate toggle.
+- README: running without `sudo` was described as "still functional, but slower". Measured false — it now names what root actually adds (system prefs, sharing commands, launchd state, `fs_usage`).
+- The log header now records the prefwatch and macOS versions (`prefwatch 1.4.2 on macOS 26.6.2 (25G83)`) — the two facts a bug report needs and no one thinks to include.
+- The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".
+
 ## 1.4.1 — 2026-07-31
 
 ### Fix

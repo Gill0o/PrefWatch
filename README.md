@@ -4,7 +4,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`scutil`, `systemsetup`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `launchctl`, `dscl`)
+- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`scutil`, `systemsetup`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `cupsctl`, `launchctl`, `dscl`)
 - **ALL mode** — watch every domain at once; no need to know which one changed (`fs_usage` + polling)
 - **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
@@ -62,11 +62,9 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 - [`dockutil`](https://github.com/kcrawford/dockutil) — Dock items and order
 - [`desktoppr`](https://github.com/scriptingosx/desktoppr) — desktop wallpaper
 
-All three are standout, widely-used tools — essential kit for any Mac admin.
-
 ## Detection
 
-- ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
+- ALL mode without `sudo` covers user preferences in full. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take several seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security

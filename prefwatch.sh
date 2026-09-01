@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.4.1
+# Version: 1.4.2
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -9,34 +9,11 @@
 # Usage:
 #
 # CLI Mode (direct execution):
-#   ./prefwatch.sh [domain] [OPTIONS]
+#   ./prefwatch.sh [domain] [OPTIONS]        [domain] defaults to ALL
 #
-#   Arguments:
-#     [domain]              Preference domain (default: "ALL")
-#                           Examples: NSGlobalDomain, com.apple.finder, ALL
-#
-#   Options:
-#     -l, --log <path>      Custom log file path (default: auto-generated)
-#     -s, --include-system  Include system preferences in ALL mode (default)
-#     --no-system           Exclude system preferences in ALL mode
-#     -v, --verbose         Show detailed debug output with timestamps
-#     -q, --only-cmds       Show only executable commands (default)
-#     --debug               Log '# FILTERED: …' for suppressed detected changes
-#     -e, --exclude <glob>  Comma-separated glob patterns to exclude
-#     -h, --help            Show this help message
-#     --mdm                 MDM deployment mode: wrap user-domain commands in a
-#                           runAsUser helper so a root Jamf policy applies them
-#                           in the logged-in user's context, and templatize
-#                           PlistBuddy paths ($loggedInUser home, $UUID ByHost)
-#     --no-console          Don't open Console.app / don't stop when it closes
-#                           (run until Ctrl+C) — for interactive/VM testing
-#
-#   Examples:
-#     ./prefwatch.sh                    # Monitor ALL (default)
-#     ./prefwatch.sh -v                 # Monitor ALL verbose
-#     ./prefwatch.sh --log /tmp/all.log # Monitor ALL with custom log
-#     ./prefwatch.sh NSGlobalDomain     # Monitor specific domain
-#     ./prefwatch.sh com.apple.finder -v # Specific domain verbose
+#   Options and examples: run `./prefwatch.sh --help` (see show_help() below).
+#   That is the single source for the CLI surface — this header used to repeat it
+#   and the two drifted (--hot-domains was documented in only one of them).
 #
 # Jamf Pro Mode (automatic detection):
 #   When run via Jamf Pro, parameters are automatically shifted.
@@ -138,15 +115,11 @@ Examples:
   ./prefwatch.sh --no-system
 
 Jamf Pro Mode:
-  When run via Jamf Pro, use positional parameters:
-    $4 = Domain
-    $5 = Log path
-    $6 = INCLUDE_SYSTEM (true/false)
-    $7 = ONLY_CMDS (true/false)
-    $8 = EXCLUDE_DOMAINS
-    $9 = MDM_OUTPUT (true/false)
-    $10 = HOT_DOMAINS (comma-separated; "NONE" to disable)
-    $11 = DEBUG (true/false) — log '# FILTERED: …' for suppressed changes
+  Parameters are read from $4 onward ($1-$3 are Jamf-reserved):
+    $4 domain · $5 log path · $6 include-system · $7 only-cmds · $8 exclusions
+    $9 MDM output · $10 hot domains · $11 debug
+  Each is documented in full in the "Jamf Parameters" block at the top of this
+  script — that header is the single source for them.
 
 EOF
   exit 0
@@ -877,12 +850,19 @@ get_plist_path() {
   fi
 }
 
-# Derive a "defaults" domain from a .plist path
+# Derive a "defaults" domain from a .plist path.
+# Fork-free: this is the most-multiplied helper in the file — once per plist during
+# the ALL-mode snapshot (hundreds) and again on every fs_usage/poll event — so the
+# former `basename` + `sed` pair (2 forks per call) is done with zsh builtins.
+# `${p:t}` is basename; the ByHost UUID suffix is stripped by `${dom%.*}` because a
+# trailing 8+ hex/dash segment never itself contains a '.', making it exactly the
+# match the old `sed -E 's/\.[0-9A-Fa-f-]{8,}$//'` removed.
 domain_from_plist_path() {
   local p="$1" base dom
-  base="$(/usr/bin/basename "$p")"
+  base="${p:t}"
   dom="${base%.plist}"
-  printf '%s\n' "$dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//' || printf '%s\n' "$dom"
+  [[ "$dom" =~ '\.[0-9A-Fa-f-]{8,}$' ]] && dom="${dom%.*}"
+  printf '%s\n' "$dom"
 }
 
 # Hash a path for cache file naming (cached to avoid repeated md5 forks)
@@ -1221,6 +1201,14 @@ is_noisy_key() {
           return 0 ;;
         # Noisy: View Options panel window position (Cmd+J panel)
         PreviewOptionsWindow.Location)
+          return 0 ;;
+        # Preview-pane geometry: the Finder writes the default width (240) as a
+        # side-effect of showing the pane — switching to Gallery view emits it
+        # alongside the real FXPreferredViewStyle change. Same class as the
+        # already-filtered *SidebarWidth* / *.column.*.width. Scoped to the two
+        # width keys so ShowPreviewPane (⌘⇧P, a real toggle) and
+        # PreviewPaneSettings (attribute list, has its own NOTE) both survive.
+        PreviewPane*Width)
           return 0 ;;
         # Keep: ShowPathbar, AppleShowAllFiles, FXPreferredViewStyle, etc.
       esac
@@ -1661,6 +1649,34 @@ is_noisy_key() {
       esac
       ;;
 
+    # Extensis Suitcase Fusion / Connect Fonts — last_sent_* are telemetry
+    # bookkeeping: the ISO-8601 instant at which the app last shipped diagnostics
+    # or metrics, rewritten on every send. "last sent" describes an event that
+    # already happened, never a setting. They escape the global timestamp patterns
+    # because those target CamelCase (*Date, *Time, *Timestamp) while these are
+    # snake_case with no time word in the name.
+    # Per-KEY, never the domain: it also holds real prefs — SUAutomaticallyUpdate
+    # (Sparkle auto-update) and vault.path (the font vault location).
+    com.extensis.*)
+      case "$keyname" in
+        last_sent_*) return 0 ;;
+      esac
+      ;;
+
+    # Setapp desktop client — writes short-lived work markers that it deletes as
+    # soon as the job ends, so each one surfaces as a spurious Delete. Observed
+    # seven in a single session. *ActiveRefreshSession* carries a fresh UUID per
+    # scheduled refresh (the global UUID rule misses it: the UUID is glued to the
+    # end of the key, it is not the whole key), and UpdatingSearchIndexItem-<id>
+    # marks an in-flight index update. Per-KEY, never the domain: this plist also
+    # holds ~89 keys of real settings — SUAutomaticallyUpdate, soundEffects,
+    # searchHistoryEnabled, assistantButtonPosition, <id>-favorites.
+    com.setapp.*)
+      case "$keyname" in
+        *ActiveRefreshSession*|UpdatingSearchIndexItem-*) return 0 ;;
+      esac
+      ;;
+
     # Office apps: UAE* = Unexpected Application Exit bookkeeping (the crash
     # detector sets a marker on launch and clears it on a clean quit), rewritten
     # on every launch/quit cycle. Never a setting. Real Office prefs don't carry
@@ -1723,6 +1739,25 @@ is_noisy_command() {
 
   return 1
 }
+
+# Array ELEMENTS that are pure churn, identified by a marker value appearing
+# anywhere in the element's dict. is_noisy_pbcmd below can only judge ONE emitted
+# line at a time, so it drops the single line carrying the marker and leaves its
+# siblings — a half-built dict plus its Delete, repeating on every open/close.
+# Deletions are worse: the shell is only told the element's key NAMES, never the
+# values, so it cannot recognise the element at all. The Python workers do have
+# the whole element, so the LIST lives here (single source of truth) and is passed
+# to them as data — no second copy of the rule to drift out of sync.
+#
+# Format: domain|array|marker — scoped to ONE array on purpose. CharacterPaletteIM
+# appears in BOTH HIToolbox arrays and they mean opposite things:
+#   AppleSelectedInputSources = the ACTIVE source; the Character Viewer adds itself
+#     when opened and removes itself when closed → churn.
+#   AppleEnabledInputSources  = the list in Settings > Keyboard; enabling the viewer
+#     there is a deliberate, deployable setting → must survive.
+# A bare marker would silence both. Also NOT matching "Non Keyboard Input Method" —
+# com.apple.PressAndHold is one too and does not behave this way.
+typeset -ga _ELEMENT_NOISE_MARKERS=('com.apple.HIToolbox|AppleSelectedInputSources|CharacterPaletteIM')
 
 # Filter noisy key paths in PlistBuddy commands
 # Extracts top-level key and delegates to is_noisy_key(), then checks sub-key patterns
@@ -1845,9 +1880,13 @@ is_noisy_pbcmd() {
       esac
       ;;
     com.apple.HIToolbox)
-      # Noisy: Character Palette (Emoji viewer) add/remove on open/close
+      # Character Palette (Emoji viewer) add/remove on open/close — but ONLY in
+      # AppleSelectedInputSources (the active source). The same bundle id also sits
+      # in AppleEnabledInputSources, which is the Settings > Keyboard list: enabling
+      # the viewer there is a deliberate, deployable setting and must survive.
+      # A bare *CharacterPaletteIM* match silenced both.
       case "$pb_cmd" in
-        *"CharacterPaletteIM"*)
+        *":AppleSelectedInputSources:"*"CharacterPaletteIM"*)
           return 0 ;;
       esac
       ;;
@@ -1963,13 +2002,16 @@ dump_plist_json() {
     : > "$out" 2>/dev/null || true
     return
   fi
-  # Try plutil first (fastest)
-  # Note: plutil -convert with -o writes output to file, error messages go to stdout (not stderr)
-  # so we must suppress both stdout and stderr to avoid visible errors on Sonoma
-  if /usr/bin/plutil -convert json -o "$out" "$src" >/dev/null 2>&1; then
-    [ -s "$out" ] && return
-  fi
-  # Fallback: Python plistlib (handles binary data like NSData in Dock plist)
+  # plistlib FIRST, plutil only as a fallback. `plutil -convert json` cannot
+  # represent a float whose value is integral: <real>2</real> becomes `2`, which
+  # json.load reads back as an int, so pb_type_value emits `integer 2` for what is
+  # really a real — a command that looks right and writes the wrong type (caught by
+  # the array-float case). Python's json.dump writes 2.0 and round-trips as float.
+  # This is not a new representation: plutil already FAILS on any plist holding
+  # <data> or <date> (JSON has no such types), so the plistlib output below is
+  # already what the diff engine sees for those. Cost is ~38ms vs ~5ms per plist,
+  # paid only when a plist actually changes — never during the startup snapshot,
+  # which passes skip_arrays=true and dumps no JSON at all.
   if [ -n "$PYTHON3_BIN" ]; then
     "$PYTHON3_BIN" - "$src" "$out" <<'PYJSON' 2>/dev/null && return
 import plistlib, json, sys, datetime
@@ -1991,6 +2033,11 @@ def sanitize(obj):
 with open(out, 'w') as f:
     json.dump(sanitize(data), f)
 PYJSON
+  fi
+  # Fallback when python3 is absent or plistlib chokes: plutil, lossy on integral
+  # floats but better than no JSON at all (the array/dict diff engine needs it).
+  if /usr/bin/plutil -convert json -o "$out" "$src" >/dev/null 2>&1; then
+    [ -s "$out" ] && return
   fi
   : > "$out" 2>/dev/null || true
 }
@@ -2029,9 +2076,17 @@ extract_type_value_with_plutil() {
   return 0
 }
 
-# Convert a defaults delete command to PlistBuddy
+# Convert a defaults delete command to PlistBuddy.
+# Args: $1 = the `defaults … delete …` command, $2 = OPTIONAL real plist path.
+#
+# $2 exists because the command's `-currentHost` flag cannot survive this
+# conversion: the regex below captures the flag group and discards it, and
+# get_plist_path has no ByHost branch — so a ByHost deletion was emitted against
+# ~/Library/Preferences/<dom>.plist instead of ByHost/<dom>.<UUID>.plist (a file
+# that may not even exist, or whose same-named key is unrelated). Callers that
+# know the file they diffed pass it here; without it the old behaviour stands.
 convert_delete_to_plistbuddy() {
-  local cmd="$1"
+  local cmd="$1" path_override="${2:-}"
 
   local domain target
   domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+([^[:space:]]+).*/\2/p')
@@ -2042,7 +2097,11 @@ convert_delete_to_plistbuddy() {
   [ -n "$target" ] || return 1
 
   local plist_path
-  plist_path="$(get_plist_path "$domain")"
+  if [ -n "$path_override" ]; then
+    plist_path="$path_override"
+  else
+    plist_path="$(get_plist_path "$domain")"
+  fi
 
   local is_array_deletion=false
   if [[ "$target" =~ ':[^:]+:[0-9]+$' ]]; then
@@ -2052,7 +2111,10 @@ convert_delete_to_plistbuddy() {
   if [ "$is_array_deletion" = "true" ]; then
     # WARNING is deduped by the caller (parent scope) — this function runs in a
     # $() subshell so setting the flag here would be lost.
-    printf '# WARNING: Array deletion - indexes shift after each delete; if removing several, run the commands in the order shown (do not reorder)\n'
+    # The "# WARNING: array deletes" prefix is a DEDUP KEY: _emit_cmd and
+    # emit_array_deletions match on it to show this once per burst. Changing the
+    # wording without updating both `case` patterns silently re-enables the spam.
+    printf '# WARNING: array deletes shift indexes — run these in the order shown\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
@@ -2069,6 +2131,13 @@ convert_delete_to_plistbuddy() {
 # Builds the `defaults`/PlistBuddy commands and routes them through the
 # filters/logging — the bridge between the diff engine and the log output.
 
+# Single quote and its shell-escaped form ('\''), assembled character by character:
+# spelling that sequence inline inside a ${var//…/…} replacement is a
+# backslash-escaping trap that silently yields the wrong string (verified).
+# Used to close a single-quoted PlistBuddy `-c '…'` expression around a quote.
+typeset -g _SQ="'"
+typeset -g _SQ_ESC="${_SQ}\\${_SQ}${_SQ}"
+
 # Escape a value for safe embedding inside a double-quoted shell string in an
 # emitted command: backslash, double-quote, $ and backtick — else a pref value
 # containing `$(…)`, `$VAR` or backticks would execute/expand when the logged
@@ -2083,6 +2152,13 @@ _build_defaults_write_cmd() {
   local actual_type="" type_val noquotes str cmd=""
   local plutil_result plutil_type plutil_value
 
+  # Harden the KEY the same way values are (_escape_dq): it is embedded in a
+  # double-quoted shell string in the emitted command, so a key containing " or $
+  # or a backtick would otherwise break the command — or, worse, run a command
+  # substitution when the logged line is pasted back into a shell. The probe below
+  # keeps the RAW "$keyname": it passes it as a real argv word, not as shell text.
+  local _kn; _kn=$(_escape_dq "$keyname")
+
   # System-level pref: emit (and type-probe) the root-owned /Library/Preferences
   # file by full path — `defaults` accepts a path in place of a bare domain and
   # appends .plist. A bare domain would replay into the console user's ~ copy.
@@ -2093,47 +2169,54 @@ _build_defaults_write_cmd() {
   # and fails ("Domain not found") — the empty probe then fell through to the 0/1
   # heuristic below and emitted `-bool FALSE` for what is really `-int 0` (proven on
   # wvous-tr-modifier). System prefs are a /Library/Preferences PATH: keep them root-read.
+  #
+  # The space MUST stay OUTSIDE the braces: `${hostflag:+$hostflag }read-type` does NOT
+  # word-split in zsh (the space is part of the substitution), so `defaults` got the single
+  # argument "-currentHost read-type", rejected it (exit 255 → pipefail → the `|| …=""`
+  # guard blanked the probe) and EVERY ByHost scalar fell through to the value-shape
+  # heuristic — the same class of bug 1.4.0 fixed for non-ByHost keys. With the space
+  # outside, an empty $hostflag still collapses to nothing, so both forms stay correct.
   if [ "${_EMIT_SYS:-false}" = "true" ]; then
-    actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+    actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag} read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
   else
-    actual_type=$("${RUN_AS_USER[@]}" /usr/bin/defaults ${hostflag:+$hostflag }read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
+    actual_type=$("${RUN_AS_USER[@]}" /usr/bin/defaults ${hostflag:+$hostflag} read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
   fi
 
   if [ "$actual_type" = "float" ]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${trimmed}"
   elif [ "$actual_type" = "integer" ]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${trimmed}"
   elif [ "$actual_type" = "boolean" ]; then
     type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
     noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
     str=$(_escape_dq "$noquotes")
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -string \"${str}\""
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -string \"${str}\""
   elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
     type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
     type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${trimmed}"
   elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${trimmed}"
   else
     if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
       plutil_type="${plutil_result%%|*}"
       plutil_value="${plutil_result#*|}"
       case "$plutil_type" in
-        string) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
-        bool)   cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -bool ${plutil_value}" ;;
-        int)    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -int ${plutil_value}" ;;
-        float)  cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" -float ${plutil_value}" ;;
+        string) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
+        bool)   cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${plutil_value}" ;;
+        int)    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${plutil_value}" ;;
+        float)  cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${plutil_value}" ;;
         array|dict) cmd="" ;;
-        *) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" <type> <value>" ;;
+        *) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" <type> <value>" ;;
       esac
     else
-      cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${keyname}\" <type> <value>"
+      cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" <type> <value>"
     fi
   fi
 
@@ -2150,6 +2233,10 @@ _build_defaults_delete_cmd() {
   else
     target="$keyname"
   fi
+  # Same hardening as the write emitter: the target lands inside a double-quoted
+  # shell string, so " / $ / backtick in a key must not break (or execute in) the
+  # emitted command. Array targets are digits+name and unaffected in practice.
+  target=$(_escape_dq "$target")
   if [ -n "$hostflag" ]; then
     printf 'defaults %s delete %s "%s"' "$hostflag" "$dom" "$target"
   else
@@ -2190,8 +2277,15 @@ _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: the Device.mntr.<UUID> is the DISPLAY's own UUID (per-monitor), not the Mac's —"
-  _log_kind "$kind" "Cmd: #       --mdm can't templatize it. On the target, list displays and pick the one you set:"
+  _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID — per-monitor, and different on every Mac."
+  # The "--mdm can't templatize it" half is only meaningful to someone who asked
+  # for deployable output. Outside --mdm it answered a question nobody had put,
+  # and buried the one fact that matters here: this command names one monitor.
+  if [ "$MDM_OUTPUT" = "true" ]; then
+    _log_kind "$kind" "Cmd: #       --mdm cannot templatize it. On the target, list displays and pick the one you set:"
+  else
+    _log_kind "$kind" "Cmd: #       This command targets that monitor alone. To replay elsewhere, list displays there:"
+  fi
   _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
 }
 
@@ -2263,7 +2357,9 @@ _mdm_wrap() {
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
 _emit_cmd() {
-  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4"
+  # $5 = OPTIONAL real plist path, forwarded to convert_delete_to_plistbuddy so a
+  # ByHost deletion targets the ByHost file (see that function's comment).
+  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4" emit_plist_path="${5:-}"
 
   [ -n "$cmd" ] || return 0
   if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command)"; return 0; fi
@@ -2284,12 +2380,12 @@ _emit_cmd() {
 
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
-    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" 2>/dev/null); then
+    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
           # "Cmd: " prefix on comment lines too, else ONLY_CMDS (Jamf) drops them.
-          "# WARNING: Array deletion"*)
+          "# WARNING: array deletes"*)
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
           *)    _note_byhost_uuid "$kind" "$pb_line" "${${pb_line#*-c \'}%%\'*}"
@@ -2370,7 +2466,10 @@ _process_py_meta() {
       fi
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
-      _pb_esc=$(printf '%s' "$_pb_cmd" | /usr/bin/sed "s/'/'\\\\''/g")
+      # Builtin (one fork saved per emitted PBCMD line). The replacement is built
+      # character by character — writing '\'' inline in a substitution is a
+      # backslash-escaping trap that silently produces the wrong string.
+      _pb_esc="${_pb_cmd//$_SQ/$_SQ_ESC}"
       # …then break out of those single quotes around the templatized $loggedInUser
       # so the shell actually expands it at run time (single quotes would keep it literal).
       [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
@@ -2389,7 +2488,7 @@ _process_py_meta() {
       IFS=',' read -rA _array_key_list <<< "$_array_keys"
       for _k in "${_array_key_list[@]}"; do
         [ -n "$_k" ] || continue
-        _k=$(printf '%s' "$_k" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        _k="${_k#"${_k%%[![:space:]]*}"}"; _k="${_k%"${_k##*[![:space:]]}"}"   # trim, fork-free
         [ -n "$_k" ] || continue
         _SKIP_KEYS["$_k"]=1
         _SKIP_KEYS["${_array_base}:${_k}"]=1
@@ -2410,15 +2509,21 @@ _process_py_meta() {
 # Args: kind dom hostflag prev curr type_src diff_label
 # Reads: _SKIP_KEYS, _HAS_ARRAY_ADDITIONS.
 _process_diff_lines() {
-  local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7"
+  # $8 = OPTIONAL real plist path for delete emission. Deliberately NOT type_src:
+  # show_plist_diff passes the real file there, but show_domain_diff passes a
+  # CACHE file ($tmpplist) — reusing it would point PlistBuddy at the cache.
+  # Domain mode passes empty and keeps the get_plist_path fallback.
+  local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7" emit_plist_path="${8:-}"
   [ -s "$prev" ] || return 0
 
   typeset -A _added_keys
   _added_keys=()
-  local _aline _ak
+  local _aline
   while IFS= read -r _aline; do
-    _ak=$(printf '%s' "$_aline" | /usr/bin/sed -nE 's/^\+[[:space:]]*"([^"]+)".*/\1/p')
-    [ -n "$_ak" ] && _added_keys["$_ak"]=1
+    # Builtin regex — was a sed fork per ADDED diff line. Wrapped in `if` (not
+    # `[[ … ]] && …`): a non-matching line would make the loop body's last command
+    # return 1, which is exactly the shape that can trip ERR_EXIT under `set -e`.
+    if [[ "$_aline" =~ '^\+[[:space:]]*"([^"]+)"' ]]; then _added_keys["$match[1]"]=1; fi
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
 
   local dline kv keyname val snippet pretty_key array_meta array_name array_idx trimmed cmd delete_cmd
@@ -2428,11 +2533,11 @@ _process_diff_lines() {
     _log_kind "$kind" "Diff $diff_label: $dline"
 
     array_meta="" array_name="" array_idx=""
-    kv=$(printf '%s' "$dline" | /usr/bin/sed -nE 's/^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$/\1|\2/p')
-    [ -n "$kv" ] || continue
-
-    keyname="${kv%%|*}"
-    val="${kv#*|}"
+    # Builtin regex instead of a sed fork per diff line. $match yields the key and
+    # the value directly, so they no longer round-trip through a `key|value` string.
+    [[ "$dline" =~ '^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$' ]] || continue
+    keyname="$match[1]"
+    val="$match[2]"
 
     [ -n "${_SKIP_KEYS[$keyname]:-}" ] && continue
 
@@ -2455,14 +2560,16 @@ _process_diff_lines() {
       pretty_key="$keyname"
     fi
 
-    snippet=$(printf '%s' "$val" | /usr/bin/tr '\n' ' ' | /usr/bin/awk '{s=$0; if(length(s)>160) {print substr(s,1,157) "..."} else {print s}}')
+    # Newlines to spaces, truncated to 160 with an ellipsis — builtin (was tr+awk).
+    snippet="${val//$'\n'/ }"
+    (( ${#snippet} > 160 )) && snippet="${snippet[1,157]}..."
     _log_kind "$kind" "Key: ${pretty_key} | Item: ${snippet}"
 
     case "$dline" in
       +*)
         [ -n "$array_name" ] && continue
         [[ "$dline" =~ ^[+][[:space:]]{4,}\" ]] && continue
-        trimmed=$(printf '%s' "$val" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        trimmed="${val#"${val%%[![:space:]]*}"}"; trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
         cmd=$(_build_defaults_write_cmd "$dom" "$keyname" "$trimmed" "$hostflag" "$type_src")
         _emit_cmd "$kind" "$cmd" "$dom" false
         ;;
@@ -2475,7 +2582,7 @@ _process_diff_lines() {
           continue
         fi
         delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
-        _emit_cmd "$kind" "$delete_cmd" "$dom" true
+        _emit_cmd "$kind" "$delete_cmd" "$dom" true "$emit_plist_path"
         ;;
     esac
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
@@ -2511,10 +2618,26 @@ emit_array_additions() {
   if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
     py_output=$(< "$precomputed")
   else
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Element-level noise rules from the shell (_ELEMENT_NOISE_MARKERS), as
+# domain|array|marker triplets so the rule has ONE home AND a precise scope — the
+# same marker can be churn in one array and a real setting in its sibling. An
+# element whose dict carries the marker is skipped WHOLE; filtering it line by
+# line would leave a half-built dict behind.
+_NOISE_RULES = []
+for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
+    _parts = _spec.split('|')
+    if len(_parts) == 3:
+        _NOISE_RULES.append(tuple(_parts))
+def is_noise_element(arr_name, item):
+    if not _NOISE_RULES:
+        return False
+    blob = json.dumps(item, sort_keys=True, default=str)
+    return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2530,6 +2653,10 @@ curr = load(curr_path)
 
 results = []
 
+# SHARED BLOCK — load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
+# repeated verbatim in the three Python workers (emit_array_additions,
+# _py_deletions_raw, emit_nested_dict_changes). Kept duplicated on purpose: each
+# worker stays a self-contained, readable <<'PY' heredoc. EDIT ALL THREE TOGETHER.
 # Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
 # Must be stripped before comparing array elements to avoid phantom add/delete
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
@@ -2635,8 +2762,14 @@ _array_add_noted = False
 for prefix, index, item in results:
     if len(prefix) != 1:
         continue
-    # Skip reorders: if array length is the same, elements just moved (not added)
     arr_name = prefix[0]
+    # Whole-element noise (e.g. the Character Viewer re-adding itself): skip before
+    # anything is printed, so neither the element's Add lines NOR the positional
+    # NOTE that precedes them are emitted. Needs arr_name — the rule is scoped to
+    # one array, since the same marker is a real setting in the sibling array.
+    if is_noise_element(arr_name, item):
+        continue
+    # Skip reorders: if array length is the same, elements just moved (not added)
     if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
         continue
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
@@ -2645,7 +2778,7 @@ for prefix, index, item in results:
     # Adding to an EXISTING array: the index is positional. Warn once — a target
     # whose array has a different length won't get the element at the same spot.
     if not _array_add_noted:
-        print("PBCMD\t# NOTE: array element added at positional index :N — PlistBuddy addresses by position, not content; may land wrong if the target's array differs")
+        print("PBCMD\t# NOTE: array index :N is positional — may land elsewhere if the target's array differs")
         _array_add_noted = True
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
@@ -2730,8 +2863,9 @@ _note_dockutil_alt() {
 }
 
 # Emit contextual notes for domains that need extra steps
+typeset -gA _BULK_N=() _BULK_SEEN_AT=()
 _emit_contextual_note() {
-  local dom="$1" array_base="$2" _note=""
+  local dom="$1" array_base="$2" _note="" _bulk_only=false
   case "$dom" in
     com.apple.HIToolbox)
       case "$array_base" in
@@ -2756,18 +2890,24 @@ _emit_contextual_note() {
     com.apple.symbolichotkeys)
       _note="Keyboard shortcut changes require logout/login to take effect"
       case "$array_base" in
-        AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
+        AppleSymbolicHotKeys) _note="macOS rewrites a shortcut's parameters the first time it is enabled or disabled — if a binding you never touched shows up here, that is why" ;;
       esac ;;
     com.apple.finder)
       _note="Finder prefs apply on a new window or after 'killall Finder'; icon/list View Options (Cmd+J) need 'Use as Defaults' to be detectable"
       case "$array_base" in
-        PreviewPaneSettings) _note="First opening Finder Preview pane options writes the full attribute list — only subsequent toggles reflect actual modifications" ;;
-        StandardViewSettings) _note="First 'Use as Defaults' on a Finder view writes the entire view-settings structure (every column) — only subsequent toggles reflect actual changes" ;;
+        PreviewPaneSettings) _note="opening Finder's Preview pane options writes the full attribute list at once — if the whole list is here, most of it is not your change" ;;
+        StandardViewSettings) _note="'Use as Defaults' on a Finder view writes the entire structure, every column — if all of them are here, most are not your change" ;;
       esac ;;
+    # Both fire on EVERY emission from their domain, including a single deliberate
+    # toggle — there is no count of how many keys are going out. Worded as a flat
+    # "only subsequent changes are real", that casts doubt on a perfectly correct
+    # one-line command. So the condition lives in the sentence, the same way the
+    # `new key tree` note handles it: the reader can see whether many keys came at
+    # once, and the note only claims something when they did.
     com.apple.WindowManager)
-      _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+      _note="opening Desktop & Dock settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
     com.apple.universalaccess)
-      _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+      _note="opening Accessibility settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
     com.apple.prodisplaylibrary)
       _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
   esac
@@ -2780,9 +2920,25 @@ _emit_contextual_note() {
     # (deliberately un-filtered in an earlier version) — so annotate instead.
     # Both spellings: metadata reports the top-level key or the nested array name.
     NSToolbar\ Configuration*|TB\ Item\ Identifiers*)
-      _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations; 'TB Is Shown' can also be rewritten by the app itself on window open/close" ;;
+      _note="opening this window writes the full toolbar layout at once — if the whole layout is here, most of it is not a customization; 'TB Is Shown' is also rewritten by the app on window open/close" ;;
   esac
   [ -n "$_note" ] || return 0
+
+  # A "first open writes everything" note is only true when a lot arrives at
+  # once. It used to print on EVERY change to its domain, so a single deliberate
+  # toggle carried a paragraph about defaults nobody set. Rewording made it
+  # harmless; it did not make it useful. The note is emitted BEFORE the commands,
+  # so the count is not known yet — hence: count them as they go, stay silent
+  # until the burst is undeniably a flood, and print once at that point. A lone
+  # toggle never reaches the threshold and gets no note at all.
+  if [ "${_bulk_only:-false}" = true ]; then
+    local _now=$EPOCHSECONDS
+    (( _now - ${_BULK_SEEN_AT[$dom]:-0} > _NOTE_BURST_GAP )) && _BULK_N[$dom]=0
+    _BULK_SEEN_AT[$dom]=$_now
+    _BULK_N[$dom]=$(( ${_BULK_N[$dom]:-0} + 1 ))
+    (( ${_BULK_N[$dom]} >= 4 )) || return 0
+  fi
+
   # Dedup per burst (sliding window): show once, re-show only after quiet
   _note_should_show "${dom}:${_note}" || return 0
   log_line "Cmd: # NOTE: $_note"
@@ -2795,10 +2951,25 @@ _py_deletions_raw() {
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
-  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Element-level noise rules from the shell (_ELEMENT_NOISE_MARKERS), as
+# domain|array|marker triplets. Deletions are the case the shell CANNOT judge on
+# its own: it is handed the element's key names, never the values, so the marker
+# is invisible to it.
+_NOISE_RULES = []
+for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
+    _parts = _spec.split('|')
+    if len(_parts) == 3:
+        _NOISE_RULES.append(tuple(_parts))
+def is_noise_element(arr_name, item):
+    if not _NOISE_RULES:
+        return False
+    blob = json.dumps(item, sort_keys=True, default=str)
+    return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2814,6 +2985,10 @@ curr = load(curr_path)
 
 results = []
 
+# SHARED BLOCK — load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
+# repeated verbatim in the three Python workers (emit_array_additions,
+# _py_deletions_raw, emit_nested_dict_changes). Kept duplicated on purpose: each
+# worker stays a self-contained, readable <<'PY' heredoc. EDIT ALL THREE TOGETHER.
 # Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
                   'is-beta', 'tile-type', 'GUID', 'book'}
@@ -2862,6 +3037,9 @@ for path_tuple, index, item in results:
     if len(path_tuple) != 1:
         continue
     array_name = path_tuple[-1] if path_tuple else ""
+    # Whole-element noise — the half the shell can never see (it gets key names, not values).
+    if is_noise_element(array_name, item):
+        continue
     # Skip reorders: if array length is the same, elements just moved (not deleted)
     if array_name in prev and array_name in curr and isinstance(prev[array_name], list) and isinstance(curr[array_name], list) and len(prev[array_name]) == len(curr[array_name]):
         continue
@@ -2882,7 +3060,10 @@ PY
 
 # Detect and emit commands for array deletions
 emit_array_deletions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
+  # $6 = OPTIONAL real plist path. The delete_cmd built below carries no host
+  # flag at all, so without this a ByHost array deletion targeted the any-host
+  # file. _run_py_diff_workers already holds the path and forwards it.
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}" emit_plist_path="${6:-}"
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
@@ -2927,11 +3108,11 @@ emit_array_deletions() {
       :
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
-      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" 2>/dev/null); then
+      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
-            "# WARNING: Array deletion"*)
+            "# WARNING: array deletes"*)
               _note_should_show __array_del_warning__ || continue ;;
           esac
           # Comments pass through as-is; only the real PlistBuddy command is
@@ -2977,6 +3158,10 @@ def load(path):
 prev = load(prev_path)
 curr = load(curr_path)
 
+# SHARED BLOCK — load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
+# repeated verbatim in the three Python workers (emit_array_additions,
+# _py_deletions_raw, emit_nested_dict_changes). Kept duplicated on purpose: each
+# worker stays a self-contained, readable <<'PY' heredoc. EDIT ALL THREE TOGETHER.
 # Keys with volatile metadata that changes on every plist rewrite (timestamps, internal IDs)
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
                   'is-beta', 'tile-type', 'GUID', 'book'}
@@ -2990,6 +3175,7 @@ def strip_volatile(obj):
     return obj
 
 def pb_type_value(val):
+    """Return (type, value) for PlistBuddy Add command"""
     if isinstance(val, bool):
         return ("bool", "true" if val else "false")
     if isinstance(val, int):
@@ -3108,7 +3294,15 @@ for top_key in sorted(curr.keys()):
     if top_key not in prev:
         # New top-level dict/list: emit Add commands for entire tree
         if not _first_create_noted:
+            # The "mostly defaults" warning lives HERE and not in a per-domain
+            # table: this note fires exactly when a whole tree appears, which IS
+            # the first-open-a-settings-pane case (observed: opening the login
+            # screen's Accessibility options emitted fourteen Add lines, thirteen
+            # of them untouched defaults). A per-domain entry would only ever
+            # cover the panes someone happened to open; this covers all of them,
+            # and the "If" keeps it from over-claiming on a small deliberate tree.
             print("PBCMD\t# NOTE: new key tree — the Add commands build it top-down; later changes to it emit Set.")
+            print("PBCMD\t#       If this came from first opening a settings pane, most of these values are untouched defaults, not your choices.")
             _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
@@ -3227,7 +3421,7 @@ _run_py_diff_workers() {
     _HAS_ARRAY_ADDITIONS=true
     _process_py_meta "$kind" "$dom" "$_array_meta_raw" "$pb_plist_path"
   fi
-  emit_array_deletions "$kind" "$dom" "$prev_json" "$curr_json" "$_py_del"
+  emit_array_deletions "$kind" "$dom" "$prev_json" "$curr_json" "$_py_del" "$pb_plist_path"
   /bin/rm -f "$_py_add" "$_py_del" "$_py_nest" 2>/dev/null || true
 }
 
@@ -3336,11 +3530,20 @@ show_plist_diff() {
 
   # Mutex for fs_watch ↔ poll_watch on the same plist (wait up to 3s).
   # Reclaim lockdirs > 10s old — owning process was killed before rmdir.
+  # The reclaim must NEVER be skipped: without it a lock orphaned by a killed
+  # holder is never released, and every later diff of that plist burns its 30
+  # attempts and returns — that plist's changes would then go silently unreported
+  # for the rest of the run. So fall back to `stat -f %m` if zsh/stat is absent.
   local lockdir="$CACHE_DIR/${key}.lock"
-  if [ -d "$lockdir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
-    typeset -A _lockstat
-    if zstat -H _lockstat "$lockdir" 2>/dev/null && \
-       (( EPOCHSECONDS - ${_lockstat[mtime]:-0} > 10 )); then
+  if [ -d "$lockdir" ]; then
+    local _lock_mtime=""
+    if [ "$HAVE_ZSH_STAT" = "true" ]; then
+      typeset -A _lockstat
+      zstat -H _lockstat "$lockdir" 2>/dev/null && _lock_mtime="${_lockstat[mtime]:-}"
+    else
+      _lock_mtime=$(/usr/bin/stat -f %m "$lockdir" 2>/dev/null || printf '')
+    fi
+    if [ -n "$_lock_mtime" ] && (( EPOCHSECONDS - _lock_mtime > 10 )); then
       /bin/rmdir "$lockdir" 2>/dev/null || true
     fi
   fi
@@ -3373,12 +3576,23 @@ show_plist_diff() {
     # only syncs the standard plist, so flush the ByHost variant when relevant.
     local _flush_hostflag=""
     [[ "$path" == *"/ByHost/"* ]] && _flush_hostflag="-currentHost"
-    _last_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
+    # mtime via zstat (module loaded at startup) instead of forking `stat -f %m`
+    # up to 6× per retried change. Same integer-seconds granularity, which is what
+    # the same-second fall-through below already relies on.
+    local -A _mst
+    _mtime_of() {
+      if [ "$HAVE_ZSH_STAT" = "true" ]; then
+        zstat -H _mst "$1" 2>/dev/null && printf '%s' "${_mst[mtime]}" || printf ''
+      else
+        /usr/bin/stat -f %m "$1" 2>/dev/null || printf ''
+      fi
+    }
+    _last_mtime=$(_mtime_of "$path")
     for _retry_delay in 0.1 0.2 0.3 0.5 0.7; do
       /bin/sleep "$_retry_delay"
       # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
       "${RUN_AS_USER[@]}" /usr/bin/defaults ${_flush_hostflag:+$_flush_hostflag} read "$_dom" >/dev/null 2>&1 || true
-      _cur_mtime=$(/usr/bin/stat -f %m "$path" 2>/dev/null || echo "")
+      _cur_mtime=$(_mtime_of "$path")
       # Last retry: always dump — stat %m has 1-second granularity so
       # same-second cfprefsd flushes are invisible to the mtime check.
       if [ "$_retry_delay" != "0.7" ] && [ -n "$_cur_mtime" ] && [ "$_cur_mtime" = "$_last_mtime" ]; then
@@ -3417,7 +3631,7 @@ show_plist_diff() {
       _emit_hostflag="-currentHost"
       _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
     fi
-    _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path"
+    _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path" "$path"
     # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
     # Same for menu bar offsets — any domain, so no guard.
@@ -3463,7 +3677,11 @@ show_domain_diff() {
   [ -s "$tmpplist" ] || return 0
   /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
   curr_json="$CACHE_DIR/${key}.curr.json"
-  dump_plist_json "$tmpplist" "$curr_json"
+  # The JSON is ONLY consumed by the Python workers below, which are gated on
+  # skip_arrays. Every ALL-mode caller passes skip_arrays=true (fs_watch/poll_watch
+  # cover those domains via the per-plist diff), so dumping it there cost a plutil
+  # fork per changed domain per event to build a file nothing ever read.
+  [ "$skip_arrays" != "true" ] && dump_plist_json "$tmpplist" "$curr_json"
 
   prev_json="$CACHE_DIR/${key}.prev.json"
   typeset -gA _SKIP_KEYS
@@ -3477,7 +3695,9 @@ show_domain_diff() {
   _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
-  /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
+  # Only advance the JSON baseline when one was actually produced (see above).
+  [ "$skip_arrays" != "true" ] && { /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || : ; }
+  return 0
 }
 
 # ---------------------------------------
@@ -3551,6 +3771,7 @@ launch_console() {
 # "changes may take a few seconds" NOTE; single-domain: right after the Mode line).
 _emit_mdm_resolver_header() {
   [ "$MDM_OUTPUT" = "true" ] || return 0
+  log_line "Cmd: # NOTE: put these 4 lines at the top of your deployment script"
   log_line "Cmd: loggedInUser=\$(/usr/bin/stat -f%Su /dev/console)"
   log_line "Cmd: uid=\$(/usr/bin/id -u \"\$loggedInUser\")"
   log_line "Cmd: UUID=\$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'\"' '/IOPlatformUUID/{print \$4}')"
@@ -3564,6 +3785,15 @@ _emit_mdm_resolver_header() {
 # so one global registry is safe.
 typeset -ga _WATCH_PIDS=()
 _spawn() { "$@" & _WATCH_PIDS+=($!); }
+
+# Teardown shared by start_watch and start_watch_all — the same TERM/INT handler
+# was written out twice verbatim, so a change to one could silently miss the other.
+_watchers_teardown() {
+  kill -TERM ${_WATCH_PIDS[@]} 2>/dev/null || true
+  wait ${_WATCH_PIDS[@]} 2>/dev/null || true
+  /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
+  exit 0
+}
 
 # Declarative watcher registry: "name|guard|fn|summary". SINGLE SOURCE — the
 # guard string (eval'd in an `if`) gates BOTH the spawn AND the "Watchers active:"
@@ -3634,8 +3864,15 @@ _snapshot_watch() {
 start_watch() {
   local plist_path last_mtime current_mtime
 
-  # Try to find the plist file for optimized mtime monitoring
-  plist_path=$(get_plist_path_for_domain "$DOMAIN")
+  # Try to find the plist file for optimized mtime monitoring.
+  # `|| plist_path=""`: the helper legitimately `return 1`s when the domain has no
+  # plist yet — a domain that has never been written, e.g. an app installed but not
+  # configured. Without the guard that non-zero status trips ERR_EXIT and KILLS the
+  # process at startup, so watching such a domain monitored nothing at all and the
+  # only trace was two "# ABORT: set -e" lines in a log file /var/log usually keeps
+  # out of sight. The `if [ -n "$plist_path" ]` below already handles the empty
+  # case — it falls back to full-domain polling, which is exactly right here.
+  plist_path=$(get_plist_path_for_domain "$DOMAIN") || plist_path=""
 
   if [ -n "$plist_path" ]; then
     # Optimized mode: monitor file mtime, only diff when changed
@@ -3690,7 +3927,7 @@ start_watch() {
 
   _emit_mdm_resolver_header
 
-  trap 'kill -TERM ${_WATCH_PIDS[@]} 2>/dev/null || true; wait ${_WATCH_PIDS[@]} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap '_watchers_teardown' TERM INT
   wait
 }
 
@@ -3803,8 +4040,67 @@ start_watch_all() {
     # block buffer waiting for more data (notably for idle domains).
     # script(1) allocates a pty so fs_usage line-buffers; /dev/null is its
     # typescript sink, NOT an output redirect. macOS has no stdbuf — don't drop it.
-    script -q /dev/null /usr/sbin/fs_usage -w -f filesys 2>/dev/null |
-    /usr/bin/sed -l -nE 's@.*(/.*Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
+    # fs_usage lives in /usr/bin, NOT /usr/sbin. The hard-coded /usr/sbin path made
+    # `script` launch a nonexistent binary: the pipeline produced nothing, the while
+    # loop below ended at once, fs_watch returned 0, and 2>/dev/null swallowed the
+    # only clue — so real-time detection was dead and everything ran on poll_watch
+    # alone, with no error anywhere. Resolve the path, and say so when it is missing
+    # rather than failing silently a second time.
+    local _fsu=""
+    for _c in /usr/bin/fs_usage /usr/sbin/fs_usage /sbin/fs_usage; do
+      [ -x "$_c" ] && { _fsu="$_c"; break; }
+    done
+    if [ -z "$_fsu" ]; then
+      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off, polling only"
+      return 0
+    fi
+    # fs_usage is a ktrace client and ktrace admits exactly ONE at a time. A second
+    # one dies instantly with "ktrace_start: Resource busy". That is not exotic: a
+    # prefwatch whose pipeline children were orphaned (the leak fixed in 1.4.2)
+    # leaves an fs_usage holding ktrace forever, and EVERY later run then has a
+    # dead fs_watch. Say it up front — the fix is to stop that process, and
+    # nothing in the log used to hint at it.
+    # NO PREEMPTIVE WARNING. Three versions of this check tried to predict that
+    # fs_usage would fail — by process name, by a list of tracing tools, then by
+    # `ktrace info`. The third was authoritative and still wrong: on a healthy Mac
+    # `ktrace info` reports "Owning process is [N]" for 'tailspind', a routine
+    # Apple daemon, and fs_usage starts perfectly well anyway (verified: fs_usage
+    # running as this process's own descendant while the check said the slot was
+    # taken). "Last configured by" is not "currently holds exclusively", and the
+    # warning would have fired wrongly on a large share of Macs, telling admins
+    # real-time detection was off while it was running.
+    #
+    # So: predict nothing. The post-mortem below fires on EVIDENCE — fs_usage
+    # actually exited — and only then asks ktrace who has it, which is genuinely
+    # useful at that point.
+    local _fsu_who=""
+    local _fsu_err="${PREFWATCH_TMPDIR}/fs_usage.err"
+    # `</dev/null` is NOT cosmetic: script(1) calls tcgetattr on stdin, and under a
+    # Jamf Self Service policy stdin is a SOCKET — it dies with
+    # "script: tcgetattr/ioctl: Operation not supported on socket", the pipeline
+    # produces nothing and real-time detection is silently off. Measured: fails on a
+    # socket and on a pipe, works on a tty and on /dev/null. This is the second,
+    # independent reason fs_watch never ran — and the one that only bites in
+    # production, since a Terminal launch gets a pty and works either way.
+    #
+    # fs_usage runs under `sh -c "exec … 2>>err"`, not directly, because `script`
+    # allocates a pty and the CHILD's stderr goes to that pty — i.e. into script's
+    # stdout, into the sed below, which drops it. The outer `2>>` only ever caught
+    # errors from `script` itself, so the file added to diagnose exactly this kind
+    # of failure stayed empty while fs_usage was dying of "Resource busy"
+    # (demonstrated). Redirecting INSIDE the pty is what actually captures it, and
+    # `exec` keeps the process tree unchanged (script → fs_usage) so the teardown
+    # still finds it.
+    script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f filesys 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
+    # The leading .* MUST NOT swallow the user prefix. With `.*(/.*Library/…)` the
+    # greedy prefix pushed the capture as late as possible, so
+    # /Users/gilles/Library/Preferences/x.plist came out as /Library/Preferences/x.plist —
+    # the awk below then classified it SYSTEM, show_plist_diff looked for a file that
+    # does not exist and returned at once. EVERY user preference fs_watch saw was
+    # silently dropped. Anchoring the capture on a space + a leading '/' fixes it;
+    # the inner (…/)? keeps /Library/… (no prefix) matching, and requiring the '/'
+    # stops the space inside 'Group Containers' from becoming the anchor.
+    /usr/bin/sed -l -nE 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
     /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
       path=$0;
       if (index(path, pu)==1)      { print "USER " path }
@@ -3847,6 +4143,30 @@ start_watch_all() {
         log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
       fi
     done
+    # Reaching here means the pipeline ENDED: fs_usage exited and real-time
+    # detection is over for this run. Previously fs_watch just returned 0 and the
+    # only symptom was changes arriving a second or two later than they should —
+    # indistinguishable from a busy machine. Report it, with whatever fs_usage
+    # said on its way out (now that its stderr is actually captured).
+    local _why=""
+    [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
+    case "$_why" in
+      *"Resource busy"*)
+        # Do not repeat the two-line explanation the pre-check already gave: one
+        # cause, four lines of NOTE, in a log meant to be read. But do NOT drop it
+        # either — the holder may have exited between the check and the start, in
+        # which case this is the first anyone hears of it.
+        # Now that it HAS failed, naming the holder is worth the lookup.
+        if [ -x /usr/bin/ktrace ]; then
+          _fsu_who=$(/usr/bin/ktrace info 2>/dev/null | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1)
+        fi
+        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is taken${_fsu_who:+ (last configured by '$_fsu_who')}."
+        log_line "Cmd: #       Polling still covers everything, just a little slower." ;;
+      "")
+        log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message) — polling continues" ;;
+      *)
+        log_line "Cmd: # NOTE: real-time detection stopped — fs_usage: $_why" ;;
+    esac
   }
 
   # Fallback detector — periodic poll (find -newer) for writes fs_usage buffers/misses.
@@ -3857,12 +4177,17 @@ start_watch_all() {
     # variable that already holds a value prints `foo=value` to stdout; doing
     # it every iteration spammed the output with `_hd=…`/`_adom=…` lines.
     local _hd _af _adom _p _watchdog
-    local -a _pids
+    local -a _pids _hotpaths
     local -A _st
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     active_dir="$PREFWATCH_TMPDIR/active-domains"
     /bin/mkdir -p "$active_dir" 2>/dev/null || true
+    # Hot-marker paths built ONCE: the refresh below used to fork one `touch` per
+    # hot domain per cycle (20 forks every 0.5s, for the life of the process). One
+    # `touch` with all paths does the same job. `${^array}` distributes the prefix.
+    _hotpaths=()
+    (( ${#HOT_DOMAINS[@]} )) && _hotpaths=("$active_dir/"${^HOT_DOMAINS})
     # Only create markers if not pre-initialized (avoids rescanning all plists after initial snapshot)
     [ -f "$marker_user" ] || /usr/bin/touch "$marker_user" 2>/dev/null || true
     [ -f "$marker_sys" ]  || /usr/bin/touch "$marker_sys" 2>/dev/null || true
@@ -3872,9 +4197,7 @@ start_watch_all() {
       # `defaults read` forces cfprefsd to sync pending writes for that domain.
       if [ -d "$active_dir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
         # Refresh hot markers so they never expire via the 30s cleanup below
-        for _hd in "${HOT_DOMAINS[@]}"; do
-          /usr/bin/touch "$active_dir/$_hd" 2>/dev/null || true
-        done
+        (( ${#_hotpaths[@]} )) && { /usr/bin/touch "${_hotpaths[@]}" 2>/dev/null || true; }
         _pids=()
         for _af in "$active_dir"/*(N); do
           [ -f "$_af" ] || continue
@@ -3905,6 +4228,15 @@ start_watch_all() {
         fi
       fi
 
+      # Stamp the NEXT marker BEFORE scanning, and apply it after. Advancing the
+      # marker to "now" once the loop below has finished loses every plist written
+      # during the scan and its processing — and that processing is not brief: the
+      # retry loop in show_plist_diff sleeps up to ~1.8s per changed plist. Such a
+      # file is never `-newer` on the following cycle, so the change is dropped for
+      # good, silently. Proven on a minimal model of this exact pattern: a file
+      # written inside the window went undetected over six cycles with the marker
+      # advanced after, and was caught on the first cycle with it stamped before.
+      /usr/bin/touch "$marker_user.next" 2>/dev/null || true
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
@@ -3927,7 +4259,7 @@ start_watch_all() {
           log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
         done
       fi
-      /usr/bin/touch "$marker_user" 2>/dev/null || true
+      /bin/mv -f "$marker_user.next" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
       /bin/sleep 0.5
     done
@@ -4771,7 +5103,7 @@ PY
     if eval "$_W_GUARD"; then _spawn "$_W_FN"; fi
   done
 
-  trap 'kill -TERM ${_WATCH_PIDS[@]} 2>/dev/null || true; wait ${_WATCH_PIDS[@]} 2>/dev/null || true; /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true; exit 0' TERM INT
+  trap '_watchers_teardown' TERM INT
   wait
 }
 
@@ -4811,11 +5143,21 @@ fi
 # Prepare log file
 LOGFILE="$(prepare_logfile "$LOGFILE")"
 
-# Announce the actually used log path
+# Announce the log path, plus the two facts every bug report needs and that no
+# user thinks to include: which prefwatch, and which macOS. Preference layouts
+# move between releases — Weather went to an internal DB in Sonoma, menu-bar
+# offsets to com.apple.MenuBarAgent in 27 — so a report without the OS version is
+# usually unactionable. Printed even under ONLY_CMDS: one extra line, once.
+_os_ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || printf '?')"
+_os_build="$(/usr/bin/sw_vers -buildVersion 2>/dev/null || printf '?')"
 if [ "${ONLY_CMDS:-false}" = "true" ]; then
-  printf "[init] Log file: %s\n" "$LOGFILE" >> "$LOGFILE" 2>/dev/null || true
+  { printf "[init] Log file: %s\n" "$LOGFILE"
+    printf "[init] prefwatch %s on macOS %s (%s)\n" "${SCRIPT_VERSION:-?}" "$_os_ver" "$_os_build"
+  } >> "$LOGFILE" 2>/dev/null || true
 else
-  { printf "[init] Log file: %s\n" "$LOGFILE"; } | { cat; cat >> "$LOGFILE" 2>/dev/null || true; }
+  { printf "[init] Log file: %s\n" "$LOGFILE"
+    printf "[init] prefwatch %s on macOS %s (%s)\n" "${SCRIPT_VERSION:-?}" "$_os_ver" "$_os_build"
+  } | /usr/bin/tee -a "$LOGFILE" 2>/dev/null || true
 fi
 /usr/bin/logger -t "prefwatch[init]" -- "Log file: $LOGFILE"
 
@@ -4834,15 +5176,18 @@ else
   /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable — limited detection"
 fi
 
-# Warn if ALL mode without root (fs_usage unavailable)
+# Warn if ALL mode without root. The old wording said real-time was disabled and
+# "only polling will be used (slower)" — measured false: with fs_usage running or
+# not, the same commands come out at the same latency. So name what root actually
+# adds, and do not advertise a slowdown that does not happen.
 if [ "$ALL_MODE" = "true" ] && [ "$(id -u)" -ne 0 ]; then
   local _ts; _ts="$(get_timestamp)"
-  local _w1="[$_ts] WARNING: Running without sudo — fs_usage is unavailable"
-  local _w2="[$_ts]   Real-time detection disabled; only polling will be used (slower)"
-  local _w3="[$_ts]   For full detection, re-run with: sudo $0 ALL"
+  local _w1="[$_ts] NOTE: running without sudo — user preferences are fully covered"
+  local _w2="[$_ts]   Not covered: /Library/Preferences (system), sharing commands, launchd state, fs_usage"
+  local _w3="[$_ts]   For those, re-run with: sudo $0 ALL"
   printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3"
   printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3" >> "$LOGFILE" 2>/dev/null || true
-  /usr/bin/logger -t "prefwatch[init]" -- "Running without sudo — fs_usage unavailable, polling only"
+  /usr/bin/logger -t "prefwatch[init]" -- "Running without sudo — system prefs and root-only watchers unavailable"
 fi
 
 # Warn if domain is normally excluded (but don't stop — user explicitly requested it)
@@ -4875,7 +5220,11 @@ WATCH_PID=$!
 _kill_tree() {
   local _root=$1 _kid
   [ -n "$_root" ] || return 0
-  for _kid in $(pgrep -P "$_root" 2>/dev/null); do _kill_tree "$_kid"; done
+  # `|| true`: pgrep exits 1 when a process has no children, which is the normal
+  # case at every LEAF of the recursion — without the guard that non-zero status
+  # trips ERR_EXIT and aborts the teardown mid-tree (observed: three
+  # "# ABORT: set -e … (in _kill_tree)" lines on a single Console-close shutdown).
+  for _kid in $(pgrep -P "$_root" 2>/dev/null || true); do _kill_tree "$_kid"; done
   kill -TERM "$_root" 2>/dev/null || true
 }
 _shutdown_watcher() {
@@ -4914,8 +5263,15 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
     sleep 1 || true
   done
   log_line "Console.app closed — stopping monitoring"
-  kill -TERM "$WATCH_PID" 2>/dev/null || true
-  wait "$WATCH_PID" 2>/dev/null || true
+  # Reuse the signal traps' teardown — do NOT re-inline it. A bare
+  # `kill -TERM "$WATCH_PID"` here only reached the sub-watchers (via their own
+  # trap, which TERMs $_WATCH_PIDS); their pipeline members — eslogger/grep/python3
+  # for sharing_exec_watch, script/fs_usage/sed/awk for fs_watch — got no signal and
+  # were reparented to launchd, still running as root. And since Console closing is
+  # how a Jamf session ends, this is the PRODUCTION exit path: every run leaked an
+  # Endpoint Security client a standard user cannot even kill. Tell-tale signature:
+  # tmpdir correctly removed (the teardown's own rm ran) yet grandchildren alive.
+  _shutdown_watcher
   exit 0
 else
   if [ "$NO_CONSOLE" = "true" ]; then
