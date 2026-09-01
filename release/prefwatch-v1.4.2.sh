@@ -2277,8 +2277,15 @@ _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: the Device.mntr.<UUID> is the DISPLAY's own UUID (per-monitor), not the Mac's —"
-  _log_kind "$kind" "Cmd: #       --mdm can't templatize it. On the target, list displays and pick the one you set:"
+  _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID — per-monitor, and different on every Mac."
+  # The "--mdm can't templatize it" half is only meaningful to someone who asked
+  # for deployable output. Outside --mdm it answered a question nobody had put,
+  # and buried the one fact that matters here: this command names one monitor.
+  if [ "$MDM_OUTPUT" = "true" ]; then
+    _log_kind "$kind" "Cmd: #       --mdm cannot templatize it. On the target, list displays and pick the one you set:"
+  else
+    _log_kind "$kind" "Cmd: #       This command targets that monitor alone. To replay elsewhere, list displays there:"
+  fi
   _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
 }
 

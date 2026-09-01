@@ -27,6 +27,7 @@
 - Filter Finder `PreviewPane*Width` — the default pane width the Finder writes when the pane appears, emitted alongside a real view-style change. `ShowPreviewPane` and `PreviewPaneSettings` stay.
 
 ### Note
+- The display-UUID `# NOTE:` no longer explains what `--mdm` cannot do when you are not using `--mdm`; outside that mode it says what matters instead — the command names one monitor.
 - The first-open `# NOTE:`s only appear when a flood actually arrives. They used to fire on every emission from their domain, so a single deliberate toggle came with a paragraph about defaults nobody set — and claimed the change might not be real.
 - The log header now records the prefwatch and macOS versions (`prefwatch 1.4.2 on macOS 26.6.2 (25G83)`) — the two facts a bug report needs and no one thinks to include.
 - The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".
