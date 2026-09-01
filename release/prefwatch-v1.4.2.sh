@@ -2890,13 +2890,13 @@ _emit_contextual_note() {
     com.apple.symbolichotkeys)
       _note="Keyboard shortcut changes require logout/login to take effect"
       case "$array_base" in
-        AppleSymbolicHotKeys) _note="macOS rewrites shortcut parameters on first enable/disable toggle — values shown may reflect existing bindings, not new assignments" ;;
+        AppleSymbolicHotKeys) _note="macOS rewrites a shortcut's parameters the first time it is enabled or disabled — if a binding you never touched shows up here, that is why" ;;
       esac ;;
     com.apple.finder)
       _note="Finder prefs apply on a new window or after 'killall Finder'; icon/list View Options (Cmd+J) need 'Use as Defaults' to be detectable"
       case "$array_base" in
-        PreviewPaneSettings) _note="First opening Finder Preview pane options writes the full attribute list — only subsequent toggles reflect actual modifications" ;;
-        StandardViewSettings) _note="First 'Use as Defaults' on a Finder view writes the entire view-settings structure (every column) — only subsequent toggles reflect actual changes" ;;
+        PreviewPaneSettings) _note="opening Finder's Preview pane options writes the full attribute list at once — if the whole list is here, most of it is not your change" ;;
+        StandardViewSettings) _note="'Use as Defaults' on a Finder view writes the entire structure, every column — if all of them are here, most are not your change" ;;
       esac ;;
     # Both fire on EVERY emission from their domain, including a single deliberate
     # toggle — there is no count of how many keys are going out. Worded as a flat
@@ -2920,7 +2920,7 @@ _emit_contextual_note() {
     # (deliberately un-filtered in an earlier version) — so annotate instead.
     # Both spellings: metadata reports the top-level key or the nested array name.
     NSToolbar\ Configuration*|TB\ Item\ Identifiers*)
-      _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations; 'TB Is Shown' can also be rewritten by the app itself on window open/close" ;;
+      _note="opening this window writes the full toolbar layout at once — if the whole layout is here, most of it is not a customization; 'TB Is Shown' is also rewritten by the app on window open/close" ;;
   esac
   [ -n "$_note" ] || return 0
 
