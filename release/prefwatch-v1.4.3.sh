@@ -2371,8 +2371,13 @@ _emit_cmd() {
     _emit_contextual_note "$note_dom" ""
   fi
 
-  # ALL_MODE+ONLY_CMDS skips DOMAIN output (covered by per-plist diff).
-  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+  # In ALL mode the DOMAIN pass is redundant: every change it sees has already
+  # been emitted by the per-plist diff. The condition used to require ONLY_CMDS
+  # too, so `--verbose` printed every command TWICE — which made the debugging
+  # mode disagree with the mode everyone actually runs. Production output is the
+  # reference: verbose should add diagnostics, never different commands. The
+  # `Diff …` lines it exists for are logged elsewhere and stay.
+  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
     return 0
   fi
 
@@ -3131,7 +3136,7 @@ emit_array_deletions() {
 
     if is_noisy_command "$delete_cmd"; then
       :
-    elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+    elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
       :
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
@@ -5289,13 +5294,28 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   #  2. `pgrep -x Console` can transiently miss (Console briefly unmatched under
   #     load). A single miss must NOT end monitoring → require N CONSECUTIVE
   #     misses (~N seconds) before concluding Console really closed.
+  # Follow Console by PID, not by name. `pgrep -x Console` forks a process every
+  # second for the entire run — measured at 14ms a call, about 50 seconds of CPU
+  # per hour spent asking whether an app is still open. `kill -0` is a shell
+  # builtin: 100 of them cost a millisecond.
+  #
+  # The name lookup is still needed, just not every second. When the PID stops
+  # answering, Console has either quit or been restarted with a new PID, and only
+  # a lookup can tell the two apart — so pay for one there, a handful of times
+  # over a session instead of thousands.
+  _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1)
   _console_misses=0
   while true; do
-    if is_console_running; then
+    if [ -n "$_console_pid" ] && kill -0 "$_console_pid" 2>/dev/null; then
       _console_misses=0
     else
-      _console_misses=$(( _console_misses + 1 ))
-      [ "$_console_misses" -ge 5 ] && break
+      _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1)
+      if [ -n "$_console_pid" ]; then
+        _console_misses=0
+      else
+        _console_misses=$(( _console_misses + 1 ))
+        [ "$_console_misses" -ge 5 ] && break
+      fi
     fi
     sleep 1 || true
   done
