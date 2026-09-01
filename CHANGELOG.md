@@ -3,7 +3,7 @@
 ## 1.4.2 — unreleased
 
 ### Fix
-- The `fs_usage` watcher had never actually run — wrong path, socket stdin under a Jamf policy, a mangled path regex. It runs now, on trial: whether real-time detection beats plain polling is being measured. The log says when ktrace, which allows one client, is already taken.
+- The `fs_usage` watcher had never run, and nobody noticed — which is the finding: measured against plain polling it changes neither output nor latency. Whether it earns its cost is now an open question. It runs meanwhile, and the log says when ktrace, which allows one client, is taken.
 - `poll_watch` advanced its scan marker AFTER processing, so any plist written during the scan — whose retry loop sleeps up to 1.8s — was never `-newer` next cycle and was lost for good.
 - The `[init]` startup lines never reached the log file in verbose mode: `cat; cat >> file` drains the pipe instead of duplicating it, so the second `cat` got nothing. `tee -a` does.
 - Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.
