@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.4.2 — unreleased
+## 1.4.3 — unreleased
+
+
+## 1.4.2 — 2026-09-01
 
 ### Fix
 - The `fs_usage` watcher had never run, and nobody noticed — which is the finding: measured against plain polling it changes neither output nor latency. Whether it earns its cost is now an open question. It runs meanwhile, and the log says when ktrace, which allows one client, is taken.
