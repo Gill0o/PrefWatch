@@ -2856,8 +2856,9 @@ _note_dockutil_alt() {
 }
 
 # Emit contextual notes for domains that need extra steps
+typeset -gA _BULK_N=() _BULK_SEEN_AT=()
 _emit_contextual_note() {
-  local dom="$1" array_base="$2" _note=""
+  local dom="$1" array_base="$2" _note="" _bulk_only=false
   case "$dom" in
     com.apple.HIToolbox)
       case "$array_base" in
@@ -2897,9 +2898,9 @@ _emit_contextual_note() {
     # `new key tree` note handles it: the reader can see whether many keys came at
     # once, and the note only claims something when they did.
     com.apple.WindowManager)
-      _note="opening Desktop & Dock settings writes every default at once — if many keys appear here together, most are not changes you made" ;;
+      _note="opening Desktop & Dock settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
     com.apple.universalaccess)
-      _note="opening Accessibility settings writes every default at once — if many keys appear here together, most are not changes you made" ;;
+      _note="opening Accessibility settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
     com.apple.prodisplaylibrary)
       _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
   esac
@@ -2915,6 +2916,22 @@ _emit_contextual_note() {
       _note="First opening this window writes the full toolbar layout — only subsequent changes are real customizations; 'TB Is Shown' can also be rewritten by the app itself on window open/close" ;;
   esac
   [ -n "$_note" ] || return 0
+
+  # A "first open writes everything" note is only true when a lot arrives at
+  # once. It used to print on EVERY change to its domain, so a single deliberate
+  # toggle carried a paragraph about defaults nobody set. Rewording made it
+  # harmless; it did not make it useful. The note is emitted BEFORE the commands,
+  # so the count is not known yet — hence: count them as they go, stay silent
+  # until the burst is undeniably a flood, and print once at that point. A lone
+  # toggle never reaches the threshold and gets no note at all.
+  if [ "${_bulk_only:-false}" = true ]; then
+    local _now=$EPOCHSECONDS
+    (( _now - ${_BULK_SEEN_AT[$dom]:-0} > _NOTE_BURST_GAP )) && _BULK_N[$dom]=0
+    _BULK_SEEN_AT[$dom]=$_now
+    _BULK_N[$dom]=$(( ${_BULK_N[$dom]:-0} + 1 ))
+    (( ${_BULK_N[$dom]} >= 4 )) || return 0
+  fi
+
   # Dedup per burst (sliding window): show once, re-show only after quiet
   _note_should_show "${dom}:${_note}" || return 0
   log_line "Cmd: # NOTE: $_note"
