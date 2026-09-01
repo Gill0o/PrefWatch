@@ -64,7 +64,7 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 
 ## Detection
 
-- ALL mode without `sudo` falls back to polling only (no `fs_usage`) — still functional, but slower.
+- ALL mode without `sudo` covers user preferences in full. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take several seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security
