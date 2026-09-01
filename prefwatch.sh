@@ -2514,7 +2514,34 @@ _process_diff_lines() {
   # CACHE file ($tmpplist) — reusing it would point PlistBuddy at the cache.
   # Domain mode passes empty and keeps the get_plist_path fallback.
   local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7" emit_plist_path="${8:-}"
-  [ -s "$prev" ] || return 0
+
+  # No baseline. Until now that meant "emit nothing", which lost the FIRST write
+  # to any domain born after startup — install an app, configure it, and its
+  # initial configuration was never reported. Only later changes were.
+  #
+  # Lifting the guard outright would flood, and the two callers are not
+  # equivalent about it:
+  #   · show_plist_diff (USER/SYSTEM) — _snapshot_tree wrote a baseline for every
+  #     existing plist BEFORE any watcher started, so a missing one now means the
+  #     file genuinely did not exist then. Emit it: that is the new configuration.
+  #   · show_domain_diff (DOMAIN) in ALL mode — its baseline is written lazily, on
+  #     the domain's first appearance, so "missing" only means "not seen yet".
+  #     Emitting would dump every key of every domain that ever changes. Keep the
+  #     guard.
+  #   · show_domain_diff (DOMAIN) in single-domain mode — start_watch establishes
+  #     the baseline itself before the loop, so the ALL-mode ambiguity does not
+  #     apply and a watched domain that appears later is reportable.
+  if [ ! -s "$prev" ]; then
+    [ "${_BASELINE_DONE:-false}" = "true" ] || return 0
+    [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && return 0
+    # `prev` is not merely empty, it does not EXIST — and `diff -u <missing> curr`
+    # fails outright, printing nothing. Lifting the guard alone therefore emitted
+    # the note and no commands at all. Materialise an empty baseline so every key
+    # of the new domain shows up as an addition.
+    [ -f "$prev" ] || : > "$prev" 2>/dev/null || return 0
+    _note_should_show "__newdom__:${dom}" \
+      && _log_kind "$kind" "Cmd: # NOTE: '$dom' did not exist at startup — what follows is its whole initial configuration, not a single change"
+  fi
 
   typeset -A _added_keys
   _added_keys=()
@@ -3881,6 +3908,9 @@ start_watch() {
     (
       # Take initial baseline snapshot so first user change is detected immediately
       show_domain_diff "$DOMAIN"
+      # Baseline established for the watched domain. If it did not exist yet, its
+      # creation is now reportable rather than silently swallowed.
+      typeset -g _BASELINE_DONE=true
       last_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
       local _forced_tick=0
       while true; do
@@ -3917,6 +3947,10 @@ start_watch() {
     log_line "Mode: standard polling (plist not found, checking domain every 1s)"
 
     (
+      # First pass writes the baseline; only then may a later appearance of the
+      # domain be reported as new (see _process_diff_lines).
+      show_domain_diff "$DOMAIN"
+      typeset -g _BASELINE_DONE=true
       while true; do
         show_domain_diff "$DOMAIN"
         sleep 1
@@ -3996,6 +4030,9 @@ start_watch_all() {
     printf "\r  ✓ ${_label} snapshot: %d domains scanned    \n" "$_snap_count"
     snapshot_notice "${_label} snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
+    # Every existing plist now has a baseline, so from here a missing one means
+    # the file did not exist at startup — which _process_diff_lines may report.
+    typeset -g _BASELINE_DONE=true
   }
 
   # Initial snapshot

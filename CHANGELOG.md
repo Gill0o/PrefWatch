@@ -2,6 +2,9 @@
 
 ## 1.4.3 — unreleased
 
+### Fix
+- A domain born after startup lost its first write. Install an app, configure it, and its initial configuration was never reported — only later changes were. It is now emitted, with a `# NOTE:` saying the block is a whole configuration rather than one change.
+
 
 ## 1.4.2 — 2026-09-01
 
