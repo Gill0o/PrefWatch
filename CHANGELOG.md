@@ -29,6 +29,7 @@
 ### Note
 - The display-UUID `# NOTE:` no longer explains what `--mdm` cannot do when you are not using `--mdm`; outside that mode it says what matters instead — the command names one monitor.
 - The `# NOTE:`s that caution a change may not be yours were swept. They only appear once a flood actually arrives, and each now states when its caveat applies instead of casting doubt on a single deliberate toggle.
+- README: running without `sudo` was described as "still functional, but slower". Measured false — it now names what root actually adds (system prefs, sharing commands, launchd state, `fs_usage`).
 - The log header now records the prefwatch and macOS versions (`prefwatch 1.4.2 on macOS 26.6.2 (25G83)`) — the two facts a bug report needs and no one thinks to include.
 - The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".
 
