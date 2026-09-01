@@ -2890,10 +2890,16 @@ _emit_contextual_note() {
         PreviewPaneSettings) _note="First opening Finder Preview pane options writes the full attribute list — only subsequent toggles reflect actual modifications" ;;
         StandardViewSettings) _note="First 'Use as Defaults' on a Finder view writes the entire view-settings structure (every column) — only subsequent toggles reflect actual changes" ;;
       esac ;;
+    # Both fire on EVERY emission from their domain, including a single deliberate
+    # toggle — there is no count of how many keys are going out. Worded as a flat
+    # "only subsequent changes are real", that casts doubt on a perfectly correct
+    # one-line command. So the condition lives in the sentence, the same way the
+    # `new key tree` note handles it: the reader can see whether many keys came at
+    # once, and the note only claims something when they did.
     com.apple.WindowManager)
-      _note="First opening Desktop & Dock settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+      _note="opening Desktop & Dock settings writes every default at once — if many keys appear here together, most are not changes you made" ;;
     com.apple.universalaccess)
-      _note="First opening Accessibility settings writes all defaults — only subsequent changes reflect actual modifications" ;;
+      _note="opening Accessibility settings writes every default at once — if many keys appear here together, most are not changes you made" ;;
     com.apple.prodisplaylibrary)
       _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
   esac
