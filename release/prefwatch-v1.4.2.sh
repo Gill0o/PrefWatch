@@ -4016,6 +4016,19 @@ start_watch_all() {
       log_line "Cmd: # NOTE: fs_usage not found — real-time detection off, polling only"
       return 0
     fi
+    # fs_usage is a ktrace client and ktrace admits exactly ONE at a time. A second
+    # one dies instantly with "ktrace_start: Resource busy". That is not exotic: a
+    # prefwatch whose pipeline children were orphaned (the leak fixed in 1.4.2)
+    # leaves an fs_usage holding ktrace forever, and EVERY later run then has a
+    # dead fs_watch. Say it up front — the fix is to stop that process, and
+    # nothing in the log used to hint at it.
+    local _fsu_holder=""
+    _fsu_holder=$(/usr/bin/pgrep -x fs_usage 2>/dev/null | /usr/bin/head -1) || _fsu_holder=""
+    if [ -n "$_fsu_holder" ]; then
+      log_line "Cmd: # NOTE: another fs_usage is already running (pid $_fsu_holder) — ktrace allows only one,"
+      log_line "Cmd: #       so real-time detection stays OFF (polling still works). Stop it: sudo kill $_fsu_holder"
+    fi
+    local _fsu_err="${PREFWATCH_TMPDIR}/fs_usage.err"
     # `</dev/null` is NOT cosmetic: script(1) calls tcgetattr on stdin, and under a
     # Jamf Self Service policy stdin is a SOCKET — it dies with
     # "script: tcgetattr/ioctl: Operation not supported on socket", the pipeline
@@ -4023,7 +4036,16 @@ start_watch_all() {
     # socket and on a pipe, works on a tty and on /dev/null. This is the second,
     # independent reason fs_watch never ran — and the one that only bites in
     # production, since a Terminal launch gets a pty and works either way.
-    script -q /dev/null "$_fsu" -w -f filesys </dev/null 2>>"${PREFWATCH_TMPDIR}/fs_usage.err" |
+    #
+    # fs_usage runs under `sh -c "exec … 2>>err"`, not directly, because `script`
+    # allocates a pty and the CHILD's stderr goes to that pty — i.e. into script's
+    # stdout, into the sed below, which drops it. The outer `2>>` only ever caught
+    # errors from `script` itself, so the file added to diagnose exactly this kind
+    # of failure stayed empty while fs_usage was dying of "Resource busy"
+    # (demonstrated). Redirecting INSIDE the pty is what actually captures it, and
+    # `exec` keeps the process tree unchanged (script → fs_usage) so the teardown
+    # still finds it.
+    script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f filesys 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
     # The leading .* MUST NOT swallow the user prefix. With `.*(/.*Library/…)` the
     # greedy prefix pushed the capture as late as possible, so
     # /Users/gilles/Library/Preferences/x.plist came out as /Library/Preferences/x.plist —
@@ -4075,6 +4097,30 @@ start_watch_all() {
         log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
       fi
     done
+    # Reaching here means the pipeline ENDED: fs_usage exited and real-time
+    # detection is over for this run. Previously fs_watch just returned 0 and the
+    # only symptom was changes arriving a second or two later than they should —
+    # indistinguishable from a busy machine. Report it, with whatever fs_usage
+    # said on its way out (now that its stderr is actually captured).
+    local _why=""
+    [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
+    case "$_why" in
+      *"Resource busy"*)
+        # Do not repeat the two-line explanation the pre-check already gave: one
+        # cause, four lines of NOTE, in a log meant to be read. But do NOT drop it
+        # either — the holder may have exited between the check and the start, in
+        # which case this is the first anyone hears of it.
+        if [ -n "$_fsu_holder" ]; then
+          log_line "Cmd: # NOTE: confirmed — fs_usage could not start (ktrace busy); polling only for this run"
+        else
+          log_line "Cmd: # NOTE: real-time detection OFF — another fs_usage holds ktrace (only one is allowed)."
+          log_line "Cmd: #       Polling still covers everything, just a little slower. Find it: pgrep -x fs_usage"
+        fi ;;
+      "")
+        log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message) — polling continues" ;;
+      *)
+        log_line "Cmd: # NOTE: real-time detection stopped — fs_usage: $_why" ;;
+    esac
   }
 
   # Fallback detector — periodic poll (find -newer) for writes fs_usage buffers/misses.
