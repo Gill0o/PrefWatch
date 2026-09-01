@@ -3,9 +3,9 @@
 ## 1.4.2 — unreleased
 
 ### Fix
-- When ktrace is already taken, the log now names the holder — `ktrace info` is asked rather than guessed at from process names. Found in the field: FlexNet's `FNPLicensingServ` holds it permanently, so real-time detection can never start on a Mac running Adobe/Autodesk/MATLAB licensing.
-- A dead real-time detector said nothing, and could not: `script` gives `fs_usage` a pty, so its errors went into the filter that drops them. Now captured, with a `# NOTE:` when it stops — and a warning when another `fs_usage` holds ktrace, which allows only one.
-- Real-time detection never ran, on three counts: `fs_usage` was invoked at `/usr/sbin` (it lives in `/usr/bin`), `script` died on a Jamf policy's socket stdin, and the path regex dropped the user prefix. Everything fell back to polling.
+- Real-time detection never ran, on three counts: `fs_usage` was invoked at `/usr/sbin` (it lives in `/usr/bin`), `script` died on a Jamf policy's socket stdin, and the path regex dropped the user prefix. It fell back to polling — as it still does where ktrace is taken, below.
+- A dead real-time detector said nothing, and could not: `script` gives `fs_usage` a pty, so its errors went into the filter that drops them. Now captured, with a `# NOTE:` when it stops.
+- When ktrace is already taken, the log now names the holder — `ktrace info` is asked rather than guessed at from process names. Seen in the field: FlexNet's `FNPLicensingServ` had it on a Mac with Adobe merely installed, no license active, and one client is all ktrace allows.
 - `poll_watch` advanced its scan marker AFTER processing, so any plist written during the scan — whose retry loop sleeps up to 1.8s — was never `-newer` next cycle and was lost for good.
 - The `[init]` startup lines never reached the log file in verbose mode: `cat; cat >> file` drains the pipe instead of duplicating it, so the second `cat` got nothing. `tee -a` does.
 - Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.

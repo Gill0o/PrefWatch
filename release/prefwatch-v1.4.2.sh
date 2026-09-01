@@ -4035,8 +4035,10 @@ start_watch_all() {
     # fs_usage, the second scanned a list of known tracing tools
     # (powermetrics/spindump/sc_usage/latency). On a real machine the holder was
     # 'FNPLicensingServ' — the FlexNet licensing daemon, which is not a tracing
-    # tool at all and appears on any fleet running Adobe/Autodesk/MATLAB. A name
-    # list is always incomplete AND gives the impression of having checked.
+    # tool at all: observed on a Mac with Adobe merely INSTALLED, no license
+    # active. How widely that generalises is unknown (one machine, one moment),
+    # but it is enough to show a name list is always incomplete AND gives the
+    # impression of having checked.
     # `ktrace info` needs root, which fs_watch already has, and it names the owner
     # outright. Defensive parsing: emit nothing unless a real owner comes back,
     # since an idle machine's output shape is not something this was tested against.
