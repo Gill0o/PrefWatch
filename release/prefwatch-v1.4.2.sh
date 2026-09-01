@@ -4030,11 +4030,25 @@ start_watch_all() {
     # leaves an fs_usage holding ktrace forever, and EVERY later run then has a
     # dead fs_watch. Say it up front — the fix is to stop that process, and
     # nothing in the log used to hint at it.
-    local _fsu_holder=""
-    _fsu_holder=$(/usr/bin/pgrep -x fs_usage 2>/dev/null | /usr/bin/head -1) || _fsu_holder=""
-    if [ -n "$_fsu_holder" ]; then
-      log_line "Cmd: # NOTE: another fs_usage is already running (pid $_fsu_holder) — ktrace allows only one,"
-      log_line "Cmd: #       so real-time detection stays OFF (polling still works). Stop it: sudo kill $_fsu_holder"
+    # ASK ktrace, do not guess from process names. Two earlier versions of this
+    # check guessed and were both wrong: the first assumed the holder was another
+    # fs_usage, the second scanned a list of known tracing tools
+    # (powermetrics/spindump/sc_usage/latency). On a real machine the holder was
+    # 'FNPLicensingServ' — the FlexNet licensing daemon, which is not a tracing
+    # tool at all and appears on any fleet running Adobe/Autodesk/MATLAB. A name
+    # list is always incomplete AND gives the impression of having checked.
+    # `ktrace info` needs root, which fs_watch already has, and it names the owner
+    # outright. Defensive parsing: emit nothing unless a real owner comes back,
+    # since an idle machine's output shape is not something this was tested against.
+    local _fsu_holder="" _fsu_who="" _kt=""
+    if [ -x /usr/bin/ktrace ]; then
+      _kt=$(/usr/bin/ktrace info 2>/dev/null) || _kt=""
+      _fsu_who=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1)
+      _fsu_holder=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE 's/.*Owning process is \[([0-9]+)\].*/\1/p' | /usr/bin/head -1)
+    fi
+    if [ -n "$_fsu_holder" ] && [ "$_fsu_holder" != "$$" ]; then
+      log_line "Cmd: # NOTE: ktrace is already held by '${_fsu_who:-?}' (pid $_fsu_holder) and it allows only one client,"
+      log_line "Cmd: #       so real-time detection stays OFF — polling still covers everything, just a little slower."
     fi
     local _fsu_err="${PREFWATCH_TMPDIR}/fs_usage.err"
     # `</dev/null` is NOT cosmetic: script(1) calls tcgetattr on stdin, and under a
@@ -4119,10 +4133,14 @@ start_watch_all() {
         # either — the holder may have exited between the check and the start, in
         # which case this is the first anyone hears of it.
         if [ -n "$_fsu_holder" ]; then
-          log_line "Cmd: # NOTE: confirmed — fs_usage could not start (ktrace busy); polling only for this run"
+          log_line "Cmd: # NOTE: confirmed — fs_usage could not start (ktrace held by '${_fsu_who:-?}'); polling only for this run"
         else
-          log_line "Cmd: # NOTE: real-time detection OFF — another fs_usage holds ktrace (only one is allowed)."
-          log_line "Cmd: #       Polling still covers everything, just a little slower. Find it: pgrep -x fs_usage"
+          # Deliberately does NOT name the holder: nothing here established what
+          # it is, and the earlier wording asserted "another fs_usage" on a
+          # machine where there was none. ktrace has no per-process listing, so
+          # `ktrace info` (root) is the only thing that can answer.
+          log_line "Cmd: # NOTE: real-time detection OFF — ktrace is held by another client (it allows only one)."
+          log_line "Cmd: #       Polling still covers everything, just a little slower. Identify it: sudo ktrace info"
         fi ;;
       "")
         log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message) — polling continues" ;;
