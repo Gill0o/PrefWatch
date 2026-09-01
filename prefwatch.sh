@@ -3264,7 +3264,15 @@ for top_key in sorted(curr.keys()):
     if top_key not in prev:
         # New top-level dict/list: emit Add commands for entire tree
         if not _first_create_noted:
+            # The "mostly defaults" warning lives HERE and not in a per-domain
+            # table: this note fires exactly when a whole tree appears, which IS
+            # the first-open-a-settings-pane case (observed: opening the login
+            # screen's Accessibility options emitted fourteen Add lines, thirteen
+            # of them untouched defaults). A per-domain entry would only ever
+            # cover the panes someone happened to open; this covers all of them,
+            # and the "If" keeps it from over-claiming on a small deliberate tree.
             print("PBCMD\t# NOTE: new key tree — the Add commands build it top-down; later changes to it emit Set.")
+            print("PBCMD\t#       If this came from first opening a settings pane, most of these values are untouched defaults, not your choices.")
             _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()

@@ -28,6 +28,7 @@
 - Filter Finder `PreviewPane*Width` — the default pane width the Finder writes when the pane appears, emitted alongside a real view-style change. `ShowPreviewPane` and `PreviewPaneSettings` stay.
 
 ### Note
+- The `new key tree` `# NOTE:` now warns that a tree appearing in one go is usually a settings pane writing its defaults, not choices you made — observed as fourteen `Add` lines from opening the login screen's Accessibility options.
 - The log header now records the prefwatch and macOS versions (`prefwatch 1.4.2 on macOS 26.6.2 (25G83)`) — the two facts a bug report needs and no one thinks to include.
 - The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".
 
