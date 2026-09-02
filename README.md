@@ -25,7 +25,7 @@ sudo ./prefwatch.sh
 # Verbose mode
 sudo ./prefwatch.sh -v
 
-# Stop it (not -9: it cannot be trapped)
+# Stop it
 sudo pkill -f 'prefwatch\.sh'
 ```
 
