@@ -3871,7 +3871,21 @@ _orphan_watchdog() {
     # process. TERM lands on the watcher, whose own trap runs it where it means
     # something. Fall back to killing our siblings if we have no pid for it.
     if [ -n "$_me" ]; then
-      kill -TERM "$_me" 2>/dev/null
+      # Do the killing HERE rather than signalling the watcher and trusting its
+      # trap. Signalling worked unprivileged and did not in a root session, and
+      # a trap that may or may not run is not something to depend on for a
+      # shutdown — especially one whose whole purpose is covering the case where
+      # signals were never delivered. Kill the siblings' subtrees first (skipping
+      # our own, or we stop half way), then the watcher itself, TERM then KILL.
+      local _self _k
+      _self=$(exec sh -c 'echo $PPID') 2>/dev/null || _self=""
+      for _k in $(pgrep -P "$_me" 2>/dev/null || true); do
+        [ "$_k" = "$_self" ] && continue
+        _wt_kill_tree "$_k"
+      done
+      kill -TERM "$_me" 2>/dev/null || true
+      /bin/sleep 1
+      kill -KILL "$_me" 2>/dev/null || true
       exit 0
     fi
     _watchers_teardown
