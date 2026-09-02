@@ -3833,21 +3833,38 @@ _spawn() { "$@" & _WATCH_PIDS+=($!); }
 # ktrace slot on the machine and silently disables real-time detection for every
 # later run. Checking from below costs one `kill -0` every 5s, a shell builtin.
 _orphan_watchdog() {
+  # Ask "am I orphaned?", not "is my parent alive?".
+  #
+  # The first version watched the parent's PID with `kill -0`, which tests a
+  # NUMBER — and macOS recycles them, so a dead parent's slot handed to another
+  # process makes the check succeed forever. Confirming the pid still ran
+  # prefwatch did not close it either: this machine starts prefwatch repeatedly,
+  # so the recycled pid can BE another prefwatch. Found a start_watch_all
+  # orphaned for ten minutes with the watchdog running inside it.
+  #
+  # Our own ppid becoming 1 is not a guess about anyone else. Note `$$` in a zsh
+  # subshell is the PARENT shell's pid, not ours — `$sysparams[pid]` (zsh/system)
+  # is the real one, and getting that wrong is what made the earlier diagnosis
+  # circle for an hour. Fall back to the pid check when the module is absent.
+  # $1 is the pid of the shell that spawned us — the watcher subshell whose
+  # orphaning we are here to detect. NOT our own: `$sysparams[pid]` inside this
+  # function returns the WATCHDOG's pid, whose parent is that watcher and stays
+  # alive by definition, so watching ourselves never fires. Cost me a test run.
+  local _me="${1:-}"
   local _p="${PREFWATCH_MAIN_PID:-0}"
-  [ "$_p" -gt 1 ] 2>/dev/null || return 0
+  [ -n "$_me" ] || [ "$_p" -gt 1 ] 2>/dev/null || return 0
+  local _pp
   while true; do
     /bin/sleep 5
-    # `kill -0` tests a NUMBER, and macOS recycles PIDs. On a busy machine the
-    # parent's slot can be handed to something else, the test then succeeds
-    # forever and the watchdog guards a tree whose parent died long ago. So
-    # confirm the pid still belongs to prefwatch. One `ps` every 5s, against a
-    # `pgrep` every second before this work — still far cheaper than what it
-    # replaced.
-    if ! kill -0 "$_p" 2>/dev/null ||
-       ! /bin/ps -o command= -p "$_p" 2>/dev/null | /usr/bin/grep -q 'prefwatch'; then
-      log_line "Cmd: # NOTE: parent process is gone — shutting the watchers down"
-      _watchers_teardown
+    if [ -n "$_me" ]; then
+      _pp=$(/bin/ps -o ppid= -p "$_me" 2>/dev/null | /usr/bin/tr -d ' ')
+      # Empty means we are gone ourselves; only "1" means orphaned.
+      [ "$_pp" = "1" ] || continue
+    else
+      kill -0 "$_p" 2>/dev/null && continue
     fi
+    log_line "Cmd: # NOTE: parent process is gone — shutting the watchers down"
+    _watchers_teardown
   done
 }
 
@@ -4001,7 +4018,13 @@ start_watch() {
 
   trap '_watchers_teardown' TERM INT
   # Same orphan guard as ALL mode: single-domain leaves a subtree behind too.
-  _orphan_watchdog &
+  # Capture the pid into a variable BEFORE forking. Written inline as
+  # `_orphan_watchdog "${sysparams[pid]}" &` the shell forks first and evaluates
+  # after, so the watchdog received its OWN pid and spent its life checking
+  # whether it had been orphaned by a parent that is alive by construction.
+  zmodload zsh/system 2>/dev/null || true
+  local _swa_pid="${sysparams[pid]:-}"
+  _orphan_watchdog "$_swa_pid" &
   _WATCH_PIDS+=($!)
   wait
 }
@@ -5182,7 +5205,13 @@ PY
   done
 
   trap '_watchers_teardown' TERM INT
-  _orphan_watchdog &
+  # Capture the pid into a variable BEFORE forking. Written inline as
+  # `_orphan_watchdog "${sysparams[pid]}" &` the shell forks first and evaluates
+  # after, so the watchdog received its OWN pid and spent its life checking
+  # whether it had been orphaned by a parent that is alive by construction.
+  zmodload zsh/system 2>/dev/null || true
+  local _swa_pid="${sysparams[pid]:-}"
+  _orphan_watchdog "$_swa_pid" &
   _WATCH_PIDS+=($!)
   wait
 }
