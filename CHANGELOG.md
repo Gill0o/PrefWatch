@@ -8,7 +8,7 @@
 - A domain born after startup lost its first write. Install an app, configure it, and its initial configuration was never reported — only later changes were. It is now emitted, with a `# NOTE:` saying the block is a whole configuration rather than one change.
 
 ### Known issue
-- Quitting Console.app on a root session leaves the watcher processes behind — one child dies, the rest survive, including the `fs_usage` holding the machine's only ktrace slot. Stop it with `sudo pkill -f 'prefwatch\.sh'` meanwhile.
+- Quitting Console.app on a root session leaves the watcher processes behind — one child dies, the rest survive, including the `fs_usage` holding the machine's only ktrace slot, so real-time detection stays off for later runs without saying so. Stop it with `sudo pkill -f 'prefwatch\.sh'` meanwhile, never `-9`, which cannot be trapped.
 
 ### Noise
 - Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`). They record an install attempt and delete it on success, so each Electron app update surfaced as one write and two deletes. Ten such domains on one machine, every one empty at rest.

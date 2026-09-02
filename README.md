@@ -25,11 +25,9 @@ sudo ./prefwatch.sh
 # Verbose mode
 sudo ./prefwatch.sh -v
 
-# Stop it
+# Stop it (not -9: it cannot be trapped)
 sudo pkill -f 'prefwatch\.sh'
 ```
-
-Not `pkill -9` — it cannot be trapped, so the watcher processes survive. A leftover `fs_usage` then holds the machine's only ktrace slot, and real-time detection stays off for every later run without saying so. Check with `pgrep -x fs_usage`: it should come back empty.
 
 ## Usage
 
