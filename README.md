@@ -73,7 +73,7 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 sudo pkill -f 'prefwatch\.sh'
 ```
 
-Not `pkill -9` — the signal cannot be trapped and leaves the watcher processes behind.
+Not `pkill -9` — it cannot be trapped, so the watcher processes survive. A leftover `fs_usage` then holds the machine's only ktrace slot, and real-time detection stays off for every later run without saying so. Check with `pgrep -x fs_usage`: it should come back empty.
 
 ## Security
 
