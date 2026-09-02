@@ -5348,13 +5348,17 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   # answering, Console has either quit or been restarted with a new PID, and only
   # a lookup can tell the two apart — so pay for one there, a handful of times
   # over a session instead of thousands.
-  _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1)
+  # `|| true` is load-bearing: with `set -o pipefail` (L51) a `pgrep` that matches
+  # nothing makes the whole substitution non-zero, and ERR_EXIT then kills main --
+  # skipping _shutdown_watcher and stranding the entire root watcher tree. That is
+  # the 1.4.3 leak: every session started while Console was absent ran on forever.
+  _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1) || true
   _console_misses=0
   while true; do
     if [ -n "$_console_pid" ] && kill -0 "$_console_pid" 2>/dev/null; then
       _console_misses=0
     else
-      _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1)
+      _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1) || true
       if [ -n "$_console_pid" ]; then
         _console_misses=0
       else
