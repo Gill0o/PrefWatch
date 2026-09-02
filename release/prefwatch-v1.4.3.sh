@@ -4162,7 +4162,7 @@ start_watch_all() {
       [ -x "$_c" ] && { _fsu="$_c"; break; }
     done
     if [ -z "$_fsu" ]; then
-      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off, polling only"
+      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off; polling covers the same ground"
       return 0
     fi
     # fs_usage is a ktrace client and ktrace admits exactly ONE at a time. A second
@@ -4272,7 +4272,14 @@ start_watch_all() {
           _fsu_who=$(/usr/bin/ktrace info 2>/dev/null | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1)
         fi
         log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is taken${_fsu_who:+ (last configured by '$_fsu_who')}."
-        log_line "Cmd: #       Polling still covers everything, just a little slower." ;;
+        # NOT "covers everything, just a little slower" — both halves were
+        # measured false the same evening they were written. Latency: 0.47s with
+        # real-time against 0.49s without, i.e. the 0.5s poll interval in both
+        # cases. Coverage: ~/Library/Containers is scanned by neither, so
+        # "everything" was never true of polling — and, measured over 43 minutes,
+        # fs_usage reported no container path either. What is honest is that
+        # polling loses nothing fs_usage was providing.
+        log_line "Cmd: #       Polling covers the same ground at the same latency (measured)." ;;
       "")
         log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message) — polling continues" ;;
       *)
