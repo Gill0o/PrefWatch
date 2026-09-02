@@ -3880,9 +3880,35 @@ _orphan_watchdog() {
 
 # Teardown shared by start_watch and start_watch_all — the same TERM/INT handler
 # was written out twice verbatim, so a change to one could silently miss the other.
+# Recursive, leaves-first, so a watcher's pipeline members die with it. Defined
+# here rather than reusing _kill_tree: that one lives in MAIN and is not yet
+# parsed when this subshell forks.
+_wt_kill_tree() {
+  local _r="${1:-}" _k
+  [ -n "$_r" ] || return 0
+  for _k in $(pgrep -P "$_r" 2>/dev/null || true); do _wt_kill_tree "$_k"; done
+  kill -TERM "$_r" 2>/dev/null || true
+}
+
 _watchers_teardown() {
-  kill -TERM ${_WATCH_PIDS[@]} 2>/dev/null || true
-  wait ${_WATCH_PIDS[@]} 2>/dev/null || true
+  # Kill each watcher's whole SUBTREE, and never block on `wait`.
+  #
+  # The old form TERMed the direct pids then waited for them. A watcher whose
+  # body is a pipeline — sharing_exec_watch runs `eslogger | grep | python3`,
+  # fs_watch runs `script | sed | awk` — does not necessarily die when its shell
+  # is signalled, and the `wait` then hung forever. Observed on a root session:
+  # the teardown started, the shell stayed alive holding fourteen children, and
+  # orphaned eslogger processes accumulated. Unprivileged runs never showed it,
+  # because the two watchers with pipelines are root-gated.
+  local _p
+  for _p in ${_WATCH_PIDS[@]}; do _wt_kill_tree "$_p"; done
+  # Bounded: give them a moment, then stop caring. Nothing here is worth hanging
+  # a shutdown for, and anything still alive is about to lose its parent anyway.
+  local _i
+  for _i in 1 2 3 4 5 6; do
+    /bin/sleep 0.25
+    kill -0 ${_WATCH_PIDS[@]} 2>/dev/null || break
+  done
   /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
   exit 0
 }
