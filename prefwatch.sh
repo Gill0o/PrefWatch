@@ -3837,10 +3837,17 @@ _orphan_watchdog() {
   [ "$_p" -gt 1 ] 2>/dev/null || return 0
   while true; do
     /bin/sleep 5
-    kill -0 "$_p" 2>/dev/null || {
+    # `kill -0` tests a NUMBER, and macOS recycles PIDs. On a busy machine the
+    # parent's slot can be handed to something else, the test then succeeds
+    # forever and the watchdog guards a tree whose parent died long ago. So
+    # confirm the pid still belongs to prefwatch. One `ps` every 5s, against a
+    # `pgrep` every second before this work — still far cheaper than what it
+    # replaced.
+    if ! kill -0 "$_p" 2>/dev/null ||
+       ! /bin/ps -o command= -p "$_p" 2>/dev/null | /usr/bin/grep -q 'prefwatch'; then
       log_line "Cmd: # NOTE: parent process is gone — shutting the watchers down"
       _watchers_teardown
-    }
+    fi
   done
 }
 
