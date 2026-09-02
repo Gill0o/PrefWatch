@@ -67,6 +67,16 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 - ALL mode without `sudo` covers user preferences in full. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take several seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
+## Stopping it
+
+Quitting Console.app ends the run, but a known issue leaves the watcher processes behind on a root session — including the `fs_usage` that holds the machine's only ktrace slot, which silently disables real-time detection for later runs. Until that is fixed, stop it with:
+
+```bash
+sudo pkill -f 'prefwatch\.sh'
+```
+
+Not `pkill -9`: the signal cannot be trapped, so it orphans the tree on any path. To check afterwards, `pgrep -x fs_usage` should come back empty.
+
 ## Security
 
 PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths). **Review before sharing** — use `--exclude` to skip sensitive domains.
