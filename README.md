@@ -69,13 +69,11 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 
 ## Stopping it
 
-Quitting Console.app ends the run, but a known issue leaves the watcher processes behind on a root session — including the `fs_usage` that holds the machine's only ktrace slot, which silently disables real-time detection for later runs. Until that is fixed, stop it with:
-
 ```bash
 sudo pkill -f 'prefwatch\.sh'
 ```
 
-Not `pkill -9`: the signal cannot be trapped, so it orphans the tree on any path. To check afterwards, `pgrep -x fs_usage` should come back empty.
+Not `pkill -9` — the signal cannot be trapped and leaves the watcher processes behind.
 
 ## Security
 

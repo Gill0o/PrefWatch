@@ -7,6 +7,9 @@
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
 - A domain born after startup lost its first write. Install an app, configure it, and its initial configuration was never reported — only later changes were. It is now emitted, with a `# NOTE:` saying the block is a whole configuration rather than one change.
 
+### Known issue
+- Quitting Console.app ends the run but leaves the watcher processes behind on a root session — one child dies, the rest survive, including the `fs_usage` that holds the machine's only ktrace slot and so silently disables real-time detection for later runs. Stop it with `sudo pkill -f 'prefwatch\.sh'` meanwhile; never with `-9`, which cannot be trapped and orphans the tree on any path.
+
 ### Noise
 - Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`). They record an install attempt and delete it on success, so each Electron app update surfaced as one write and two deletes. Ten such domains on one machine, every one empty at rest.
 
