@@ -3864,6 +3864,16 @@ _orphan_watchdog() {
       kill -0 "$_p" 2>/dev/null && continue
     fi
     log_line "Cmd: # NOTE: parent process is gone — shutting the watchers down"
+    # SIGNAL the watcher shell; do not tear down from here. _watchers_teardown
+    # ends in `exit 0`, and run inside this subshell that exits the WATCHDOG —
+    # it killed itself and left the tree standing. Detection had been working
+    # for three attempts; the teardown was simply happening in the wrong
+    # process. TERM lands on the watcher, whose own trap runs it where it means
+    # something. Fall back to killing our siblings if we have no pid for it.
+    if [ -n "$_me" ]; then
+      kill -TERM "$_me" 2>/dev/null
+      exit 0
+    fi
     _watchers_teardown
   done
 }
