@@ -6,7 +6,6 @@
 - The watcher teardown blocked forever: it waited on watchers that are pipelines, which do not die with their shell. Subtrees are now killed leaves-first, with a bounded wait.
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
 - A domain born after startup lost its first write: an app's initial configuration went unreported. It is now emitted, with a `# NOTE:` marking it as such.
-- Following Console by PID killed the run outright whenever Console was absent: under `pipefail` an empty `pgrep` tripped `set -e`, skipping the teardown and stranding the root watcher tree.
 
 ### Noise
 - Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`): an install attempt recorded then deleted, so every Electron update surfaced as a write and two deletes.

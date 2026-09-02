@@ -11,7 +11,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **Noise filtering** — 500+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3
 
-## Start and stop
+## Quick Start
 
 Run in Terminal. Output is also logged and viewable in Console.app.
 
