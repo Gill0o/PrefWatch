@@ -626,6 +626,15 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # QuickLook daemon (plugin modification timestamps)
   "com.apple.QuickLookDaemon"
 
+  # Squirrel updater helpers (`<bundle-id>.ShipIt`). Squirrel is the auto-update
+  # framework behind most Electron apps; SQRL* keys are its installer bookkeeping
+  # — `SQRLShipItInstallationAttempts`, `SQRLInstallerOwnedBundle` — written when
+  # an install starts and deleted when it finishes, so each update surfaces as a
+  # write plus two spurious deletes. Ten such domains on one machine (VS Code,
+  # Slack, GitHub, Postman, drawio…), every one of them EMPTY at rest: there is
+  # no setting here to reproduce, only the trace of an update that already ran.
+  "*.ShipIt"
+
   # Third-party updaters & telemetry
   "com.microsoft.autoupdate*"
   "com.microsoft.shared"
