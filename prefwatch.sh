@@ -3827,6 +3827,23 @@ _emit_mdm_resolver_header() {
 typeset -ga _WATCH_PIDS=()
 _spawn() { "$@" & _WATCH_PIDS+=($!); }
 
+# Notice being orphaned and tear down. The main process cannot do this for
+# itself: SIGKILL runs no trap, so a force-quit leaves this subtree alive with
+# its watchers, its eslogger and — worst — its fs_usage, which holds the only
+# ktrace slot on the machine and silently disables real-time detection for every
+# later run. Checking from below costs one `kill -0` every 5s, a shell builtin.
+_orphan_watchdog() {
+  local _p="${PREFWATCH_MAIN_PID:-0}"
+  [ "$_p" -gt 1 ] 2>/dev/null || return 0
+  while true; do
+    /bin/sleep 5
+    kill -0 "$_p" 2>/dev/null || {
+      log_line "Cmd: # NOTE: parent process is gone — shutting the watchers down"
+      _watchers_teardown
+    }
+  done
+}
+
 # Teardown shared by start_watch and start_watch_all — the same TERM/INT handler
 # was written out twice verbatim, so a change to one could silently miss the other.
 _watchers_teardown() {
@@ -3976,6 +3993,9 @@ start_watch() {
   _emit_mdm_resolver_header
 
   trap '_watchers_teardown' TERM INT
+  # Same orphan guard as ALL mode: single-domain leaves a subtree behind too.
+  _orphan_watchdog &
+  _WATCH_PIDS+=($!)
   wait
 }
 
@@ -5155,6 +5175,8 @@ PY
   done
 
   trap '_watchers_teardown' TERM INT
+  _orphan_watchdog &
+  _WATCH_PIDS+=($!)
   wait
 }
 
@@ -5249,7 +5271,15 @@ fi
 # Try to open Console.app (unless --no-console)
 [ "$NO_CONSOLE" = "true" ] || launch_console
 
-# Start monitoring in background
+# Start monitoring in background.
+#
+# The watcher gets the main's PID so it can notice being orphaned. Every
+# trappable signal already tears the tree down cleanly — measured on TERM, HUP
+# and INT — but SIGKILL cannot be trapped, and a force-quit therefore left the
+# whole watcher tree running with no parent, holding the machine's single ktrace
+# slot until reboot. Four such trees were found on one workstation, plus eslogger
+# clients days old. Watching from below covers what cannot be caught from above.
+typeset -gx PREFWATCH_MAIN_PID=$$
 if [ "$ALL_MODE" = "true" ]; then
   start_watch_all &
 else

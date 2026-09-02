@@ -3,6 +3,7 @@
 ## 1.4.3 — unreleased
 
 ### Fix
+- Killing prefwatch left its whole watcher tree running, orphaned — including the `fs_usage` that holds the machine's only ktrace slot, so every later run silently had no real-time detection. `SIGKILL` runs no trap, so the watcher now checks from below whether its parent is still there and tears itself down when it is not. Four such trees, plus `eslogger` clients days old, were found on one workstation.
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
 - A domain born after startup lost its first write. Install an app, configure it, and its initial configuration was never reported — only later changes were. It is now emitted, with a `# NOTE:` saying the block is a whole configuration rather than one change.
 
