@@ -11,7 +11,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 - **Noise filtering** — 500+ rules, so only real changes surface
 - **Minimal dependencies** — one zsh script + Python 3
 
-## Quick Start
+## Start and stop
 
 Run in Terminal. Output is also logged and viewable in Console.app.
 
@@ -24,7 +24,12 @@ sudo ./prefwatch.sh
 
 # Verbose mode
 sudo ./prefwatch.sh -v
+
+# Stop it
+sudo pkill -f 'prefwatch\.sh'
 ```
+
+Not `pkill -9` — it cannot be trapped, so the watcher processes survive. A leftover `fs_usage` then holds the machine's only ktrace slot, and real-time detection stays off for every later run without saying so. Check with `pgrep -x fs_usage`: it should come back empty.
 
 ## Usage
 
@@ -66,14 +71,6 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 
 - ALL mode without `sudo` covers user preferences in full. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take several seconds on its first change — pass it via `--hot-domains` upfront if that matters.
-
-## Stopping it
-
-```bash
-sudo pkill -f 'prefwatch\.sh'
-```
-
-Not `pkill -9` — it cannot be trapped, so the watcher processes survive. A leftover `fs_usage` then holds the machine's only ktrace slot, and real-time detection stays off for every later run without saying so. Check with `pgrep -x fs_usage`: it should come back empty.
 
 ## Security
 
