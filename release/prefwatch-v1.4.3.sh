@@ -3832,68 +3832,6 @@ _spawn() { "$@" & _WATCH_PIDS+=($!); }
 # its watchers, its eslogger and — worst — its fs_usage, which holds the only
 # ktrace slot on the machine and silently disables real-time detection for every
 # later run. Checking from below costs one `kill -0` every 5s, a shell builtin.
-_orphan_watchdog() {
-  # Ask "am I orphaned?", not "is my parent alive?".
-  #
-  # The first version watched the parent's PID with `kill -0`, which tests a
-  # NUMBER — and macOS recycles them, so a dead parent's slot handed to another
-  # process makes the check succeed forever. Confirming the pid still ran
-  # prefwatch did not close it either: this machine starts prefwatch repeatedly,
-  # so the recycled pid can BE another prefwatch. Found a start_watch_all
-  # orphaned for ten minutes with the watchdog running inside it.
-  #
-  # Our own ppid becoming 1 is not a guess about anyone else. Note `$$` in a zsh
-  # subshell is the PARENT shell's pid, not ours — `$sysparams[pid]` (zsh/system)
-  # is the real one, and getting that wrong is what made the earlier diagnosis
-  # circle for an hour. Fall back to the pid check when the module is absent.
-  # $1 is the pid of the shell that spawned us — the watcher subshell whose
-  # orphaning we are here to detect. NOT our own: `$sysparams[pid]` inside this
-  # function returns the WATCHDOG's pid, whose parent is that watcher and stays
-  # alive by definition, so watching ourselves never fires. Cost me a test run.
-  local _me="${1:-}"
-  local _p="${PREFWATCH_MAIN_PID:-0}"
-  [ -n "$_me" ] || [ "$_p" -gt 1 ] 2>/dev/null || return 0
-  local _pp
-  while true; do
-    /bin/sleep 5
-    if [ -n "$_me" ]; then
-      _pp=$(/bin/ps -o ppid= -p "$_me" 2>/dev/null | /usr/bin/tr -d ' ')
-      # Empty means we are gone ourselves; only "1" means orphaned.
-      [ "$_pp" = "1" ] || continue
-    else
-      kill -0 "$_p" 2>/dev/null && continue
-    fi
-    log_line "Cmd: # NOTE: parent process is gone — shutting the watchers down"
-    # SIGNAL the watcher shell; do not tear down from here. _watchers_teardown
-    # ends in `exit 0`, and run inside this subshell that exits the WATCHDOG —
-    # it killed itself and left the tree standing. Detection had been working
-    # for three attempts; the teardown was simply happening in the wrong
-    # process. TERM lands on the watcher, whose own trap runs it where it means
-    # something. Fall back to killing our siblings if we have no pid for it.
-    if [ -n "$_me" ]; then
-      # Do the killing HERE rather than signalling the watcher and trusting its
-      # trap. Signalling worked unprivileged and did not in a root session, and
-      # a trap that may or may not run is not something to depend on for a
-      # shutdown — especially one whose whole purpose is covering the case where
-      # signals were never delivered. Kill the siblings' subtrees first (skipping
-      # our own, or we stop half way), then the watcher itself, TERM then KILL.
-      local _self _k
-      _self=$(exec sh -c 'echo $PPID') 2>/dev/null || _self=""
-      for _k in $(pgrep -P "$_me" 2>/dev/null || true); do
-        [ "$_k" = "$_self" ] && continue
-        _wt_kill_tree "$_k"
-      done
-      kill -TERM "$_me" 2>/dev/null || true
-      /bin/sleep 1
-      kill -KILL "$_me" 2>/dev/null || true
-      exit 0
-    fi
-    _watchers_teardown
-  done
-}
-
-# Teardown shared by start_watch and start_watch_all — the same TERM/INT handler
-# was written out twice verbatim, so a change to one could silently miss the other.
 # Recursive, leaves-first, so a watcher's pipeline members die with it. Defined
 # here rather than reusing _kill_tree: that one lives in MAIN and is not yet
 # parsed when this subshell forks.
@@ -4067,15 +4005,6 @@ start_watch() {
   _emit_mdm_resolver_header
 
   trap '_watchers_teardown' TERM INT
-  # Same orphan guard as ALL mode: single-domain leaves a subtree behind too.
-  # Capture the pid into a variable BEFORE forking. Written inline as
-  # `_orphan_watchdog "${sysparams[pid]}" &` the shell forks first and evaluates
-  # after, so the watchdog received its OWN pid and spent its life checking
-  # whether it had been orphaned by a parent that is alive by construction.
-  zmodload zsh/system 2>/dev/null || true
-  local _swa_pid="${sysparams[pid]:-}"
-  _orphan_watchdog "$_swa_pid" &
-  _WATCH_PIDS+=($!)
   wait
 }
 
@@ -5262,14 +5191,6 @@ PY
   done
 
   trap '_watchers_teardown' TERM INT
-  # Capture the pid into a variable BEFORE forking. Written inline as
-  # `_orphan_watchdog "${sysparams[pid]}" &` the shell forks first and evaluates
-  # after, so the watchdog received its OWN pid and spent its life checking
-  # whether it had been orphaned by a parent that is alive by construction.
-  zmodload zsh/system 2>/dev/null || true
-  local _swa_pid="${sysparams[pid]:-}"
-  _orphan_watchdog "$_swa_pid" &
-  _WATCH_PIDS+=($!)
   wait
 }
 
@@ -5364,15 +5285,7 @@ fi
 # Try to open Console.app (unless --no-console)
 [ "$NO_CONSOLE" = "true" ] || launch_console
 
-# Start monitoring in background.
-#
-# The watcher gets the main's PID so it can notice being orphaned. Every
-# trappable signal already tears the tree down cleanly — measured on TERM, HUP
-# and INT — but SIGKILL cannot be trapped, and a force-quit therefore left the
-# whole watcher tree running with no parent, holding the machine's single ktrace
-# slot until reboot. Four such trees were found on one workstation, plus eslogger
-# clients days old. Watching from below covers what cannot be caught from above.
-typeset -gx PREFWATCH_MAIN_PID=$$
+# Start monitoring in background
 if [ "$ALL_MODE" = "true" ]; then
   start_watch_all &
 else
