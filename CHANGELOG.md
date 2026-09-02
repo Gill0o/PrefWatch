@@ -3,12 +3,12 @@
 ## 1.4.3 — unreleased
 
 ### Fix
-- Killing prefwatch left its whole watcher tree running, holding the machine's only ktrace slot — so every later run silently had no real-time detection. `SIGKILL` runs no trap, so the watcher now notices its parent is gone and tears itself down.
+- The watcher teardown blocked forever: it waited on watchers that are pipelines (`eslogger | grep | python3`, `script | sed | awk`), which do not die with their shell. Each subtree is now killed leaves-first and the wait is bounded.
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
 - A domain born after startup lost its first write. Install an app, configure it, and its initial configuration was never reported — only later changes were. It is now emitted, with a `# NOTE:` saying the block is a whole configuration rather than one change.
 
 ### Known issue
-- Quitting Console.app ends the run but leaves the watcher processes behind on a root session — one child dies, the rest survive, including the `fs_usage` that holds the machine's only ktrace slot and so silently disables real-time detection for later runs. Stop it with `sudo pkill -f 'prefwatch\.sh'` meanwhile; never with `-9`, which cannot be trapped and orphans the tree on any path.
+- Quitting Console.app on a root session leaves the watcher processes behind — one child dies, the rest survive, including the `fs_usage` holding the machine's only ktrace slot. Stop it with `sudo pkill -f 'prefwatch\.sh'` meanwhile.
 
 ### Noise
 - Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`). They record an install attempt and delete it on success, so each Electron app update surfaced as one write and two deletes. Ten such domains on one machine, every one empty at rest.
