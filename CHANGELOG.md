@@ -3,18 +3,18 @@
 ## 1.4.3 — unreleased
 
 ### Fix
-- The watcher teardown blocked forever: it waited on watchers that are pipelines (`eslogger | grep | python3`, `script | sed | awk`), which do not die with their shell. Each subtree is now killed leaves-first and the wait is bounded.
+- The watcher teardown blocked forever: it waited on watchers that are pipelines, which do not die with their shell. Subtrees are now killed leaves-first, with a bounded wait.
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
-- A domain born after startup lost its first write. Install an app, configure it, and its initial configuration was never reported — only later changes were. It is now emitted, with a `# NOTE:` saying the block is a whole configuration rather than one change.
+- A domain born after startup lost its first write — install an app, configure it, and its initial configuration went unreported. It is now emitted, with a `# NOTE:` marking it as a whole configuration.
 
 ### Known issue
-- Quitting Console.app on a root session leaves the watcher processes behind — one child dies, the rest survive, including the `fs_usage` holding the machine's only ktrace slot, so real-time detection stays off for later runs without saying so. Stop it with `sudo pkill -f 'prefwatch\.sh'` meanwhile, never `-9`, which cannot be trapped.
+- Quitting Console.app on a root session leaves the watchers behind, `fs_usage` included — it holds the machine's only ktrace slot, so real-time detection stays off afterwards. Stop with `pkill -f`, never `-9`.
 
 ### Noise
-- Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`). They record an install attempt and delete it on success, so each Electron app update surfaced as one write and two deletes. Ten such domains on one machine, every one empty at rest.
+- Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`): an install attempt is recorded then deleted, so every Electron app update surfaced as one write and two deletes. Ten domains here, all empty at rest.
 
 ### Performance
-- Console is followed by PID rather than by name. `pgrep -x Console` ran every second for the whole session — 14ms a call, about 50 seconds of CPU per hour; `kill -0` is a shell builtin and costs nothing. The name lookup still happens, but only when the PID stops answering.
+- Console is followed by PID rather than by name: `pgrep -x Console` ran every second all session, 14ms a call — some 50 seconds of CPU an hour. The name lookup happens only when the PID stops answering.
 
 
 ## 1.4.2 — 2026-09-01
