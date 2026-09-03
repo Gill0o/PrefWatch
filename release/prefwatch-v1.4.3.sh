@@ -3885,10 +3885,18 @@ _watchers_teardown() {
   for _p in ${_WATCH_PIDS[@]}; do _wt_kill_tree "$_p"; done
   # Bounded: give them a moment, then stop caring. Nothing here is worth hanging
   # a shutdown for, and anything still alive is about to lose its parent anyway.
-  local _i
+  # Wait for the LAST watcher, not the first. `kill -0 p1 p2 p3` reports failure as
+  # soon as ONE pid is gone, so testing the whole list at once broke out after a
+  # single 0.25s tick and removed the tmpdir from under watchers still shutting
+  # down. Poll each pid and stop only when none answers.
+  local _i _q _alive
   for _i in 1 2 3 4 5 6; do
     /bin/sleep 0.25
-    kill -0 ${_WATCH_PIDS[@]} 2>/dev/null || break
+    _alive=0
+    for _q in ${_WATCH_PIDS[@]}; do
+      if kill -0 "$_q" 2>/dev/null; then _alive=1; break; fi
+    done
+    [ "$_alive" -eq 0 ] && break
   done
   /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
   exit 0
