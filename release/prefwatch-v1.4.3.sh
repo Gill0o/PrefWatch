@@ -2565,11 +2565,23 @@ _process_diff_lines() {
   if [ ! -s "$prev" ]; then
     [ "${_BASELINE_DONE:-false}" = "true" ] || return 0
     [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && return 0
-    # `prev` is not merely empty, it does not EXIST — and `diff -u <missing> curr`
-    # fails outright, printing nothing. Lifting the guard alone therefore emitted
-    # the note and no commands at all. Materialise an empty baseline so every key
-    # of the new domain shows up as an addition.
-    [ -f "$prev" ] || : > "$prev" 2>/dev/null || return 0
+    # An EXISTING but empty baseline is a FAILED snapshot, never a new domain.
+    # dump_plist redirects into the file before plutil runs, so when plutil AND the
+    # raw-copy fallback both fail — the window where cfprefsd unlinks and recreates
+    # a plist mid-scan — a 0-byte baseline is left behind. plutil on a genuinely
+    # empty plist writes "{\n}", so empty really does mean the dump produced
+    # nothing. Treating that as novelty announced "did not exist at startup" and
+    # dumped the domain whole (reproduced: a 3-key domain emitted all 4 keys after
+    # its baseline was zeroed). Adopt the current state as the baseline and stay
+    # silent; the next real change then diffs against it correctly.
+    if [ -e "$prev" ]; then
+      /bin/cp -f "$curr" "$prev" 2>/dev/null || :
+      return 0
+    fi
+    # `prev` does not EXIST — and `diff -u <missing> curr` fails outright, printing
+    # nothing. Lifting the guard alone therefore emitted the note and no commands at
+    # all. Materialise an empty baseline so every key shows up as an addition.
+    : > "$prev" 2>/dev/null || return 0
     _note_should_show "__newdom__:${dom}" \
       && _log_kind "$kind" "Cmd: # NOTE: '$dom' did not exist at startup — what follows is its whole initial configuration, not a single change"
   fi
