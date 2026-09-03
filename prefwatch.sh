@@ -4274,10 +4274,34 @@ start_watch_all() {
         # either — the holder may have exited between the check and the start, in
         # which case this is the first anyone hears of it.
         # Now that it HAS failed, naming the holder is worth the lookup.
+        # Name the process actually HOLDING the slot, not the last one to configure
+        # tracing. `Last configured by` is what this used to report, and on a
+        # healthy Mac it says 'tailspind' — a routine Apple daemon — while fs_usage
+        # starts perfectly well. Reported at the moment fs_usage fails, that wording
+        # accuses whichever process happens to be named there. `Owning process is
+        # [N]` is the real holder: proven on a VM where it named FlexNet's licensing
+        # service, and killing that pid let fs_usage start with an empty stderr.
+        # Resolve it to a command so the admin knows what to stop; keep the weaker
+        # form as a fallback, labelled as such so the two are never confused.
+        #
+        # Every capture guarded: `ktrace info` needs root and fails otherwise (with
+        # a misleading "Too many levels of remote in path"), and under `pipefail` an
+        # unguarded assignment would trip ERR_EXIT and kill this watcher mid-report
+        # — the same shape as the Console-by-PID regression fixed in this cycle.
+        local _kt="" _own_pid=""
         if [ -x /usr/bin/ktrace ]; then
-          _fsu_who=$(/usr/bin/ktrace info 2>/dev/null | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1)
+          _kt=$(/usr/bin/ktrace info 2>/dev/null) || _kt=""
+          _own_pid=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE 's/.*Owning process is \[([0-9]+)\].*/\1/p' | /usr/bin/head -1) || _own_pid=""
+          if [ -n "$_own_pid" ]; then
+            _fsu_who=$(/bin/ps -o comm= -p "$_own_pid" 2>/dev/null) || _fsu_who=""
+            [ -n "$_fsu_who" ] && _fsu_who="held by $_fsu_who (pid $_own_pid)"
+          fi
+          if [ -z "$_fsu_who" ]; then
+            _fsu_who=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1) || _fsu_who=""
+            [ -n "$_fsu_who" ] && _fsu_who="last configured by '$_fsu_who' (may not be the holder)"
+          fi
         fi
-        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is taken${_fsu_who:+ (last configured by '$_fsu_who')}."
+        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is taken${_fsu_who:+ — $_fsu_who}."
         # NOT "covers everything, just a little slower" — both halves were
         # measured false the same evening they were written. Latency: 0.47s with
         # real-time against 0.49s without, i.e. the 0.5s poll interval in both

@@ -8,6 +8,7 @@
 - A domain born after startup lost its first write: an app's initial configuration went unreported. It is now emitted, with a `# NOTE:` marking it as such.
 - Naming an excluded domain explicitly emitted no `defaults write`, while a `# NOTE:` promised it was being watched. The exclusion list now applies in ALL mode only.
 - A change whose only output is a `# NOTE:` was dropped: the comment buffer was flushed alongside a real command or never, so an unaddressable empty-string key left the log blank.
+- The ktrace NOTE named whoever configured tracing last — a routine Apple daemon on a healthy Mac. It now resolves the process actually holding the slot, and says so when it cannot.
 
 ### Noise
 - Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`): an install attempt recorded then deleted, so every Electron update surfaced as a write and two deletes.
