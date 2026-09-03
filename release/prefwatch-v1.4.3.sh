@@ -1946,7 +1946,11 @@ _log() {
 
     if [[ "$out" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
       local _cmd_dom="${match[2]}"
-      if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+      # Only ALL mode may drop an excluded domain. When the user names the domain
+      # explicitly, the exclusion list must not apply — show_domain_diff already
+      # guards this way; without the same guard here the run printed a NOTE
+      # promising to monitor, then swallowed every `defaults write`.
+      if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
         return 0
       fi
     fi
@@ -1960,7 +1964,8 @@ _log() {
   local line="[$ts] $msg"
   if [[ "$msg" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
     local _cmd_dom="${match[2]}"
-    if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+    # Same guard as the ONLY_CMDS branch above.
+    if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
       return 0
     fi
   fi
@@ -2376,7 +2381,8 @@ _emit_cmd() {
   if [ "$is_delete" != "true" ]; then
     local _cmd_dom
     _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
-    if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
+    # See _log: only ALL mode may drop an excluded domain.
+    if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
     _emit_contextual_note "$note_dom" ""
   fi
 
@@ -2514,6 +2520,17 @@ _process_py_meta() {
       done
     fi
   done <<< "$meta_raw"
+  # Comments are buffered until a real command makes it through filtering, but a
+  # NOTE can be the ONLY output — _note_empty_key fires INSTEAD of the commands it
+  # skips. Without this final flush that change vanished entirely: in the default
+  # quiet mode the log stayed empty, with no trace that anything was seen.
+  if (( ${#_pending_comments[@]} > 0 )) && [ -n "$plist_path" ]; then
+    for _pc in "${_pending_comments[@]}"; do
+      [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
+      _log_kind "$kind" "Cmd: $_pc"
+    done
+    _pending_comments=()
+  fi
 }
 
 # Walk the unified diff(prev,curr) and emit write/delete via _emit_cmd
