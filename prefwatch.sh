@@ -4350,10 +4350,13 @@ start_watch_all() {
           fi
           if [ -z "$_fsu_who" ]; then
             _fsu_who=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1) || _fsu_who=""
-            [ -n "$_fsu_who" ] && _fsu_who="last configured by '$_fsu_who' (may not be the holder)"
+            [ -n "$_fsu_who" ] && _fsu_who="taken; last configured by '$_fsu_who', which may not be the holder"
           fi
         fi
-        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is taken${_fsu_who:+ — $_fsu_who}."
+        # Each branch supplies its own full clause, so the sentence reads correctly
+        # in all three cases. Appending an attribution to a fixed "it is taken"
+        # gave "taken — held by …" (redundant) and "taken — last configured by …".
+        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is ${_fsu_who:-taken}."
         # NOT "covers everything, just a little slower" — both halves were
         # measured false the same evening they were written. Latency: 0.47s with
         # real-time against 0.49s without, i.e. the 0.5s poll interval in both

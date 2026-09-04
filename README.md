@@ -68,6 +68,7 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 ## Detection
 
 - ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
+- Real-time detection needs the machine's single ktrace slot; when another process holds it the log names which one. Polling covers the same ground at the same latency, so nothing is lost. A stale `fs_usage` left by a crashed run is the usual culprit — `sudo pkill -x fs_usage`. Some licensing daemons hold the slot permanently and reclaim it at every boot; there is nothing to do about those.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security
