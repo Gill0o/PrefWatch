@@ -5,13 +5,15 @@
 ### Fix
 - `.GlobalPreferences` was a declared hot domain that never got its flush: the marker directory was globbed without `(D)`, so its one dot-prefixed name stayed invisible. Latency only.
 - Emitted commands left the domain unquoted, so a domain containing a space wrote the wrong key into the wrong domain — 15 such domains on one ordinary Mac.
-- That same gap let a crafted plist filename slip a command substitution into a line meant for a root shell. Domains, paths, array keys and watcher fields are escaped now.
 - The watcher teardown blocked forever: it waited on watchers that are pipelines, which do not die with their shell. Subtrees are now killed leaves-first, with a bounded wait.
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
 - A domain born after startup lost its first write: an app's initial configuration went unreported. It is now emitted, with a `# NOTE:` marking it as such.
 - Naming an excluded domain explicitly emitted no `defaults write`, while a `# NOTE:` promised it was being watched. The exclusion list now applies in ALL mode only.
 - A change whose only output is a `# NOTE:` was dropped: the comment buffer was flushed alongside a real command or never, so an unaddressable empty-string key left the log blank.
 - The ktrace NOTE named whoever configured tracing last — a routine Apple daemon on a healthy Mac. It now resolves the process actually holding the slot, and says so when it cannot.
+
+### Security
+- A crafted plist filename could slip a command substitution into a line an admin replays in a root shell. Domains, paths, array keys and watcher-supplied fields are escaped now.
 
 ### Noise
 - Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`): an install attempt recorded then deleted, so every Electron update surfaced as a write and two deletes.
