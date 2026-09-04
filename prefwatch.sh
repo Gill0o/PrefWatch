@@ -2100,12 +2100,25 @@ extract_type_value_with_plutil() {
 # that may not even exist, or whose same-named key is unrelated). Callers that
 # know the file they diffed pass it here; without it the old behaviour stands.
 convert_delete_to_plistbuddy() {
-  local cmd="$1" path_override="${2:-}"
+  # $3 = OPTIONAL domain, passed straight from the caller. Re-deriving it by
+  # regex over a command string this very file just built is fragile by
+  # construction, and it broke the moment the domain gained its (necessary)
+  # quotes: the pattern captured `"com.foo"` WITH them, and get_plist_path then
+  # produced a path containing literal quote characters. Callers know the domain
+  # — hand it over instead of parsing it back out. The regex stays as a fallback
+  # so an outside caller passing only a command string still works.
+  local cmd="$1" path_override="${2:-}" domain_override="${3:-}"
 
   local domain target
-  domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+([^[:space:]]+).*/\2/p')
-  target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*delete[[:space:]]+[^[:space:]]+[[:space:]]+"([^"]+)".*/\1/p')
-  [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*delete[[:space:]]+[^[:space:]]+[[:space:]]+([^[:space:]]+).*/\1/p')
+  if [ -n "$domain_override" ]; then
+    domain="$domain_override"
+  else
+    domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+"?([^"[:space:]]+)"?.*/\2/p')
+  fi
+  # The target is the LAST quoted field — anchoring on the end survives a domain
+  # that itself contains a space (15 such domains on one ordinary Mac).
+  target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*"([^"]*)"[[:space:]]*$/\1/p')
+  [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*[[:space:]]([^"[:space:]]+)[[:space:]]*$/\1/p')
 
   [ -n "$domain" ] || return 1
   [ -n "$target" ] || return 1
@@ -2135,7 +2148,10 @@ convert_delete_to_plistbuddy() {
   # single-quoted PlistBuddy -c 'Delete …' expression (each ' → '\'').
   local _target_esc
   _target_esc=$(printf '%s' "$target" | /usr/bin/sed "s/'/'\\\\''/g")
-  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$_mdm_path"
+  # The path sits inside double quotes but was never escaped — and it carries the
+  # same attacker-chosen filename as the domain. Escape AFTER templatizing so the
+  # deliberate $loggedInUser / $UUID tokens keep working (see mdm_plist_path).
+  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$(_escape_pb_path "$_mdm_path")"
   return 0
 }
 
@@ -2156,6 +2172,24 @@ typeset -g _SQ_ESC="${_SQ}\\${_SQ}${_SQ}"
 # emitted command: backslash, double-quote, $ and backtick — else a pref value
 # containing `$(…)`, `$VAR` or backticks would execute/expand when the logged
 # command is copy-pasted and run.
+# Escape a plist PATH for a double-quoted shell string, while PRESERVING the two
+# tokens mdm_plist_path deliberately injects ($loggedInUser, $UUID) — those must
+# stay expandable at replay time, everything else must not.
+_escape_pb_path() {
+  local _p _liu_esc _uid_esc _uid_tok
+  _p=$(_escape_dq "$1")
+  # Re-expose the two tokens mdm_plist_path injects on purpose. Derive their
+  # escaped forms by running the SAME escaper over them rather than spelling
+  # `\$loggedInUser` inline: written literally, zsh expands it in THIS shell,
+  # where it is unset — and `set -u` then aborts the run.
+  _uid_tok='$UUID'
+  _liu_esc=$(_escape_dq "$_MDM_LIU")
+  _uid_esc=$(_escape_dq "$_uid_tok")
+  _p="${_p//"$_liu_esc"/"$_MDM_LIU"}"
+  _p="${_p//"$_uid_esc"/"$_uid_tok"}"
+  printf '%s' "$_p"
+}
+
 _escape_dq() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g; s/`/\\`/g'; }
 
 # Build `defaults write …` for dom/keyname/trimmed via type cascade.
@@ -2178,6 +2212,19 @@ _build_defaults_write_cmd() {
   # appends .plist. A bare domain would replay into the console user's ~ copy.
   [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="/Library/Preferences/${dom}"
 
+  # The DOMAIN needs the same treatment as the key, and for two reasons that are
+  # easy to miss because it "looks structured". It is not: it is a plist FILENAME,
+  # and a filename is free text.
+  #   · Correctness — 15 domains on one ordinary Mac contain a space
+  #     ("com.native-instruments.Kontakt 8", "com.topazlabs.Topaz Photo AI",
+  #     "unity.Klei.Oxygen Not Included"). Unquoted, `defaults write <dom> "k" 1`
+  #     word-splits and writes the WRONG key into the WRONG domain. Silently.
+  #   · Security — anything running as the user can create
+  #     ~/Library/Preferences/com.x$(curl…|sh).plist. The name reaches this line
+  #     and the emitted command is replayed BY AN ADMIN IN A ROOT SHELL, which is
+  #     this tool's whole purpose. Verified end to end before the fix.
+  local _dm; _dm=$(_escape_dq "$dom")
+
   # Probe the type as the CONSOLE USER for user domains. In ALL mode prefwatch runs
   # as root, where a bare `defaults read-type com.apple.dock …` reads ROOT's domain
   # and fails ("Domain not found") — the empty probe then fell through to the 0/1
@@ -2197,40 +2244,40 @@ _build_defaults_write_cmd() {
   fi
 
   if [ "$actual_type" = "float" ]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
   elif [ "$actual_type" = "integer" ]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
   elif [ "$actual_type" = "boolean" ]; then
     type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
     noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
     str=$(_escape_dq "$noquotes")
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -string \"${str}\""
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"${str}\""
   elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
     type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
     type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
   elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
   else
     if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
       plutil_type="${plutil_result%%|*}"
       plutil_value="${plutil_result#*|}"
       case "$plutil_type" in
-        string) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
-        bool)   cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${plutil_value}" ;;
-        int)    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${plutil_value}" ;;
-        float)  cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${plutil_value}" ;;
+        string) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
+        bool)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${plutil_value}" ;;
+        int)    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${plutil_value}" ;;
+        float)  cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${plutil_value}" ;;
         array|dict) cmd="" ;;
-        *) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" <type> <value>" ;;
+        *) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>" ;;
       esac
     else
-      cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" <type> <value>"
+      cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>"
     fi
   fi
 
@@ -2251,10 +2298,12 @@ _build_defaults_delete_cmd() {
   # shell string, so " / $ / backtick in a key must not break (or execute in) the
   # emitted command. Array targets are digits+name and unaffected in practice.
   target=$(_escape_dq "$target")
+  # Same as the write builder: the domain is a filename, so quote AND escape it.
+  local _dm; _dm=$(_escape_dq "$dom")
   if [ -n "$hostflag" ]; then
-    printf 'defaults %s delete %s "%s"' "$hostflag" "$dom" "$target"
+    printf 'defaults %s delete "%s" "%s"' "$hostflag" "$_dm" "$target"
   else
-    printf 'defaults delete %s "%s"' "$dom" "$target"
+    printf 'defaults delete "%s" "%s"' "$_dm" "$target"
   fi
 }
 
@@ -2400,7 +2449,7 @@ _emit_cmd() {
 
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
-    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" 2>/dev/null); then
+    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
@@ -2493,7 +2542,7 @@ _process_py_meta() {
       # …then break out of those single quotes around the templatized $loggedInUser
       # so the shell actually expands it at run time (single quotes would keep it literal).
       [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
-      pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
+      pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"$(_escape_pb_path "$_mdm_path")\""
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_full")"
       continue
     fi
@@ -3170,7 +3219,10 @@ emit_array_deletions() {
       _log_kind "$kind" "Cmd: # dockutil --remove '$app_label'"
     fi
 
-    local delete_cmd="defaults delete ${dom} \":${base}:${idx}\""
+    # $base is an array key name straight out of the plist, and $dom is the
+    # filename-derived domain — both were interpolated raw here while the very
+    # same construction in _build_defaults_delete_cmd escapes its target.
+    local delete_cmd="defaults delete \"$(_escape_dq "$dom")\" \":$(_escape_dq "$base"):${idx}\""
 
     if is_noisy_command "$delete_cmd"; then
       :
@@ -3178,7 +3230,7 @@ emit_array_deletions() {
       :
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
-      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" 2>/dev/null); then
+      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
@@ -4577,7 +4629,10 @@ while True:
             if is_readonly(basename, args):
                 continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
-            emit((exe + " " + tail).rstrip())
+            # shlex.quote on the PATH too, not only on the args below it: `exe`
+            # is the path of any binary any local user just ran, and it lands in a
+            # `sudo …` line an admin replays as root.
+            emit((shlex.quote(exe) + " " + tail).rstrip())
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
             # Sharing-only: drop third-party LaunchAgent churn (e.g. Zoom/MS
             # updaters bootstrapping us.zoom.updater.* in gui/<uid>).
@@ -4592,7 +4647,7 @@ while True:
                 pass
             else:
                 tail = " ".join(shlex.quote(a) for a in args[1:])
-                emit(exe + " " + tail)
+                emit(shlex.quote(exe) + " " + tail)
     except Exception:
         pass
 ' 2>/dev/null \
@@ -4630,7 +4685,7 @@ while True:
     _emit_launchd_diff() {
       local prev="$1" curr="$2" domain="$3"
       "$PYTHON3_BIN" - "$prev" "$curr" "$domain" 2>/dev/null <<'PY'
-import json, sys, fnmatch
+import json, sys, fnmatch, shlex
 prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
 # Third-party VM / container helpers that auto-toggle their own launchd
 # state in the user gui session — not user-driven preference changes.
@@ -4658,7 +4713,10 @@ curr = load(curr_path)
 # gui/<uid> services live in the console user's domain — a root replay needs
 # `launchctl asuser <uid> …`, not a bare `launchctl … gui/<uid>/…`. System stays.
 def _lc(verb, k):
-    base = f"/bin/launchctl {verb} {domain}/{k}"
+    # `k` is a label an unprivileged user can put there with
+    # `launchctl disable gui/<uid>/<label>`, and the line is emitted with a
+    # `sudo` prefix. Quote it.
+    base = f"/bin/launchctl {verb} {shlex.quote(domain + '/' + k)}"
     return f"/bin/launchctl asuser {domain.split('/',1)[1]} {base}" if domain.startswith("gui/") else base
 for k in sorted(set(prev) | set(curr)):
     if is_noisy(k):
@@ -5007,7 +5065,10 @@ PY
         # prompt; file types and other schemes apply silently.
         [ "$_kind" = url ] && [ "$_what" = http ] && _note_should_show __default_browser__ \
           && log_line "Cmd: # NOTE: changing the default browser prompts the user to confirm"
-        log_line "Cmd: utiluti $_kind set $_what $_app"
+        # Both fields come from com.apple.launchservices.secure.plist, which is
+        # -rw-r--r-- and writable by anything running as the user. Emitted raw,
+        # a scheme of `x; curl …|sh; #` needed no substitution at all to inject.
+        log_line "Cmd: utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       return 0
     }

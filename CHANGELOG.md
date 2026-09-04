@@ -3,6 +3,8 @@
 ## 1.4.3 — unreleased
 
 ### Fix
+- Emitted commands left the domain unquoted, so a domain containing a space wrote the wrong key into the wrong domain — 15 such domains on one ordinary Mac.
+- That same gap let a crafted plist filename slip a command substitution into a line meant for a root shell. Domains, paths, array keys and watcher fields are escaped now.
 - The watcher teardown blocked forever: it waited on watchers that are pipelines, which do not die with their shell. Subtrees are now killed leaves-first, with a bounded wait.
 - `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
 - A domain born after startup lost its first write: an app's initial configuration went unreported. It is now emitted, with a `# NOTE:` marking it as such.
