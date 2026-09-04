@@ -4399,7 +4399,11 @@ start_watch_all() {
         # Refresh hot markers so they never expire via the 30s cleanup below
         (( ${#_hotpaths[@]} )) && { /usr/bin/touch "${_hotpaths[@]}" 2>/dev/null || true; }
         _pids=()
-        for _af in "$active_dir"/*(N); do
+        # (DN), not (N): zsh globs skip dot-prefixed names by default, and
+        # `.GlobalPreferences` is a declared HOT domain — its marker was created
+        # here and never seen, so the one domain holding NSGlobalDomain and the
+        # ColorSync device map never got the cfprefsd flush meant for it.
+        for _af in "$active_dir"/*(DN); do
           [ -f "$_af" ] || continue
           zstat -H _st "$_af" 2>/dev/null || continue
           if (( EPOCHSECONDS - _st[mtime] > 30 )); then

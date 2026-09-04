@@ -3,6 +3,7 @@
 ## 1.4.3 — unreleased
 
 ### Fix
+- `.GlobalPreferences` was a declared hot domain that never got its flush: the marker directory was globbed without `(D)`, so its one dot-prefixed name stayed invisible. Latency only.
 - Emitted commands left the domain unquoted, so a domain containing a space wrote the wrong key into the wrong domain — 15 such domains on one ordinary Mac.
 - That same gap let a crafted plist filename slip a command substitution into a line meant for a root shell. Domains, paths, array keys and watcher fields are escaped now.
 - The watcher teardown blocked forever: it waited on watchers that are pipelines, which do not die with their shell. Subtrees are now killed leaves-first, with a bounded wait.
