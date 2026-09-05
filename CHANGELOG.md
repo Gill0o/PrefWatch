@@ -2,6 +2,9 @@
 
 ## 1.4.4 — unreleased
 
+### Feature
+- Share points are watched. Sharing a folder in System Settings wrote nothing to any plist — the record lives in OpenDirectory — so it emitted nothing at all, and replaying a File Sharing capture started the daemon with whatever the target already shared. Adding, editing and removing one now emits the matching `sharing` command.
+
 
 ## 1.4.3 — 2026-09-05
 

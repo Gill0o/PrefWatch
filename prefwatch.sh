@@ -3971,6 +3971,7 @@ typeset -ga _WATCHERS=(
   'pmset|true|pmset_watch|'
   'cups_sharing|[ -f /etc/cups/cupsd.conf ]|cups_sharing_watch|y'
   'ard_privs|[ -x /usr/bin/dscl ]|ard_privs_watch|y'
+  'sharepoints|[ -x /usr/sbin/sharing ] && [ -n "$PYTHON3_BIN" ]|sharepoints_watch|y'
   'useracct|[ -x /usr/bin/dscl ]|useracct_watch|y'
   'hostname|[ -x /usr/sbin/scutil ]|hostname_watch|y'
   'default_apps|[ -n "$PYTHON3_BIN" ]|default_apps_watch|y'
@@ -4961,6 +4962,82 @@ PY
       return 0
     }
     _snapshot_watch ard_privs 2 _read_ardprivs _onchange_ardprivs
+  }
+
+  # File Sharing SHARE POINTS — which folders are shared, and their SMB flags.
+  # These live in OpenDirectory (`dscl . -list /SharePoints`), never in a plist,
+  # so the plist diff cannot see them: sharing a specific folder in the GUI used
+  # to emit nothing at all. Replaying only the smbd launchctl commands then
+  # started the daemon with whatever the target already shared, not what the
+  # admin had just set up.
+  #
+  # Read through `sharing -l -f json`, NOT dscl. Same information for what is
+  # reproducible, minus everything that is not: the dscl record also carries
+  # com_apple_sharing_uuid / sharepoint_group_id / sharepoint_account_uuid (per
+  # machine, would not transplant) and record_daemon_version (pure churn). The
+  # JSON view contains none of them, so they are excluded by construction rather
+  # than by a filter that could rot.
+  #
+  # The emitted flags are MEASURED, not guessed (probe 2026-09-05, macOS 26.6.2):
+  # `-s` and `-g` take THREE digits — afp, ftp, smb in that order — so smb-only
+  # is `001`, not `1`. Verified round-trip: `-s 001 -g 000 -R 1 -E 1` reads back
+  # as shared=1 guest=0 read_only=1 sealed=1, and `sharing -e` flips them back.
+  # afp and ftp are what `sharing` itself calls "no longer supported" and the
+  # JSON does not report them, so the first two digits are always 0 — faithful
+  # to everything that is observable.
+  sharepoints_watch() {
+    [ -x /usr/sbin/sharing ] || return 0
+    [ -n "$PYTHON3_BIN" ] || return 0
+    _read_sharepoints() {
+      /usr/sbin/sharing -l -f json 2>/dev/null | "$PYTHON3_BIN" -c '
+import json, sys
+try:    d = json.load(sys.stdin)
+except Exception: sys.exit(0)
+if not isinstance(d, dict): sys.exit(0)
+for name in sorted(d):
+    r = d[name] if isinstance(d[name], dict) else {}
+    # One TAB-separated line per share point: the exact fields `sharing -a`/-e set.
+    print("\t".join(str(x) for x in (
+        name, r.get("path",""), r.get("smb_shared",0), r.get("smb_guest_access",0),
+        r.get("smb_read_only",0), r.get("smb_sealed",0), r.get("smb_name",""))))
+' || true
+    }
+    # Build the flag tail shared by -a and -e. Kept in one place so an added and
+    # an edited share point can never drift into describing the same state twice.
+    _sp_flags() {   # <shared> <guest> <readonly> <sealed> <smb name>
+      printf -- '-S "%s" -s 00%s -g 00%s -R %s -E %s' \
+        "$(_escape_dq "$5")" "$1" "$2" "$3" "$4"
+    }
+    _onchange_sharepoints() {
+      local _snap="$1" _curr="$2"
+      local n p sh gu ro se sn old
+      while IFS=$'\t' read -r n p sh gu ro se sn; do
+        [ -n "$n" ] || continue
+        old=$(/usr/bin/awk -F'\t' -v k="$n" '$1==k{print; exit}' "$_snap" 2>/dev/null)
+        if [ -z "$old" ]; then
+          log_line "Cmd: # File Sharing: share point added — $n"
+          log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags "$sh" "$gu" "$ro" "$se" "$sn")"
+          if [ -z "${_SP_PATH_NOTED:-}" ]; then
+            log_line "Cmd: # NOTE: the shared folder must already exist on the target — sharing -a does not create it"
+            typeset -g _SP_PATH_NOTED=1
+          fi
+        elif [ "$old" != "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$n" "$p" "$sh" "$gu" "$ro" "$se" "$sn")" ]; then
+          # Same name, different state. `sharing -e` edits in place — proven by
+          # round-trip — so a flag change is reproducible without removing first.
+          log_line "Cmd: # File Sharing: share point changed — $n"
+          log_line "Cmd: sudo /usr/sbin/sharing -e \"$(_escape_dq "$n")\" $(_sp_flags "$sh" "$gu" "$ro" "$se" "$sn")"
+        fi
+      done < "$_curr"
+      # Removed: present in the snapshot, gone from the current read.
+      while IFS=$'\t' read -r n p sh gu ro se sn; do
+        [ -n "$n" ] || continue
+        /usr/bin/awk -F'\t' -v k="$n" '$1==k{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
+        log_line "Cmd: # File Sharing: share point removed — $n"
+        log_line "Cmd: sudo /usr/sbin/sharing -r \"$(_escape_dq "$n")\""
+      done < "$_snap"
+      return 0
+    }
+    _snapshot_watch sharepoints 2 _read_sharepoints _onchange_sharepoints
   }
 
   # Detect local user account add/remove (real users, UID >= 501). The account
