@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.4.3 — unreleased
+## 1.4.4 — unreleased
+
+
+## 1.4.3 — 2026-09-05
 
 ### Fix
 - `.GlobalPreferences` was a declared hot domain that never got its flush: the marker directory was globbed without `(D)`, so its one dot-prefixed name stayed invisible. Latency only.
