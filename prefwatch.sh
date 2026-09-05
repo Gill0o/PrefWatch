@@ -3971,7 +3971,7 @@ typeset -ga _WATCHERS=(
   'pmset|true|pmset_watch|'
   'cups_sharing|[ -f /etc/cups/cupsd.conf ]|cups_sharing_watch|y'
   'ard_privs|[ -x /usr/bin/dscl ]|ard_privs_watch|y'
-  'sharepoints|[ -x /usr/sbin/sharing ] && [ -n "$PYTHON3_BIN" ]|sharepoints_watch|y'
+  'sharepoints|[ -x /usr/bin/dscl ] && [ -n "$PYTHON3_BIN" ]|sharepoints_watch|y'
   'useracct|[ -x /usr/bin/dscl ]|useracct_watch|y'
   'hostname|[ -x /usr/sbin/scutil ]|hostname_watch|y'
   'default_apps|[ -n "$PYTHON3_BIN" ]|default_apps_watch|y'
@@ -4971,12 +4971,12 @@ PY
   # started the daemon with whatever the target already shared, not what the
   # admin had just set up.
   #
-  # Read through `sharing -l -f json`, NOT dscl. Same information for what is
-  # reproducible, minus everything that is not: the dscl record also carries
-  # com_apple_sharing_uuid / sharepoint_group_id / sharepoint_account_uuid (per
-  # machine, would not transplant) and record_daemon_version (pure churn). The
-  # JSON view contains none of them, so they are excluded by construction rather
-  # than by a filter that could rot.
+  # Read through `dscl -plist -readall`, which every supported macOS has. The
+  # first version of this read `sharing -l -f json` — cleaner output, but `-f
+  # json` is a recent option and PrefWatch has to work on the last three macOS
+  # releases, where an unknown option would make the read return nothing and the
+  # watcher miss every share point in silence. The two readers were compared on
+  # 26.6.2 and produce byte-identical output, so the portable one costs nothing.
   #
   # The emitted flags are MEASURED, not guessed (probe 2026-09-05, macOS 26.6.2):
   # `-s` and `-g` take THREE digits — afp, ftp, smb in that order — so smb-only
@@ -4986,27 +4986,45 @@ PY
   # JSON does not report them, so the first two digits are always 0 — faithful
   # to everything that is observable.
   sharepoints_watch() {
-    [ -x /usr/sbin/sharing ] || return 0
+    [ -x /usr/bin/dscl ] || return 0
     [ -n "$PYTHON3_BIN" ] || return 0
     _read_sharepoints() {
-      /usr/sbin/sharing -l -f json 2>/dev/null | "$PYTHON3_BIN" -c '
-import json, sys
-try:    d = json.load(sys.stdin)
+      /usr/bin/dscl -plist . -readall /SharePoints 2>/dev/null | "$PYTHON3_BIN" -c '
+import plistlib, sys
+def one(rec, key, default=""):
+    v = rec.get("dsAttrTypeNative:" + key) or rec.get("dsAttrTypeStandard:" + key)
+    if isinstance(v, list): v = v[0] if v else None
+    return default if v in (None, "") else v
+try:    recs = plistlib.loads(sys.stdin.buffer.read())
 except Exception: sys.exit(0)
-if not isinstance(d, dict): sys.exit(0)
-for name in sorted(d):
-    r = d[name] if isinstance(d[name], dict) else {}
-    # One TAB-separated line per share point: the exact fields `sharing -a`/-e set.
-    print("\t".join(str(x) for x in (
-        name, r.get("path",""), r.get("smb_shared",0), r.get("smb_guest_access",0),
-        r.get("smb_read_only",0), r.get("smb_sealed",0), r.get("smb_name",""))))
+if not isinstance(recs, list): sys.exit(0)
+rows = []
+for rec in recs:
+    if not isinstance(rec, dict): continue
+    name = one(rec, "RecordName")
+    if not name: continue
+    # Only the seven fields a `sharing` command can set. The record also carries
+    # com_apple_sharing_uuid / sharepoint_group_id / sharepoint_account_uuid (per
+    # machine, would not transplant) and record_daemon_version (pure churn) —
+    # they are dropped by SELECTING what we need, not by a filter that could rot.
+    rows.append((name, one(rec,"directory_path"), one(rec,"smb_shared","0"),
+                 one(rec,"smb_guestaccess","0"), one(rec,"smb_readonly","0"),
+                 one(rec,"smb_sealed","0"), one(rec,"smb_name", name)))
+for row in sorted(rows):
+    print("\t".join(str(x) for x in row))
 ' || true
     }
     # Build the flag tail shared by -a and -e. Kept in one place so an added and
     # an edited share point can never drift into describing the same state twice.
+    # -R and -E are emitted ONLY when set. They are the two newest flags, and a
+    # command replayed on an older macOS must not carry an option that release
+    # may not know; the common share point then needs neither.
     _sp_flags() {   # <shared> <guest> <readonly> <sealed> <smb name>
-      printf -- '-S "%s" -s 00%s -g 00%s -R %s -E %s' \
-        "$(_escape_dq "$5")" "$1" "$2" "$3" "$4"
+      local _f
+      _f=$(printf -- '-S "%s" -s 00%s -g 00%s' "$(_escape_dq "$5")" "$1" "$2")
+      if [ "$3" = 1 ]; then _f="$_f -R 1"; fi
+      if [ "$4" = 1 ]; then _f="$_f -E 1"; fi
+      printf '%s' "$_f"
     }
     _onchange_sharepoints() {
       local _snap="$1" _curr="$2"
