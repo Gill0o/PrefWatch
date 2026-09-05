@@ -5016,15 +5016,38 @@ for row in sorted(rows):
     }
     # Build the flag tail shared by -a and -e. Kept in one place so an added and
     # an edited share point can never drift into describing the same state twice.
-    # -R and -E are emitted ONLY when set. They are the two newest flags, and a
-    # command replayed on an older macOS must not carry an option that release
-    # may not know; the common share point then needs neither.
-    _sp_flags() {   # <shared> <guest> <readonly> <sealed> <smb name>
+    # Flags for a NEW share point. -R and -E are the two newest options and are
+    # emitted only when actually set, so the common case hands an older macOS
+    # nothing it may not know.
+    _sp_flags_add() {   # <shared> <guest> <readonly> <sealed> <smb name>
       local _f
       _f=$(printf -- '-S "%s" -s 00%s -g 00%s' "$(_escape_dq "$5")" "$1" "$2")
       if [ "$3" = 1 ]; then _f="$_f -R 1"; fi
       if [ "$4" = 1 ]; then _f="$_f -E 1"; fi
       printf '%s' "$_f"
+    }
+    # Flags for an EDIT: ONLY the fields that actually changed. Two measured
+    # reasons, neither of them guessable (probe 2026-09-05, macOS 26.6.2):
+    #
+    #  · `-S <name>` with the name the share ALREADY has is refused outright —
+    #    "sharing: smb name already exists" — and the whole edit is then a no-op.
+    #    The first version of this emitted -S unconditionally, so every emitted
+    #    edit silently did nothing. Only pass -S when the smb name really moved.
+    #  · an omitted flag is PRESERVED, not reset. So a share going read-only
+    #    1 -> 0 needs `-R 0` spelled out; leaving it out keeps the old value and
+    #    the replay does not reproduce the change.
+    #
+    # Emitting exactly the differences satisfies both: every transition is
+    # expressed, and nothing that did not move is mentioned.
+    _sp_flags_edit() {  # <old shared guest ro sealed smbname> then <new …>
+      local os="$1" og="$2" oro="$3" ose="$4" osn="$5"
+      local ns="$6" ng="$7" nro="$8" nse="$9" nsn="${10}" _f=""
+      if [ "$os" != "$ns" ];   then _f="$_f -s 00$ns"; fi
+      if [ "$og" != "$ng" ];   then _f="$_f -g 00$ng"; fi
+      if [ "$oro" != "$nro" ]; then _f="$_f -R $nro"; fi
+      if [ "$ose" != "$nse" ]; then _f="$_f -E $nse"; fi
+      if [ "$osn" != "$nsn" ]; then _f="$_f -S \"$(_escape_dq "$nsn")\""; fi
+      printf '%s' "${_f# }"
     }
     _onchange_sharepoints() {
       local _snap="$1" _curr="$2"
@@ -5034,16 +5057,27 @@ for row in sorted(rows):
         old=$(/usr/bin/awk -F'\t' -v k="$n" '$1==k{print; exit}' "$_snap" 2>/dev/null)
         if [ -z "$old" ]; then
           log_line "Cmd: # File Sharing: share point added — $n"
-          log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags "$sh" "$gu" "$ro" "$se" "$sn")"
+          log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags_add "$sh" "$gu" "$ro" "$se" "$sn")"
           if [ -z "${_SP_PATH_NOTED:-}" ]; then
             log_line "Cmd: # NOTE: the shared folder must already exist on the target — sharing -a does not create it"
             typeset -g _SP_PATH_NOTED=1
           fi
         elif [ "$old" != "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$n" "$p" "$sh" "$gu" "$ro" "$se" "$sn")" ]; then
-          # Same name, different state. `sharing -e` edits in place — proven by
-          # round-trip — so a flag change is reproducible without removing first.
-          log_line "Cmd: # File Sharing: share point changed — $n"
-          log_line "Cmd: sudo /usr/sbin/sharing -e \"$(_escape_dq "$n")\" $(_sp_flags "$sh" "$gu" "$ro" "$se" "$sn")"
+          local _on _op _osh _ogu _oro _ose _osn _ef
+          IFS=$'\t' read -r _on _op _osh _ogu _oro _ose _osn <<< "$old"
+          if [ "$_op" != "$p" ]; then
+            # The shared FOLDER moved. `sharing -e` cannot express that, so the
+            # faithful reproduction is a remove followed by a fresh create.
+            log_line "Cmd: # File Sharing: share point now points elsewhere — $n"
+            log_line "Cmd: sudo /usr/sbin/sharing -r \"$(_escape_dq "$n")\""
+            log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags_add "$sh" "$gu" "$ro" "$se" "$sn")"
+          else
+            _ef=$(_sp_flags_edit "$_osh" "$_ogu" "$_oro" "$_ose" "$_osn" "$sh" "$gu" "$ro" "$se" "$sn")
+            if [ -n "$_ef" ]; then
+              log_line "Cmd: # File Sharing: share point changed — $n"
+              log_line "Cmd: sudo /usr/sbin/sharing -e \"$(_escape_dq "$n")\" $_ef"
+            fi
+          fi
         fi
       done < "$_curr"
       # Removed: present in the snapshot, gone from the current read.
