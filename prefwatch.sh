@@ -3972,6 +3972,7 @@ typeset -ga _WATCHERS=(
   'cups_sharing|[ -f /etc/cups/cupsd.conf ]|cups_sharing_watch|y'
   'ard_privs|[ -x /usr/bin/dscl ]|ard_privs_watch|y'
   'sharepoints|[ -x /usr/bin/dscl ] && [ -n "$PYTHON3_BIN" ]|sharepoints_watch|y'
+  'bluetooth|[ -x /usr/sbin/system_profiler ]|bluetooth_watch|y'
   'useracct|[ -x /usr/bin/dscl ]|useracct_watch|y'
   'hostname|[ -x /usr/sbin/scutil ]|hostname_watch|y'
   'default_apps|[ -n "$PYTHON3_BIN" ]|default_apps_watch|y'
@@ -5090,6 +5091,51 @@ for row in sorted(rows):
       return 0
     }
     _snapshot_watch sharepoints 2 _read_sharepoints _onchange_sharepoints
+  }
+
+  # Bluetooth on/off. The state LEFT the preference files: a full toggle writes
+  # nothing to any watched plist, confirmed with --debug (zero `# FILTERED:` lines,
+  # so it is an absence of data, not over-filtering). The plist diff can never see
+  # it; polling is the only way.
+  #
+  # `system_profiler SPBluetoothDataType` is the probe — measured 2026-09-05 on
+  # 26.6.2: moves within 1s of a toggle, stable at rest (one value over 20 samples
+  # a second apart), 0.10s a read. `/usr/sbin/BlueTool -c power` is ten times
+  # cheaper but reads the controller's power rail, not the setting: it stayed at 1
+  # while the state was Off. It also prints to STDERR only, so a probe written with
+  # the usual 2>/dev/null would read empty forever and, vetoed by _guard_nonempty,
+  # detect nothing at all without a single message.
+  #
+  # NOT reproducible by any Apple command, measured rather than assumed: nothing
+  # is written that could be replayed, and BlueTool — the one Apple CLI that does
+  # flip the radio — is undone by bluetoothd within 4 seconds (Off at +1s, back On
+  # at +4s), the same shape as the display preset and the battery charge limit.
+  # blueutil holds (verified 30s), so the NOTE names it, like dockutil/desktoppr.
+  bluetooth_watch() {
+    [ -x /usr/sbin/system_profiler ] || return 0
+    _read_bluetooth() {
+      /usr/sbin/system_profiler SPBluetoothDataType 2>/dev/null \
+        | /usr/bin/awk -F': *' '/State:/{print $2; exit}'
+    }
+    _onchange_bluetooth() {
+      local _st _flag
+      _st=$(/usr/bin/head -1 "$2" 2>/dev/null)
+      case "$_st" in
+        On)  _flag=1 ;;
+        Off) _flag=0 ;;
+        *)   return 0 ;;   # anything else is a failed read, not a change
+      esac
+      # Key the dedup on the STATE, not on the watcher. The plain key suppressed
+      # the second half of an off-then-on within the 15s burst window, so the log
+      # said "turned Off" on a machine that had ended up On — worse than silence
+      # for whoever replays it. _snapshot_watch already fires only on a real
+      # change, so per-state keying reports every toggle and still collapses
+      # a repeat of the same state. Same composite-key shape as __newdom__:$dom.
+      _note_should_show "__bluetooth__:$_st" || return 0
+      log_line "Cmd: # NOTE: Bluetooth turned $_st — no Apple command reproduces it (the state is not in any plist, and BlueTool is undone by bluetoothd). Deploy with blueutil (github.com/toy/blueutil): blueutil -p $_flag"
+      return 0
+    }
+    _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty
   }
 
   # Detect local user account add/remove (real users, UID >= 501). The account
