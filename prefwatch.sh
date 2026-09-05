@@ -5106,11 +5106,17 @@ for row in sorted(rows):
   # the usual 2>/dev/null would read empty forever and, vetoed by _guard_nonempty,
   # detect nothing at all without a single message.
   #
-  # NOT reproducible by any Apple command, measured rather than assumed: nothing
-  # is written that could be replayed, and BlueTool — the one Apple CLI that does
-  # flip the radio — is undone by bluetoothd within 4 seconds (Off at +1s, back On
-  # at +4s), the same shape as the display preset and the battery charge limit.
-  # blueutil holds (verified 30s), so the NOTE names it, like dockutil/desktoppr.
+  # No `defaults` command reproduces it: the Bluetooth plists are byte-identical
+  # between On and Off, so there is nothing to replay. `/usr/sbin/BlueTool` does
+  # flip the radio but bluetoothd undoes it within 4 seconds (Off at +1s, back On
+  # at +4s) — the shape of the display preset and the battery charge limit.
+  #
+  # The emitted command needs NO third-party tool. blueutil, the usual answer, is
+  # a wrapper around IOBluetoothPreferenceSetControllerPowerState in the public
+  # IOBluetooth framework (read off its own linked symbols), and the python3
+  # PrefWatch already requires calls that function directly through ctypes —
+  # verified to set the state and hold, exactly like blueutil. Recommending the
+  # binary would have added an install step for no capability.
   bluetooth_watch() {
     [ -x /usr/sbin/system_profiler ] || return 0
     _read_bluetooth() {
@@ -5132,7 +5138,14 @@ for row in sorted(rows):
       # change, so per-state keying reports every toggle and still collapses
       # a repeat of the same state. Same composite-key shape as __newdom__:$dom.
       _note_should_show "__bluetooth__:$_st" || return 0
-      log_line "Cmd: # NOTE: Bluetooth turned $_st — no Apple command reproduces it (the state is not in any plist, and BlueTool is undone by bluetoothd). Deploy with blueutil (github.com/toy/blueutil): blueutil -p $_flag"
+      # Build the python source in a SINGLE-quoted string so its double quotes stay
+      # literal, then interpolate. Written straight into the double-quoted log_line
+      # they were eaten and the emitted LoadLibrary(/System/...) was a Python syntax
+      # error, which an admin pasting it would just see fail. Caught by EXECUTING
+      # the emitted line, not by reading it.
+      local _py='import ctypes; ctypes.cdll.LoadLibrary("/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth").IOBluetoothPreferenceSetControllerPowerState('
+      local _cmd="/usr/bin/python3 -c '${_py}${_flag})'"
+      log_line "Cmd: # NOTE: Bluetooth turned $_st — the state is in no plist, so no \`defaults\` command reproduces it. Deploy with: $_cmd"
       return 0
     }
     _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty
