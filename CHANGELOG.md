@@ -1,9 +1,31 @@
 # Changelog
 
+## 1.4.3 — 2026-09-05
+
+### Fix
+- `.GlobalPreferences` was a declared hot domain that never got its flush: the marker directory was globbed without `(D)`, so its one dot-prefixed name stayed invisible. Latency only.
+- Emitted commands left the domain unquoted, so a domain containing a space wrote the wrong key into the wrong domain — 15 such domains on one ordinary Mac.
+- The watcher teardown blocked forever: it waited on watchers that are pipelines, which do not die with their shell. Subtrees are now killed leaves-first, with a bounded wait.
+- `--verbose` printed every command twice in ALL mode: the redundant DOMAIN pass was only suppressed when it was NOT verbose, so the debugging mode disagreed with the one everyone runs.
+- A domain born after startup lost its first write: an app's initial configuration went unreported. It is now emitted, with a `# NOTE:` marking it as such.
+- Naming an excluded domain explicitly emitted no `defaults write`, while a `# NOTE:` promised it was being watched. The exclusion list now applies in ALL mode only.
+- A change whose only output is a `# NOTE:` was dropped: the comment buffer was flushed alongside a real command or never, so an unaddressable empty-string key left the log blank.
+- The ktrace NOTE named whoever configured tracing last — a routine Apple daemon on a healthy Mac. It now resolves the process actually holding the slot, and says so when it cannot.
+
+### Security
+- A crafted plist filename could slip a command substitution into a line an admin replays in a root shell. Domains, paths, array keys and watcher-supplied fields are escaped now.
+
+### Noise
+- Exclude the Squirrel updater helpers (`<bundle-id>.ShipIt`): an install attempt recorded then deleted, so every Electron update surfaced as a write and two deletes.
+
+### Performance
+- Console is followed by PID rather than by name: `pgrep -x Console` ran every second all session, 14ms a call — some 50 seconds of CPU an hour.
+
+
 ## 1.4.2 — 2026-09-01
 
 ### Fix
-- The `fs_usage` watcher had never run, and nobody noticed — which is the finding: measured against plain polling it changes neither output nor latency. Whether it earns its cost is now an open question. It runs meanwhile, and the log says when ktrace, which allows one client, is taken.
+- The `fs_usage` watcher had never run, and nobody noticed. Measured against plain polling it changes neither output nor latency, so whether it earns its cost is an open question.
 - `poll_watch` advanced its scan marker AFTER processing, so any plist written during the scan — whose retry loop sleeps up to 1.8s — was never `-newer` next cycle and was lost for good.
 - The `[init]` startup lines never reached the log file in verbose mode: `cat; cat >> file` drains the pipe instead of duplicating it, so the second `cat` got nothing. `tee -a` does.
 - Watching a domain with no plist yet killed prefwatch at startup — the path lookup's legitimate `return 1` tripped `set -e`, so nothing was monitored. It now falls back to full-domain polling.
@@ -28,7 +50,7 @@
 
 ### Note
 - The display-UUID `# NOTE:` no longer explains what `--mdm` cannot do when you are not using `--mdm`; outside that mode it says what matters instead — the command names one monitor.
-- The `# NOTE:`s that caution a change may not be yours were swept. They only appear once a flood actually arrives, and each now states when its caveat applies instead of casting doubt on a single deliberate toggle.
+- The `# NOTE:`s cautioning that a change may not be yours now appear only when a flood arrives, and say when the caveat applies.
 - README: running without `sudo` was described as "still functional, but slower". Measured false — it now names what root actually adds (system prefs, sharing commands, launchd state, `fs_usage`).
 - The log header now records the prefwatch and macOS versions (`prefwatch 1.4.2 on macOS 26.6.2 (25G83)`) — the two facts a bug report needs and no one thinks to include.
 - The `--mdm` resolver block now says where it goes: "put these 4 lines at the top of your deployment script".

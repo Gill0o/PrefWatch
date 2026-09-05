@@ -45,6 +45,11 @@ TESTING.md
 # NEVER committed/pushed (also covers their vmtest-state.tsv/vmtest-report.txt output)
 /tests/
 
+# Claude Code local config — settings.local.json is machine state, not project
+# config: personal permission grants, paths into other repos, scratchpad paths.
+# Same family as /tests/ and TESTING.md above.
+.claude/
+
 # IDE files
 .vscode/
 .idea/

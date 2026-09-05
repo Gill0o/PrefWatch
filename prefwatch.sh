@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.4.2
+# Version: 1.4.3
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -625,6 +625,15 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # QuickLook daemon (plugin modification timestamps)
   "com.apple.QuickLookDaemon"
+
+  # Squirrel updater helpers (`<bundle-id>.ShipIt`). Squirrel is the auto-update
+  # framework behind most Electron apps; SQRL* keys are its installer bookkeeping
+  # — `SQRLShipItInstallationAttempts`, `SQRLInstallerOwnedBundle` — written when
+  # an install starts and deleted when it finishes, so each update surfaces as a
+  # write plus two spurious deletes. Ten such domains on one machine (VS Code,
+  # Slack, GitHub, Postman, drawio…), every one of them EMPTY at rest: there is
+  # no setting here to reproduce, only the trace of an update that already ran.
+  "*.ShipIt"
 
   # Third-party updaters & telemetry
   "com.microsoft.autoupdate*"
@@ -1937,7 +1946,11 @@ _log() {
 
     if [[ "$out" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
       local _cmd_dom="${match[2]}"
-      if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+      # Only ALL mode may drop an excluded domain. When the user names the domain
+      # explicitly, the exclusion list must not apply — show_domain_diff already
+      # guards this way; without the same guard here the run printed a NOTE
+      # promising to monitor, then swallowed every `defaults write`.
+      if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
         return 0
       fi
     fi
@@ -1951,7 +1964,8 @@ _log() {
   local line="[$ts] $msg"
   if [[ "$msg" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
     local _cmd_dom="${match[2]}"
-    if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
+    # Same guard as the ONLY_CMDS branch above.
+    if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
       return 0
     fi
   fi
@@ -2086,12 +2100,25 @@ extract_type_value_with_plutil() {
 # that may not even exist, or whose same-named key is unrelated). Callers that
 # know the file they diffed pass it here; without it the old behaviour stands.
 convert_delete_to_plistbuddy() {
-  local cmd="$1" path_override="${2:-}"
+  # $3 = OPTIONAL domain, passed straight from the caller. Re-deriving it by
+  # regex over a command string this very file just built is fragile by
+  # construction, and it broke the moment the domain gained its (necessary)
+  # quotes: the pattern captured `"com.foo"` WITH them, and get_plist_path then
+  # produced a path containing literal quote characters. Callers know the domain
+  # — hand it over instead of parsing it back out. The regex stays as a fallback
+  # so an outside caller passing only a command string still works.
+  local cmd="$1" path_override="${2:-}" domain_override="${3:-}"
 
   local domain target
-  domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+([^[:space:]]+).*/\2/p')
-  target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*delete[[:space:]]+[^[:space:]]+[[:space:]]+"([^"]+)".*/\1/p')
-  [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*delete[[:space:]]+[^[:space:]]+[[:space:]]+([^[:space:]]+).*/\1/p')
+  if [ -n "$domain_override" ]; then
+    domain="$domain_override"
+  else
+    domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+"?([^"[:space:]]+)"?.*/\2/p')
+  fi
+  # The target is the LAST quoted field — anchoring on the end survives a domain
+  # that itself contains a space (15 such domains on one ordinary Mac).
+  target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*"([^"]*)"[[:space:]]*$/\1/p')
+  [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*[[:space:]]([^"[:space:]]+)[[:space:]]*$/\1/p')
 
   [ -n "$domain" ] || return 1
   [ -n "$target" ] || return 1
@@ -2121,7 +2148,10 @@ convert_delete_to_plistbuddy() {
   # single-quoted PlistBuddy -c 'Delete …' expression (each ' → '\'').
   local _target_esc
   _target_esc=$(printf '%s' "$target" | /usr/bin/sed "s/'/'\\\\''/g")
-  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$_mdm_path"
+  # The path sits inside double quotes but was never escaped — and it carries the
+  # same attacker-chosen filename as the domain. Escape AFTER templatizing so the
+  # deliberate $loggedInUser / $UUID tokens keep working (see mdm_plist_path).
+  printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$(_escape_pb_path "$_mdm_path")"
   return 0
 }
 
@@ -2142,6 +2172,24 @@ typeset -g _SQ_ESC="${_SQ}\\${_SQ}${_SQ}"
 # emitted command: backslash, double-quote, $ and backtick — else a pref value
 # containing `$(…)`, `$VAR` or backticks would execute/expand when the logged
 # command is copy-pasted and run.
+# Escape a plist PATH for a double-quoted shell string, while PRESERVING the two
+# tokens mdm_plist_path deliberately injects ($loggedInUser, $UUID) — those must
+# stay expandable at replay time, everything else must not.
+_escape_pb_path() {
+  local _p _liu_esc _uid_esc _uid_tok
+  _p=$(_escape_dq "$1")
+  # Re-expose the two tokens mdm_plist_path injects on purpose. Derive their
+  # escaped forms by running the SAME escaper over them rather than spelling
+  # `\$loggedInUser` inline: written literally, zsh expands it in THIS shell,
+  # where it is unset — and `set -u` then aborts the run.
+  _uid_tok='$UUID'
+  _liu_esc=$(_escape_dq "$_MDM_LIU")
+  _uid_esc=$(_escape_dq "$_uid_tok")
+  _p="${_p//"$_liu_esc"/"$_MDM_LIU"}"
+  _p="${_p//"$_uid_esc"/"$_uid_tok"}"
+  printf '%s' "$_p"
+}
+
 _escape_dq() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g; s/`/\\`/g'; }
 
 # Build `defaults write …` for dom/keyname/trimmed via type cascade.
@@ -2164,6 +2212,19 @@ _build_defaults_write_cmd() {
   # appends .plist. A bare domain would replay into the console user's ~ copy.
   [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="/Library/Preferences/${dom}"
 
+  # The DOMAIN needs the same treatment as the key, and for two reasons that are
+  # easy to miss because it "looks structured". It is not: it is a plist FILENAME,
+  # and a filename is free text.
+  #   · Correctness — 15 domains on one ordinary Mac contain a space
+  #     ("com.native-instruments.Kontakt 8", "com.topazlabs.Topaz Photo AI",
+  #     "unity.Klei.Oxygen Not Included"). Unquoted, `defaults write <dom> "k" 1`
+  #     word-splits and writes the WRONG key into the WRONG domain. Silently.
+  #   · Security — anything running as the user can create
+  #     ~/Library/Preferences/com.x$(curl…|sh).plist. The name reaches this line
+  #     and the emitted command is replayed BY AN ADMIN IN A ROOT SHELL, which is
+  #     this tool's whole purpose. Verified end to end before the fix.
+  local _dm; _dm=$(_escape_dq "$dom")
+
   # Probe the type as the CONSOLE USER for user domains. In ALL mode prefwatch runs
   # as root, where a bare `defaults read-type com.apple.dock …` reads ROOT's domain
   # and fails ("Domain not found") — the empty probe then fell through to the 0/1
@@ -2183,40 +2244,40 @@ _build_defaults_write_cmd() {
   fi
 
   if [ "$actual_type" = "float" ]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
   elif [ "$actual_type" = "integer" ]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
   elif [ "$actual_type" = "boolean" ]; then
     type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
     noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
     str=$(_escape_dq "$noquotes")
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -string \"${str}\""
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"${str}\""
   elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
     type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
     type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${type_val}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
   elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
   elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${trimmed}"
+    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
   else
     if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
       plutil_type="${plutil_result%%|*}"
       plutil_value="${plutil_result#*|}"
       case "$plutil_type" in
-        string) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
-        bool)   cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -bool ${plutil_value}" ;;
-        int)    cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -int ${plutil_value}" ;;
-        float)  cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" -float ${plutil_value}" ;;
+        string) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
+        bool)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${plutil_value}" ;;
+        int)    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${plutil_value}" ;;
+        float)  cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${plutil_value}" ;;
         array|dict) cmd="" ;;
-        *) cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" <type> <value>" ;;
+        *) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>" ;;
       esac
     else
-      cmd="defaults ${hostflag:+$hostflag }write ${dom} \"${_kn}\" <type> <value>"
+      cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>"
     fi
   fi
 
@@ -2237,10 +2298,12 @@ _build_defaults_delete_cmd() {
   # shell string, so " / $ / backtick in a key must not break (or execute in) the
   # emitted command. Array targets are digits+name and unaffected in practice.
   target=$(_escape_dq "$target")
+  # Same as the write builder: the domain is a filename, so quote AND escape it.
+  local _dm; _dm=$(_escape_dq "$dom")
   if [ -n "$hostflag" ]; then
-    printf 'defaults %s delete %s "%s"' "$hostflag" "$dom" "$target"
+    printf 'defaults %s delete "%s" "%s"' "$hostflag" "$_dm" "$target"
   else
-    printf 'defaults delete %s "%s"' "$dom" "$target"
+    printf 'defaults delete "%s" "%s"' "$_dm" "$target"
   fi
 }
 
@@ -2367,12 +2430,18 @@ _emit_cmd() {
   if [ "$is_delete" != "true" ]; then
     local _cmd_dom
     _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
-    if [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
+    # See _log: only ALL mode may drop an excluded domain.
+    if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
     _emit_contextual_note "$note_dom" ""
   fi
 
-  # ALL_MODE+ONLY_CMDS skips DOMAIN output (covered by per-plist diff).
-  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+  # In ALL mode the DOMAIN pass is redundant: every change it sees has already
+  # been emitted by the per-plist diff. The condition used to require ONLY_CMDS
+  # too, so `--verbose` printed every command TWICE — which made the debugging
+  # mode disagree with the mode everyone actually runs. Production output is the
+  # reference: verbose should add diagnostics, never different commands. The
+  # `Diff …` lines it exists for are logged elsewhere and stay.
+  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
     return 0
   fi
 
@@ -2380,7 +2449,7 @@ _emit_cmd() {
 
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
-    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" 2>/dev/null); then
+    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
@@ -2473,7 +2542,7 @@ _process_py_meta() {
       # …then break out of those single quotes around the templatized $loggedInUser
       # so the shell actually expands it at run time (single quotes would keep it literal).
       [ "$_mdm_home_hit" = true ] && _pb_esc="${_pb_esc//"$_MDM_LIU"/$_MDM_LIU_QB}"
-      pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"${_mdm_path}\""
+      pb_full="/usr/libexec/PlistBuddy -c '${_pb_esc}' \"$(_escape_pb_path "$_mdm_path")\""
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_full")"
       continue
     fi
@@ -2500,6 +2569,17 @@ _process_py_meta() {
       done
     fi
   done <<< "$meta_raw"
+  # Comments are buffered until a real command makes it through filtering, but a
+  # NOTE can be the ONLY output — _note_empty_key fires INSTEAD of the commands it
+  # skips. Without this final flush that change vanished entirely: in the default
+  # quiet mode the log stayed empty, with no trace that anything was seen.
+  if (( ${#_pending_comments[@]} > 0 )) && [ -n "$plist_path" ]; then
+    for _pc in "${_pending_comments[@]}"; do
+      [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
+      _log_kind "$kind" "Cmd: $_pc"
+    done
+    _pending_comments=()
+  fi
 }
 
 # Walk the unified diff(prev,curr) and emit write/delete via _emit_cmd
@@ -2514,7 +2594,46 @@ _process_diff_lines() {
   # CACHE file ($tmpplist) — reusing it would point PlistBuddy at the cache.
   # Domain mode passes empty and keeps the get_plist_path fallback.
   local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7" emit_plist_path="${8:-}"
-  [ -s "$prev" ] || return 0
+
+  # No baseline. Until now that meant "emit nothing", which lost the FIRST write
+  # to any domain born after startup — install an app, configure it, and its
+  # initial configuration was never reported. Only later changes were.
+  #
+  # Lifting the guard outright would flood, and the two callers are not
+  # equivalent about it:
+  #   · show_plist_diff (USER/SYSTEM) — _snapshot_tree wrote a baseline for every
+  #     existing plist BEFORE any watcher started, so a missing one now means the
+  #     file genuinely did not exist then. Emit it: that is the new configuration.
+  #   · show_domain_diff (DOMAIN) in ALL mode — its baseline is written lazily, on
+  #     the domain's first appearance, so "missing" only means "not seen yet".
+  #     Emitting would dump every key of every domain that ever changes. Keep the
+  #     guard.
+  #   · show_domain_diff (DOMAIN) in single-domain mode — start_watch establishes
+  #     the baseline itself before the loop, so the ALL-mode ambiguity does not
+  #     apply and a watched domain that appears later is reportable.
+  if [ ! -s "$prev" ]; then
+    [ "${_BASELINE_DONE:-false}" = "true" ] || return 0
+    [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && return 0
+    # An EXISTING but empty baseline is a FAILED snapshot, never a new domain.
+    # dump_plist redirects into the file before plutil runs, so when plutil AND the
+    # raw-copy fallback both fail — the window where cfprefsd unlinks and recreates
+    # a plist mid-scan — a 0-byte baseline is left behind. plutil on a genuinely
+    # empty plist writes "{\n}", so empty really does mean the dump produced
+    # nothing. Treating that as novelty announced "did not exist at startup" and
+    # dumped the domain whole (reproduced: a 3-key domain emitted all 4 keys after
+    # its baseline was zeroed). Adopt the current state as the baseline and stay
+    # silent; the next real change then diffs against it correctly.
+    if [ -e "$prev" ]; then
+      /bin/cp -f "$curr" "$prev" 2>/dev/null || :
+      return 0
+    fi
+    # `prev` does not EXIST — and `diff -u <missing> curr` fails outright, printing
+    # nothing. Lifting the guard alone therefore emitted the note and no commands at
+    # all. Materialise an empty baseline so every key shows up as an addition.
+    : > "$prev" 2>/dev/null || return 0
+    _note_should_show "__newdom__:${dom}" \
+      && _log_kind "$kind" "Cmd: # NOTE: '$dom' did not exist at startup — what follows is its whole initial configuration, not a single change"
+  fi
 
   typeset -A _added_keys
   _added_keys=()
@@ -3100,15 +3219,18 @@ emit_array_deletions() {
       _log_kind "$kind" "Cmd: # dockutil --remove '$app_label'"
     fi
 
-    local delete_cmd="defaults delete ${dom} \":${base}:${idx}\""
+    # $base is an array key name straight out of the plist, and $dom is the
+    # filename-derived domain — both were interpolated raw here while the very
+    # same construction in _build_defaults_delete_cmd escapes its target.
+    local delete_cmd="defaults delete \"$(_escape_dq "$dom")\" \":$(_escape_dq "$base"):${idx}\""
 
     if is_noisy_command "$delete_cmd"; then
       :
-    elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
+    elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
       :
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
-      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" 2>/dev/null); then
+      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
@@ -3786,11 +3908,48 @@ _emit_mdm_resolver_header() {
 typeset -ga _WATCH_PIDS=()
 _spawn() { "$@" & _WATCH_PIDS+=($!); }
 
-# Teardown shared by start_watch and start_watch_all — the same TERM/INT handler
-# was written out twice verbatim, so a change to one could silently miss the other.
+# Notice being orphaned and tear down. The main process cannot do this for
+# itself: SIGKILL runs no trap, so a force-quit leaves this subtree alive with
+# its watchers, its eslogger and — worst — its fs_usage, which holds the only
+# ktrace slot on the machine and silently disables real-time detection for every
+# later run. Checking from below costs one `kill -0` every 5s, a shell builtin.
+# Recursive, leaves-first, so a watcher's pipeline members die with it. Defined
+# here rather than reusing _kill_tree: that one lives in MAIN and is not yet
+# parsed when this subshell forks.
+_wt_kill_tree() {
+  local _r="${1:-}" _k
+  [ -n "$_r" ] || return 0
+  for _k in $(pgrep -P "$_r" 2>/dev/null || true); do _wt_kill_tree "$_k"; done
+  kill -TERM "$_r" 2>/dev/null || true
+}
+
 _watchers_teardown() {
-  kill -TERM ${_WATCH_PIDS[@]} 2>/dev/null || true
-  wait ${_WATCH_PIDS[@]} 2>/dev/null || true
+  # Kill each watcher's whole SUBTREE, and never block on `wait`.
+  #
+  # The old form TERMed the direct pids then waited for them. A watcher whose
+  # body is a pipeline — sharing_exec_watch runs `eslogger | grep | python3`,
+  # fs_watch runs `script | sed | awk` — does not necessarily die when its shell
+  # is signalled, and the `wait` then hung forever. Observed on a root session:
+  # the teardown started, the shell stayed alive holding fourteen children, and
+  # orphaned eslogger processes accumulated. Unprivileged runs never showed it,
+  # because the two watchers with pipelines are root-gated.
+  local _p
+  for _p in ${_WATCH_PIDS[@]}; do _wt_kill_tree "$_p"; done
+  # Bounded: give them a moment, then stop caring. Nothing here is worth hanging
+  # a shutdown for, and anything still alive is about to lose its parent anyway.
+  # Wait for the LAST watcher, not the first. `kill -0 p1 p2 p3` reports failure as
+  # soon as ONE pid is gone, so testing the whole list at once broke out after a
+  # single 0.25s tick and removed the tmpdir from under watchers still shutting
+  # down. Poll each pid and stop only when none answers.
+  local _i _q _alive
+  for _i in 1 2 3 4 5 6; do
+    /bin/sleep 0.25
+    _alive=0
+    for _q in ${_WATCH_PIDS[@]}; do
+      if kill -0 "$_q" 2>/dev/null; then _alive=1; break; fi
+    done
+    [ "$_alive" -eq 0 ] && break
+  done
   /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
   exit 0
 }
@@ -3881,6 +4040,9 @@ start_watch() {
     (
       # Take initial baseline snapshot so first user change is detected immediately
       show_domain_diff "$DOMAIN"
+      # Baseline established for the watched domain. If it did not exist yet, its
+      # creation is now reportable rather than silently swallowed.
+      typeset -g _BASELINE_DONE=true
       last_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
       local _forced_tick=0
       while true; do
@@ -3917,6 +4079,10 @@ start_watch() {
     log_line "Mode: standard polling (plist not found, checking domain every 1s)"
 
     (
+      # First pass writes the baseline; only then may a later appearance of the
+      # domain be reported as new (see _process_diff_lines).
+      show_domain_diff "$DOMAIN"
+      typeset -g _BASELINE_DONE=true
       while true; do
         show_domain_diff "$DOMAIN"
         sleep 1
@@ -3996,6 +4162,9 @@ start_watch_all() {
     printf "\r  ✓ ${_label} snapshot: %d domains scanned    \n" "$_snap_count"
     snapshot_notice "${_label} snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
+    # Every existing plist now has a baseline, so from here a missing one means
+    # the file did not exist at startup — which _process_diff_lines may report.
+    typeset -g _BASELINE_DONE=true
   }
 
   # Initial snapshot
@@ -4051,7 +4220,7 @@ start_watch_all() {
       [ -x "$_c" ] && { _fsu="$_c"; break; }
     done
     if [ -z "$_fsu" ]; then
-      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off, polling only"
+      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off; polling covers the same ground"
       return 0
     fi
     # fs_usage is a ktrace client and ktrace admits exactly ONE at a time. A second
@@ -4157,11 +4326,45 @@ start_watch_all() {
         # either — the holder may have exited between the check and the start, in
         # which case this is the first anyone hears of it.
         # Now that it HAS failed, naming the holder is worth the lookup.
+        # Name the process actually HOLDING the slot, not the last one to configure
+        # tracing. `Last configured by` is what this used to report, and on a
+        # healthy Mac it says 'tailspind' — a routine Apple daemon — while fs_usage
+        # starts perfectly well. Reported at the moment fs_usage fails, that wording
+        # accuses whichever process happens to be named there. `Owning process is
+        # [N]` is the real holder: proven on a VM where it named FlexNet's licensing
+        # service, and killing that pid let fs_usage start with an empty stderr.
+        # Resolve it to a command so the admin knows what to stop; keep the weaker
+        # form as a fallback, labelled as such so the two are never confused.
+        #
+        # Every capture guarded: `ktrace info` needs root and fails otherwise (with
+        # a misleading "Too many levels of remote in path"), and under `pipefail` an
+        # unguarded assignment would trip ERR_EXIT and kill this watcher mid-report
+        # — the same shape as the Console-by-PID regression fixed in this cycle.
+        local _kt="" _own_pid=""
         if [ -x /usr/bin/ktrace ]; then
-          _fsu_who=$(/usr/bin/ktrace info 2>/dev/null | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1)
+          _kt=$(/usr/bin/ktrace info 2>/dev/null) || _kt=""
+          _own_pid=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE 's/.*Owning process is \[([0-9]+)\].*/\1/p' | /usr/bin/head -1) || _own_pid=""
+          if [ -n "$_own_pid" ]; then
+            _fsu_who=$(/bin/ps -o comm= -p "$_own_pid" 2>/dev/null) || _fsu_who=""
+            [ -n "$_fsu_who" ] && _fsu_who="held by $_fsu_who (pid $_own_pid)"
+          fi
+          if [ -z "$_fsu_who" ]; then
+            _fsu_who=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1) || _fsu_who=""
+            [ -n "$_fsu_who" ] && _fsu_who="taken; last configured by '$_fsu_who', which may not be the holder"
+          fi
         fi
-        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is taken${_fsu_who:+ (last configured by '$_fsu_who')}."
-        log_line "Cmd: #       Polling still covers everything, just a little slower." ;;
+        # Each branch supplies its own full clause, so the sentence reads correctly
+        # in all three cases. Appending an attribution to a fixed "it is taken"
+        # gave "taken — held by …" (redundant) and "taken — last configured by …".
+        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is ${_fsu_who:-taken}."
+        # NOT "covers everything, just a little slower" — both halves were
+        # measured false the same evening they were written. Latency: 0.47s with
+        # real-time against 0.49s without, i.e. the 0.5s poll interval in both
+        # cases. Coverage: ~/Library/Containers is scanned by neither, so
+        # "everything" was never true of polling — and, measured over 43 minutes,
+        # fs_usage reported no container path either. What is honest is that
+        # polling loses nothing fs_usage was providing.
+        log_line "Cmd: #       Polling covers the same ground at the same latency (measured)." ;;
       "")
         log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message) — polling continues" ;;
       *)
@@ -4199,7 +4402,11 @@ start_watch_all() {
         # Refresh hot markers so they never expire via the 30s cleanup below
         (( ${#_hotpaths[@]} )) && { /usr/bin/touch "${_hotpaths[@]}" 2>/dev/null || true; }
         _pids=()
-        for _af in "$active_dir"/*(N); do
+        # (DN), not (N): zsh globs skip dot-prefixed names by default, and
+        # `.GlobalPreferences` is a declared HOT domain — its marker was created
+        # here and never seen, so the one domain holding NSGlobalDomain and the
+        # ColorSync device map never got the cfprefsd flush meant for it.
+        for _af in "$active_dir"/*(DN); do
           [ -f "$_af" ] || continue
           zstat -H _st "$_af" 2>/dev/null || continue
           if (( EPOCHSECONDS - _st[mtime] > 30 )); then
@@ -4429,7 +4636,10 @@ while True:
             if is_readonly(basename, args):
                 continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
-            emit((exe + " " + tail).rstrip())
+            # shlex.quote on the PATH too, not only on the args below it: `exe`
+            # is the path of any binary any local user just ran, and it lands in a
+            # `sudo …` line an admin replays as root.
+            emit((shlex.quote(exe) + " " + tail).rstrip())
         elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
             # Sharing-only: drop third-party LaunchAgent churn (e.g. Zoom/MS
             # updaters bootstrapping us.zoom.updater.* in gui/<uid>).
@@ -4444,7 +4654,7 @@ while True:
                 pass
             else:
                 tail = " ".join(shlex.quote(a) for a in args[1:])
-                emit(exe + " " + tail)
+                emit(shlex.quote(exe) + " " + tail)
     except Exception:
         pass
 ' 2>/dev/null \
@@ -4482,7 +4692,7 @@ while True:
     _emit_launchd_diff() {
       local prev="$1" curr="$2" domain="$3"
       "$PYTHON3_BIN" - "$prev" "$curr" "$domain" 2>/dev/null <<'PY'
-import json, sys, fnmatch
+import json, sys, fnmatch, shlex
 prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
 # Third-party VM / container helpers that auto-toggle their own launchd
 # state in the user gui session — not user-driven preference changes.
@@ -4510,7 +4720,10 @@ curr = load(curr_path)
 # gui/<uid> services live in the console user's domain — a root replay needs
 # `launchctl asuser <uid> …`, not a bare `launchctl … gui/<uid>/…`. System stays.
 def _lc(verb, k):
-    base = f"/bin/launchctl {verb} {domain}/{k}"
+    # `k` is a label an unprivileged user can put there with
+    # `launchctl disable gui/<uid>/<label>`, and the line is emitted with a
+    # `sudo` prefix. Quote it.
+    base = f"/bin/launchctl {verb} {shlex.quote(domain + '/' + k)}"
     return f"/bin/launchctl asuser {domain.split('/',1)[1]} {base}" if domain.startswith("gui/") else base
 for k in sorted(set(prev) | set(curr)):
     if is_noisy(k):
@@ -4859,7 +5072,10 @@ PY
         # prompt; file types and other schemes apply silently.
         [ "$_kind" = url ] && [ "$_what" = http ] && _note_should_show __default_browser__ \
           && log_line "Cmd: # NOTE: changing the default browser prompts the user to confirm"
-        log_line "Cmd: utiluti $_kind set $_what $_app"
+        # Both fields come from com.apple.launchservices.secure.plist, which is
+        # -rw-r--r-- and writable by anything running as the user. Emitted raw,
+        # a scheme of `x; curl …|sh; #` needed no substitution at all to inject.
+        log_line "Cmd: utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       return 0
     }
@@ -5252,13 +5468,32 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   #  2. `pgrep -x Console` can transiently miss (Console briefly unmatched under
   #     load). A single miss must NOT end monitoring → require N CONSECUTIVE
   #     misses (~N seconds) before concluding Console really closed.
+  # Follow Console by PID, not by name. `pgrep -x Console` forks a process every
+  # second for the entire run — measured at 14ms a call, about 50 seconds of CPU
+  # per hour spent asking whether an app is still open. `kill -0` is a shell
+  # builtin: 100 of them cost a millisecond.
+  #
+  # The name lookup is still needed, just not every second. When the PID stops
+  # answering, Console has either quit or been restarted with a new PID, and only
+  # a lookup can tell the two apart — so pay for one there, a handful of times
+  # over a session instead of thousands.
+  # `|| true` is load-bearing: with `set -o pipefail` (L51) a `pgrep` that matches
+  # nothing makes the whole substitution non-zero, and ERR_EXIT then kills main --
+  # skipping _shutdown_watcher and stranding the entire root watcher tree. That is
+  # the 1.4.3 leak: every session started while Console was absent ran on forever.
+  _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1) || true
   _console_misses=0
   while true; do
-    if is_console_running; then
+    if [ -n "$_console_pid" ] && kill -0 "$_console_pid" 2>/dev/null; then
       _console_misses=0
     else
-      _console_misses=$(( _console_misses + 1 ))
-      [ "$_console_misses" -ge 5 ] && break
+      _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1) || true
+      if [ -n "$_console_pid" ]; then
+        _console_misses=0
+      else
+        _console_misses=$(( _console_misses + 1 ))
+        [ "$_console_misses" -ge 5 ] && break
+      fi
     fi
     sleep 1 || true
   done
