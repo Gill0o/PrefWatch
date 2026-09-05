@@ -38,7 +38,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--debug` | -- | Log `# FILTERED: <dom> <key> (reason)` when a detected change is suppressed (answers "why didn't my change appear?") | Off |
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
-| `--exclude <glob>` | `-e` | Domain patterns to exclude | Built-in |
+| `--exclude <glob>` | `-e` | Domain patterns to exclude in ALL mode; naming a domain explicitly always watches it | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes — run until Ctrl+C (interactive/VM testing) | Off |
@@ -68,7 +68,7 @@ For settings with no built-in command, a `# NOTE:` names the tool — and emits 
 ## Detection
 
 - ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
-- Real-time detection needs the machine's single ktrace slot; when another process holds it the log names which one. Polling covers the same ground at the same latency, so nothing is lost. A stale `fs_usage` left by a crashed run is the usual culprit — `sudo pkill -x fs_usage`. Some licensing daemons hold the slot permanently and reclaim it at every boot; there is nothing to do about those.
+- Real-time detection needs the machine's single ktrace slot; when another process holds it the log names which one. Polling covers the same ground at the same latency, so nothing is lost. A stale `fs_usage` left by a crashed run is the usual culprit — `sudo pkill -x fs_usage`. Otherwise a daemon holds it for good and reclaims it at every boot — a licensing one (FlexNet), or one of Apple's own such as `tailspind`; there is nothing to do about those.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security
