@@ -1716,6 +1716,15 @@ is_noisy_key() {
       esac
       ;;
 
+    # desktoppr's own record of the image it last applied. Writing the key back
+    # sets no wallpaper — it only forges that record on the target. Filter the
+    # misleading command; _note_desktoppr emits the command that DOES apply it.
+    com.scriptingosx.desktoppr)
+      case "$keyname" in
+        lastPath) return 0 ;;
+      esac
+      ;;
+
   esac
 
   return 1
@@ -2416,6 +2425,17 @@ _mdm_wrap() {
   fi
 }
 
+# A `# dockutil …` info comment is not prose: it is a command an admin copies out.
+# dockutil edits the LOGGED-IN USER's Dock, so under --mdm it needs the same
+# runAsUser as the PlistBuddy lines it stands in for — the `#` stays leading, so
+# the line still reads as the alternative it is. `# Dock: <label>` is left alone.
+_mdm_wrap_comment() {
+  case "$1" in
+    "# dockutil "*) printf '# %s' "$(_mdm_wrap "${1#"# "}")" ;;
+    *)             printf '%s' "$1" ;;
+  esac
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -2516,7 +2536,7 @@ _process_py_meta() {
         for _pc in "${_pending_comments[@]}"; do
           # Precede a dockutil info comment with the "it's an ALTERNATIVE" NOTE.
           [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
-          _log_kind "$kind" "Cmd: $_pc"
+          _log_kind "$kind" "Cmd: $(_mdm_wrap_comment "$_pc")"
         done
         _pending_comments=()
       fi
@@ -2576,7 +2596,7 @@ _process_py_meta() {
   if (( ${#_pending_comments[@]} > 0 )) && [ -n "$plist_path" ]; then
     for _pc in "${_pending_comments[@]}"; do
       [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
-      _log_kind "$kind" "Cmd: $_pc"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap_comment "$_pc")"
     done
     _pending_comments=()
   fi
@@ -2619,7 +2639,7 @@ _process_diff_lines() {
     # raw-copy fallback both fail — the window where cfprefsd unlinks and recreates
     # a plist mid-scan — a 0-byte baseline is left behind. plutil on a genuinely
     # empty plist writes "{\n}", so empty really does mean the dump produced
-    # nothing. Treating that as novelty announced "did not exist at startup" and
+    # nothing. Treating that as novelty announced a brand-new domain and
     # dumped the domain whole (reproduced: a 3-key domain emitted all 4 keys after
     # its baseline was zeroed). Adopt the current state as the baseline and stay
     # silent; the next real change then diffs against it correctly.
@@ -2632,7 +2652,7 @@ _process_diff_lines() {
     # all. Materialise an empty baseline so every key shows up as an addition.
     : > "$prev" 2>/dev/null || return 0
     _note_should_show "__newdom__:${dom}" \
-      && _log_kind "$kind" "Cmd: # NOTE: '$dom' did not exist at startup — what follows is its whole initial configuration, not a single change"
+      && _log_kind "$kind" "Cmd: # NOTE: '$dom' is a new domain — the commands below are its full configuration, not a single change"
   fi
 
   typeset -A _added_keys
@@ -3608,7 +3628,7 @@ for key in ("persistent-apps", "persistent-others"):
 PY
 )
   if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
-    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil (github.com/kcrawford/dockutil), e.g. dockutil --move <app> --position <N>"
+    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil (github.com/kcrawford/dockutil), e.g. $(_mdm_wrap "dockutil --move <app> --position <N>")"
   fi
 }
 
@@ -3620,6 +3640,33 @@ _note_charge_limit() {
   local kind="$1"
   _note_should_show __charge_limit__ || return 0
   _log_kind "$kind" "Cmd: # NOTE: battery charge limit changed — managed by the power daemon (SMC), not reproducible via defaults; set it in System Settings > Battery"
+}
+
+# desktoppr (scriptingosx) records the image it last applied in its own domain.
+# `defaults` cannot set a wallpaper, so — like utiluti for default apps — the tool
+# IS the command, not an alternative to one. `lastPath` is filtered (is_noisy_key)
+# and replaced here by the command that reproduces the wallpaper, with the exact
+# path: wallpaper_watch sees the change in the com.apple.wallpaper Store, which
+# holds no usable path, so this domain is the only place it can come from.
+_desktoppr_lastpath() {
+  [ -s "$1" ] || return 0
+  # No pipe: a capture of `cmd | head` dies under set -e + pipefail (1.4.3).
+  /usr/bin/sed -n 's/^[[:space:]]*"lastPath" => "\(.*\)"$/\1/p' "$1" 2>/dev/null
+}
+_note_desktoppr() {
+  local kind="$1" _p _c
+  _p="$(_desktoppr_lastpath "$2")" ; _c="$(_desktoppr_lastpath "$3")"
+  [ -n "$_c" ] && [ "$_p" != "$_c" ] || return 0
+  _note_should_show "__desktoppr__:$_c" || return 0
+  # Every key of this domain is filtered, so the generic "new domain — the commands
+  # below are its full configuration" note would head an empty block. Claim its
+  # dedup slot: the pair emitted here IS that domain's whole reportable content.
+  _NOTED_DOMAIN[__newdom__:com.scriptingosx.desktoppr]=$EPOCHSECONDS
+  _log_kind "$kind" "Cmd: # NOTE: needs desktoppr (github.com/scriptingosx/desktoppr)"
+  # Wallpaper is per-user session state, so --mdm wraps it in runAsUser the same
+  # way a user-domain `defaults` is — root setting its own wallpaper changes nothing.
+  local _dp="desktoppr \"$(_escape_dq "$_c")\""
+  _log_kind "$kind" "Cmd: $(_mdm_wrap "$_dp")"
 }
 
 # Display plist file diff
@@ -3753,6 +3800,10 @@ show_plist_diff() {
       _emit_hostflag="-currentHost"
       _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
     fi
+    # Before the diff: this domain's only reportable content is the desktoppr command.
+    if [ "$_dom" = "com.scriptingosx.desktoppr" ]; then
+      _note_desktoppr "$kind" "$prev" "$curr"
+    fi
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path" "$path"
     # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
@@ -3814,6 +3865,10 @@ show_domain_diff() {
     _run_py_diff_workers DOMAIN "$dom" "$prev_json" "$curr_json" "$(get_plist_path "$dom" 2>/dev/null)" "$key"
   fi
 
+  # Same in single-domain / ALL-domain mode as in the per-plist diff above.
+  if [ "$dom" = "com.scriptingosx.desktoppr" ]; then
+    _note_desktoppr DOMAIN "$prev" "$curr"
+  fi
   _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -3971,6 +4026,8 @@ typeset -ga _WATCHERS=(
   'pmset|true|pmset_watch|'
   'cups_sharing|[ -f /etc/cups/cupsd.conf ]|cups_sharing_watch|y'
   'ard_privs|[ -x /usr/bin/dscl ]|ard_privs_watch|y'
+  'sharepoints|[ -x /usr/bin/dscl ] && [ -n "$PYTHON3_BIN" ]|sharepoints_watch|y'
+  'bluetooth|[ -x /usr/sbin/system_profiler ]|bluetooth_watch|y'
   'useracct|[ -x /usr/bin/dscl ]|useracct_watch|y'
   'hostname|[ -x /usr/sbin/scutil ]|hostname_watch|y'
   'default_apps|[ -n "$PYTHON3_BIN" ]|default_apps_watch|y'
@@ -4963,6 +5020,198 @@ PY
     _snapshot_watch ard_privs 2 _read_ardprivs _onchange_ardprivs
   }
 
+  # File Sharing SHARE POINTS — which folders are shared, and their SMB flags.
+  # These live in OpenDirectory (`dscl . -list /SharePoints`), never in a plist,
+  # so the plist diff cannot see them: sharing a specific folder in the GUI used
+  # to emit nothing at all. Replaying only the smbd launchctl commands then
+  # started the daemon with whatever the target already shared, not what the
+  # admin had just set up.
+  #
+  # Read through `dscl -plist -readall`, which every supported macOS has. The
+  # first version of this read `sharing -l -f json` — cleaner output, but `-f
+  # json` is a recent option and PrefWatch has to work on the last three macOS
+  # releases, where an unknown option would make the read return nothing and the
+  # watcher miss every share point in silence. The two readers were compared on
+  # 26.6.2 and produce byte-identical output, so the portable one costs nothing.
+  #
+  # The emitted flags are MEASURED, not guessed (probe 2026-09-05, macOS 26.6.2):
+  # `-s` and `-g` take THREE digits — afp, ftp, smb in that order — so smb-only
+  # is `001`, not `1`. Verified round-trip: `-s 001 -g 000 -R 1 -E 1` reads back
+  # as shared=1 guest=0 read_only=1 sealed=1, and `sharing -e` flips them back.
+  # afp and ftp are what `sharing` itself calls "no longer supported" and the
+  # JSON does not report them, so the first two digits are always 0 — faithful
+  # to everything that is observable.
+  sharepoints_watch() {
+    [ -x /usr/bin/dscl ] || return 0
+    [ -n "$PYTHON3_BIN" ] || return 0
+    _read_sharepoints() {
+      /usr/bin/dscl -plist . -readall /SharePoints 2>/dev/null | "$PYTHON3_BIN" -c '
+import plistlib, sys
+def one(rec, key, default=""):
+    v = rec.get("dsAttrTypeNative:" + key) or rec.get("dsAttrTypeStandard:" + key)
+    if isinstance(v, list): v = v[0] if v else None
+    return default if v in (None, "") else v
+try:    recs = plistlib.loads(sys.stdin.buffer.read())
+except Exception: sys.exit(0)
+if not isinstance(recs, list): sys.exit(0)
+rows = []
+for rec in recs:
+    if not isinstance(rec, dict): continue
+    name = one(rec, "RecordName")
+    if not name: continue
+    # Only the seven fields a `sharing` command can set. The record also carries
+    # com_apple_sharing_uuid / sharepoint_group_id / sharepoint_account_uuid (per
+    # machine, would not transplant) and record_daemon_version (pure churn) —
+    # they are dropped by SELECTING what we need, not by a filter that could rot.
+    rows.append((name, one(rec,"directory_path"), one(rec,"smb_shared","0"),
+                 one(rec,"smb_guestaccess","0"), one(rec,"smb_readonly","0"),
+                 one(rec,"smb_sealed","0"), one(rec,"smb_name", name)))
+for row in sorted(rows):
+    print("\t".join(str(x) for x in row))
+' || true
+    }
+    # Build the flag tail shared by -a and -e. Kept in one place so an added and
+    # an edited share point can never drift into describing the same state twice.
+    # Flags for a NEW share point. -R and -E are the two newest options and are
+    # emitted only when actually set, so the common case hands an older macOS
+    # nothing it may not know.
+    _sp_flags_add() {   # <shared> <guest> <readonly> <sealed> <smb name>
+      local _f
+      _f=$(printf -- '-S "%s" -s 00%s -g 00%s' "$(_escape_dq "$5")" "$1" "$2")
+      if [ "$3" = 1 ]; then _f="$_f -R 1"; fi
+      if [ "$4" = 1 ]; then _f="$_f -E 1"; fi
+      printf '%s' "$_f"
+    }
+    # Flags for an EDIT: ONLY the fields that actually changed. Two measured
+    # reasons, neither of them guessable (probe 2026-09-05, macOS 26.6.2):
+    #
+    #  · `-S <name>` with the name the share ALREADY has is refused outright —
+    #    "sharing: smb name already exists" — and the whole edit is then a no-op.
+    #    The first version of this emitted -S unconditionally, so every emitted
+    #    edit silently did nothing. Only pass -S when the smb name really moved.
+    #  · an omitted flag is PRESERVED, not reset. So a share going read-only
+    #    1 -> 0 needs `-R 0` spelled out; leaving it out keeps the old value and
+    #    the replay does not reproduce the change.
+    #
+    # Emitting exactly the differences satisfies both: every transition is
+    # expressed, and nothing that did not move is mentioned.
+    _sp_flags_edit() {  # <old shared guest ro sealed smbname> then <new …>
+      local os="$1" og="$2" oro="$3" ose="$4" osn="$5"
+      local ns="$6" ng="$7" nro="$8" nse="$9" nsn="${10}" _f=""
+      if [ "$os" != "$ns" ];   then _f="$_f -s 00$ns"; fi
+      if [ "$og" != "$ng" ];   then _f="$_f -g 00$ng"; fi
+      if [ "$oro" != "$nro" ]; then _f="$_f -R $nro"; fi
+      if [ "$ose" != "$nse" ]; then _f="$_f -E $nse"; fi
+      if [ "$osn" != "$nsn" ]; then _f="$_f -S \"$(_escape_dq "$nsn")\""; fi
+      printf '%s' "${_f# }"
+    }
+    _onchange_sharepoints() {
+      local _snap="$1" _curr="$2"
+      local n p sh gu ro se sn old
+      while IFS=$'\t' read -r n p sh gu ro se sn; do
+        [ -n "$n" ] || continue
+        old=$(/usr/bin/awk -F'\t' -v k="$n" '$1==k{print; exit}' "$_snap" 2>/dev/null)
+        if [ -z "$old" ]; then
+          log_line "Cmd: # File Sharing: share point added — $n"
+          log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags_add "$sh" "$gu" "$ro" "$se" "$sn")"
+          if [ -z "${_SP_PATH_NOTED:-}" ]; then
+            log_line "Cmd: # NOTE: the shared folder must already exist on the target — sharing -a does not create it"
+            typeset -g _SP_PATH_NOTED=1
+          fi
+        elif [ "$old" != "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$n" "$p" "$sh" "$gu" "$ro" "$se" "$sn")" ]; then
+          local _on _op _osh _ogu _oro _ose _osn _ef
+          IFS=$'\t' read -r _on _op _osh _ogu _oro _ose _osn <<< "$old"
+          if [ "$_op" != "$p" ]; then
+            # The shared FOLDER moved. `sharing -e` cannot express that, so the
+            # faithful reproduction is a remove followed by a fresh create.
+            log_line "Cmd: # File Sharing: share point now points elsewhere — $n"
+            log_line "Cmd: sudo /usr/sbin/sharing -r \"$(_escape_dq "$n")\""
+            log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags_add "$sh" "$gu" "$ro" "$se" "$sn")"
+          else
+            _ef=$(_sp_flags_edit "$_osh" "$_ogu" "$_oro" "$_ose" "$_osn" "$sh" "$gu" "$ro" "$se" "$sn")
+            if [ -n "$_ef" ]; then
+              log_line "Cmd: # File Sharing: share point changed — $n"
+              log_line "Cmd: sudo /usr/sbin/sharing -e \"$(_escape_dq "$n")\" $_ef"
+            fi
+          fi
+        fi
+      done < "$_curr"
+      # Removed: present in the snapshot, gone from the current read.
+      while IFS=$'\t' read -r n p sh gu ro se sn; do
+        [ -n "$n" ] || continue
+        /usr/bin/awk -F'\t' -v k="$n" '$1==k{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
+        log_line "Cmd: # File Sharing: share point removed — $n"
+        log_line "Cmd: sudo /usr/sbin/sharing -r \"$(_escape_dq "$n")\""
+      done < "$_snap"
+      return 0
+    }
+    _snapshot_watch sharepoints 2 _read_sharepoints _onchange_sharepoints
+  }
+
+  # Bluetooth on/off. The state LEFT the preference files: a full toggle writes
+  # nothing to any watched plist, confirmed with --debug (zero `# FILTERED:` lines,
+  # so it is an absence of data, not over-filtering). The plist diff can never see
+  # it; polling is the only way.
+  #
+  # `system_profiler SPBluetoothDataType` is the probe — measured 2026-09-05 on
+  # 26.6.2: moves within 1s of a toggle, stable at rest (one value over 20 samples
+  # a second apart), 0.10s a read. `/usr/sbin/BlueTool -c power` is ten times
+  # cheaper but reads the controller's power rail, not the setting: it stayed at 1
+  # while the state was Off. It also prints to STDERR only, so a probe written with
+  # the usual 2>/dev/null would read empty forever and, vetoed by _guard_nonempty,
+  # detect nothing at all without a single message.
+  #
+  # No `defaults` command reproduces it: the Bluetooth plists are byte-identical
+  # between On and Off, so there is nothing to replay. `/usr/sbin/BlueTool` does
+  # flip the radio but bluetoothd undoes it within 4 seconds (Off at +1s, back On
+  # at +4s) — the shape of the display preset and the battery charge limit.
+  #
+  # The emitted command needs NO third-party tool. The usual third-party answer is
+  # a wrapper around IOBluetoothPreferenceSetControllerPowerState in the public
+  # IOBluetooth framework — read off its own linked symbols — and the python3
+  # PrefWatch already requires calls that function directly through ctypes,
+  # verified to set the state and to survive a reboot. Naming a binary would have
+  # added an install step for no capability.
+  bluetooth_watch() {
+    [ -x /usr/sbin/system_profiler ] || return 0
+    _read_bluetooth() {
+      /usr/sbin/system_profiler SPBluetoothDataType 2>/dev/null \
+        | /usr/bin/awk -F': *' '/State:/{print $2; exit}'
+    }
+    _onchange_bluetooth() {
+      local _st _flag
+      _st=$(/usr/bin/head -1 "$2" 2>/dev/null)
+      case "$_st" in
+        On)  _flag=1 ;;
+        Off) _flag=0 ;;
+        *)   return 0 ;;   # anything else is a failed read, not a change
+      esac
+      # Key the dedup on the STATE, not on the watcher. The plain key suppressed
+      # the second half of an off-then-on within the 15s burst window, so the log
+      # said "turned Off" on a machine that had ended up On — worse than silence
+      # for whoever replays it. _snapshot_watch already fires only on a real
+      # change, so per-state keying reports every toggle and still collapses
+      # a repeat of the same state. Same composite-key shape as __newdom__:$dom.
+      _note_should_show "__bluetooth__:$_st" || return 0
+      # Build the python source in a SINGLE-quoted string so its double quotes stay
+      # literal, then interpolate. Written straight into the double-quoted log_line
+      # they were eaten and the emitted LoadLibrary(/System/...) was a Python syntax
+      # error, which an admin pasting it would just see fail. Caught by EXECUTING
+      # the emitted line, not by reading it.
+      local _py='import ctypes; ctypes.cdll.LoadLibrary("/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth").IOBluetoothPreferenceSetControllerPowerState('
+      local _cmd="/usr/bin/python3 -c '${_py}${_flag})'"
+      # The note states the fact, the command sits on its OWN line underneath: an
+      # admin copies a line, not a sentence. No "not reproducible via defaults"
+      # here, unlike the other notes — the command right below already says that,
+      # and it is emitted as a real command rather than inside the comment because
+      # this one runs on any Mac as it stands.
+      log_line "Cmd: # NOTE: Bluetooth turned $_st"
+      log_line "Cmd: $_cmd"
+      return 0
+    }
+    _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty
+  }
+
   # Detect local user account add/remove (real users, UID >= 501). The account
   # itself (UID/home/password) lives in OpenDirectory/dslocal, not a plist, so
   # it is NOT reproducible via `defaults` — emit a factual NOTE only, no command.
@@ -5075,7 +5324,10 @@ PY
         # Both fields come from com.apple.launchservices.secure.plist, which is
         # -rw-r--r-- and writable by anything running as the user. Emitted raw,
         # a scheme of `x; curl …|sh; #` needed no substitution at all to inject.
-        log_line "Cmd: utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
+        # Per-user LaunchServices state: replayed by a root Jamf policy unwrapped,
+        # it would set ROOT's default app. --mdm wraps it like a user `defaults`.
+        local _uu="utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
+        log_line "Cmd: $(_mdm_wrap "$_uu")"
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       return 0
     }

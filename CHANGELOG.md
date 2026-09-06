@@ -3,8 +3,13 @@
 ## 1.4.4 — unreleased
 
 ### Fix
-- Turning Bluetooth on or off emitted nothing. The state left the preference files, so the diff had nothing to see; it is polled now and reported with a `# NOTE:` carrying a command that reproduces it. That command needs nothing installed: `defaults` cannot reach the setting and the Apple tool that flips the radio is undone by `bluetoothd` within seconds, but IOBluetooth answers to one `python3` line, and `python3` is already required.
-- Sharing a folder in System Settings emitted nothing. The share point lives in OpenDirectory, not in any plist, so the diff could never see it — and replaying a File Sharing capture started the daemon with whatever the target already shared. Adding, editing and removing one now emits the matching `sharing` command.
+- Turning Bluetooth on or off emitted nothing: the state is in no plist. It is polled now, and a `# NOTE:` carries the `python3` line that reproduces it — nothing to install.
+- Sharing a folder emitted nothing: the share point lives in OpenDirectory, not in a plist. Adding, editing and removing one now emits the matching `sharing` command.
+- A wallpaper set with `desktoppr` was reported as a `defaults write` of desktoppr's own record of it, which sets nothing. PrefWatch now emits the command that does: `desktoppr "<image>"`.
+- `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.
+
+### Note
+- The new-domain `# NOTE:` said "did not exist at startup". It now says the domain is new and the commands below are its full configuration.
 
 
 ## 1.4.3 — 2026-09-05

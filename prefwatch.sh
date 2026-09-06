@@ -1716,6 +1716,15 @@ is_noisy_key() {
       esac
       ;;
 
+    # desktoppr's own record of the image it last applied. Writing the key back
+    # sets no wallpaper — it only forges that record on the target. Filter the
+    # misleading command; _note_desktoppr emits the command that DOES apply it.
+    com.scriptingosx.desktoppr)
+      case "$keyname" in
+        lastPath) return 0 ;;
+      esac
+      ;;
+
   esac
 
   return 1
@@ -2416,6 +2425,17 @@ _mdm_wrap() {
   fi
 }
 
+# A `# dockutil …` info comment is not prose: it is a command an admin copies out.
+# dockutil edits the LOGGED-IN USER's Dock, so under --mdm it needs the same
+# runAsUser as the PlistBuddy lines it stands in for — the `#` stays leading, so
+# the line still reads as the alternative it is. `# Dock: <label>` is left alone.
+_mdm_wrap_comment() {
+  case "$1" in
+    "# dockutil "*) printf '# %s' "$(_mdm_wrap "${1#"# "}")" ;;
+    *)             printf '%s' "$1" ;;
+  esac
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
 # Deletes go through convert_delete_to_plistbuddy.
 # Args: kind cmd note_dom is_delete
@@ -2516,7 +2536,7 @@ _process_py_meta() {
         for _pc in "${_pending_comments[@]}"; do
           # Precede a dockutil info comment with the "it's an ALTERNATIVE" NOTE.
           [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
-          _log_kind "$kind" "Cmd: $_pc"
+          _log_kind "$kind" "Cmd: $(_mdm_wrap_comment "$_pc")"
         done
         _pending_comments=()
       fi
@@ -2576,7 +2596,7 @@ _process_py_meta() {
   if (( ${#_pending_comments[@]} > 0 )) && [ -n "$plist_path" ]; then
     for _pc in "${_pending_comments[@]}"; do
       [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
-      _log_kind "$kind" "Cmd: $_pc"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap_comment "$_pc")"
     done
     _pending_comments=()
   fi
@@ -2619,7 +2639,7 @@ _process_diff_lines() {
     # raw-copy fallback both fail — the window where cfprefsd unlinks and recreates
     # a plist mid-scan — a 0-byte baseline is left behind. plutil on a genuinely
     # empty plist writes "{\n}", so empty really does mean the dump produced
-    # nothing. Treating that as novelty announced "did not exist at startup" and
+    # nothing. Treating that as novelty announced a brand-new domain and
     # dumped the domain whole (reproduced: a 3-key domain emitted all 4 keys after
     # its baseline was zeroed). Adopt the current state as the baseline and stay
     # silent; the next real change then diffs against it correctly.
@@ -2632,7 +2652,7 @@ _process_diff_lines() {
     # all. Materialise an empty baseline so every key shows up as an addition.
     : > "$prev" 2>/dev/null || return 0
     _note_should_show "__newdom__:${dom}" \
-      && _log_kind "$kind" "Cmd: # NOTE: '$dom' did not exist at startup — what follows is its whole initial configuration, not a single change"
+      && _log_kind "$kind" "Cmd: # NOTE: '$dom' is a new domain — the commands below are its full configuration, not a single change"
   fi
 
   typeset -A _added_keys
@@ -3608,7 +3628,7 @@ for key in ("persistent-apps", "persistent-others"):
 PY
 )
   if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
-    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil (github.com/kcrawford/dockutil), e.g. dockutil --move <app> --position <N>"
+    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil (github.com/kcrawford/dockutil), e.g. $(_mdm_wrap "dockutil --move <app> --position <N>")"
   fi
 }
 
@@ -3620,6 +3640,33 @@ _note_charge_limit() {
   local kind="$1"
   _note_should_show __charge_limit__ || return 0
   _log_kind "$kind" "Cmd: # NOTE: battery charge limit changed — managed by the power daemon (SMC), not reproducible via defaults; set it in System Settings > Battery"
+}
+
+# desktoppr (scriptingosx) records the image it last applied in its own domain.
+# `defaults` cannot set a wallpaper, so — like utiluti for default apps — the tool
+# IS the command, not an alternative to one. `lastPath` is filtered (is_noisy_key)
+# and replaced here by the command that reproduces the wallpaper, with the exact
+# path: wallpaper_watch sees the change in the com.apple.wallpaper Store, which
+# holds no usable path, so this domain is the only place it can come from.
+_desktoppr_lastpath() {
+  [ -s "$1" ] || return 0
+  # No pipe: a capture of `cmd | head` dies under set -e + pipefail (1.4.3).
+  /usr/bin/sed -n 's/^[[:space:]]*"lastPath" => "\(.*\)"$/\1/p' "$1" 2>/dev/null
+}
+_note_desktoppr() {
+  local kind="$1" _p _c
+  _p="$(_desktoppr_lastpath "$2")" ; _c="$(_desktoppr_lastpath "$3")"
+  [ -n "$_c" ] && [ "$_p" != "$_c" ] || return 0
+  _note_should_show "__desktoppr__:$_c" || return 0
+  # Every key of this domain is filtered, so the generic "new domain — the commands
+  # below are its full configuration" note would head an empty block. Claim its
+  # dedup slot: the pair emitted here IS that domain's whole reportable content.
+  _NOTED_DOMAIN[__newdom__:com.scriptingosx.desktoppr]=$EPOCHSECONDS
+  _log_kind "$kind" "Cmd: # NOTE: needs desktoppr (github.com/scriptingosx/desktoppr)"
+  # Wallpaper is per-user session state, so --mdm wraps it in runAsUser the same
+  # way a user-domain `defaults` is — root setting its own wallpaper changes nothing.
+  local _dp="desktoppr \"$(_escape_dq "$_c")\""
+  _log_kind "$kind" "Cmd: $(_mdm_wrap "$_dp")"
 }
 
 # Display plist file diff
@@ -3753,6 +3800,10 @@ show_plist_diff() {
       _emit_hostflag="-currentHost"
       _emit_dom="$(printf '%s' "$_emit_dom" | /usr/bin/sed -E 's/\.[0-9A-Fa-f-]{8,}$//')"
     fi
+    # Before the diff: this domain's only reportable content is the desktoppr command.
+    if [ "$_dom" = "com.scriptingosx.desktoppr" ]; then
+      _note_desktoppr "$kind" "$prev" "$curr"
+    fi
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path" "$path"
     # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
@@ -3814,6 +3865,10 @@ show_domain_diff() {
     _run_py_diff_workers DOMAIN "$dom" "$prev_json" "$curr_json" "$(get_plist_path "$dom" 2>/dev/null)" "$key"
   fi
 
+  # Same in single-domain / ALL-domain mode as in the per-plist diff above.
+  if [ "$dom" = "com.scriptingosx.desktoppr" ]; then
+    _note_desktoppr DOMAIN "$prev" "$curr"
+  fi
   _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -5269,7 +5324,10 @@ PY
         # Both fields come from com.apple.launchservices.secure.plist, which is
         # -rw-r--r-- and writable by anything running as the user. Emitted raw,
         # a scheme of `x; curl …|sh; #` needed no substitution at all to inject.
-        log_line "Cmd: utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
+        # Per-user LaunchServices state: replayed by a root Jamf policy unwrapped,
+        # it would set ROOT's default app. --mdm wraps it like a user `defaults`.
+        local _uu="utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
+        log_line "Cmd: $(_mdm_wrap "$_uu")"
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       return 0
     }
