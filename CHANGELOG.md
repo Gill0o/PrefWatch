@@ -7,9 +7,11 @@
 - Sharing a folder emitted nothing: the share point lives in OpenDirectory, not in a plist. Adding, editing and removing one now emits the matching `sharing` command.
 - A wallpaper set with `desktoppr` was reported as a `defaults write` of desktoppr's own record of it, which sets nothing. PrefWatch now emits the command that does: `desktoppr "<image>"`.
 - `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.
+- Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
 
 ### Note
 - The new-domain `# NOTE:` said "did not exist at startup". It now says the domain is new and the commands below are its full configuration.
+- Spotlight category changes say the Settings pane must be reopened to take effect, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
 
 ## 1.4.3 — 2026-09-05

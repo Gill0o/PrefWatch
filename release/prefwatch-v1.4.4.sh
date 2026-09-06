@@ -3049,6 +3049,15 @@ _emit_contextual_note() {
       _note="opening Accessibility settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
     com.apple.prodisplaylibrary)
       _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
+    # Spotlight categories: the write is faithful but INERT until something
+    # re-reads the plist. Verified live: reopening the Settings pane applies it;
+    # `killall Spotlight` alone did not. Without this the admin deploys a correct
+    # command, sees no change, and concludes the command is wrong.
+    com.apple.Spotlight)
+      case "$array_base" in
+        EnabledPreferenceRules|DisabledUTTypes)
+          _note="Spotlight re-reads this only when its Settings pane is reopened (killall Spotlight is not enough; a logout is the fallback) — and despite its name, EnabledPreferenceRules lists the DISABLED categories" ;;
+      esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
   case "$array_base" in
@@ -3193,11 +3202,43 @@ for path_tuple, index, item in results:
         keys = ','.join(str(k) for k in item.keys())
     else:
         keys = ""
-    print(f"{array_name}\t{index}\t{keys}\t{app_label}")
+    # A 5th field: the element's VALUE, when targeting it by value is safe.
+    # An index-addressed Delete replayed on a target whose array differs removes
+    # WHATEVER sits at that index — silently, with no error (measured: a Spotlight
+    # category re-enable removed the target's Siri entry instead). Only for a
+    # string that occurs EXACTLY ONCE in the source array: a repeated value
+    # (NSToolbarFlexibleSpaceItem) would match several, and a dict element has no
+    # short spelling. Everything else keeps the positional form.
+    value = ""
+    if isinstance(item, str) and isinstance(prev.get(array_name), list):
+        if sum(1 for e in prev[array_name] if e == item) == 1 and "\t" not in item and "\n" not in item:
+            value = item
+    # \x1f (unit separator), NOT tab: tab is an IFS *whitespace* character, so zsh
+    # collapses a run of them into ONE delimiter. With `keys` and `app_label` both
+    # empty — every scalar array — `\t\t\t` became a single separator and the value
+    # landed in `keylist`, three variables early. Measured, not guessed: the
+    # emitter silently kept using the positional form. A non-whitespace separator
+    # yields one empty field per empty column, which is what the reader expects.
+    print(f"{array_name}\x1f{index}\x1f{keys}\x1f{app_label}\x1f{value}")
 PY
 }
 
 # Detect and emit commands for array deletions
+# Remove ONE element of a top-level array by its VALUE, not by its index.
+# `defaults` cannot do it and PlistBuddy addresses arrays positionally only, so
+# the emitted line goes through python3 — already required, no new dependency.
+# It reads and writes through `defaults export`/`import` rather than touching the
+# plist file: cfprefsd owns that file and would overwrite a direct write.
+# Returns empty when a quote in any field would break the single-quoted shell
+# string, so the caller falls back to the positional form rather than emit
+# something malformed.
+_build_array_value_delete() {
+  local dom="$1" key="$2" val="$3"
+  case "$dom$key$val" in *\'*|*\\*) return 1 ;; esac
+  printf "/usr/bin/python3 -c 'import subprocess as s, plistlib; d=\"%s\"; k=\"%s\"; v=\"%s\"; p=plistlib.loads(s.run([\"/usr/bin/defaults\",\"export\",d,\"-\"],capture_output=True).stdout); p[k]=[x for x in p.get(k,[]) if x!=v]; s.run([\"/usr/bin/defaults\",\"import\",d,\"-\"],input=plistlib.dumps(p))'" \
+    "$(_escape_dq "$dom")" "$(_escape_dq "$key")" "$(_escape_dq "$val")"
+}
+
 emit_array_deletions() {
   # $6 = OPTIONAL real plist path. The delete_cmd built below carries no host
   # flag at all, so without this a ByHost array deletion targeted the any-host
@@ -3217,7 +3258,7 @@ emit_array_deletions() {
   [ -n "$py_output" ] || return 0
 
   typeset -A _noted_del_arrays=()
-  while IFS=$'\t' read -r base idx keylist app_label; do
+  while IFS=$'\x1f' read -r base idx keylist app_label elem_value; do
     [ -n "$base" ] || continue
 
     # Skip noisy arrays
@@ -3244,10 +3285,17 @@ emit_array_deletions() {
     # same construction in _build_defaults_delete_cmd escapes its target.
     local delete_cmd="defaults delete \"$(_escape_dq "$dom")\" \":$(_escape_dq "$base"):${idx}\""
 
+    local _val_cmd=""
+    if [ -n "${elem_value:-}" ]; then _val_cmd=$(_build_array_value_delete "$dom" "$base" "$elem_value") || _val_cmd=""; fi
+
     if is_noisy_command "$delete_cmd"; then
       :
     elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
       :
+    elif [ -n "$_val_cmd" ]; then
+      # Value-targeted: no index to shift, so the "run these in the order shown"
+      # warning does not apply and is not emitted for this line.
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$_val_cmd")"
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" 2>/dev/null); then
