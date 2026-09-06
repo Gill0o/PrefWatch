@@ -5111,12 +5111,12 @@ for row in sorted(rows):
   # flip the radio but bluetoothd undoes it within 4 seconds (Off at +1s, back On
   # at +4s) — the shape of the display preset and the battery charge limit.
   #
-  # The emitted command needs NO third-party tool. blueutil, the usual answer, is
+  # The emitted command needs NO third-party tool. The usual third-party answer is
   # a wrapper around IOBluetoothPreferenceSetControllerPowerState in the public
-  # IOBluetooth framework (read off its own linked symbols), and the python3
-  # PrefWatch already requires calls that function directly through ctypes —
-  # verified to set the state and hold, exactly like blueutil. Recommending the
-  # binary would have added an install step for no capability.
+  # IOBluetooth framework — read off its own linked symbols — and the python3
+  # PrefWatch already requires calls that function directly through ctypes,
+  # verified to set the state and to survive a reboot. Naming a binary would have
+  # added an install step for no capability.
   bluetooth_watch() {
     [ -x /usr/sbin/system_profiler ] || return 0
     _read_bluetooth() {

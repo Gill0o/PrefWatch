@@ -3,7 +3,7 @@
 ## 1.4.4 — unreleased
 
 ### Fix
-- Turning Bluetooth on or off emitted nothing. The state left the preference files, so the diff had nothing to see; it is polled now and reported with a `# NOTE:` carrying a command that reproduces it. That command needs nothing installed: `defaults` cannot reach the setting and the Apple tool that flips the radio is undone by `bluetoothd` within seconds, but the framework call behind `blueutil` is one `python3` line, and `python3` is already required.
+- Turning Bluetooth on or off emitted nothing. The state left the preference files, so the diff had nothing to see; it is polled now and reported with a `# NOTE:` carrying a command that reproduces it. That command needs nothing installed: `defaults` cannot reach the setting and the Apple tool that flips the radio is undone by `bluetoothd` within seconds, but IOBluetooth answers to one `python3` line, and `python3` is already required.
 - Sharing a folder in System Settings emitted nothing. The share point lives in OpenDirectory, not in any plist, so the diff could never see it — and replaying a File Sharing capture started the daemon with whatever the target already shared. Adding, editing and removing one now emits the matching `sharing` command.
 
 
