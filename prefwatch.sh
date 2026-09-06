@@ -5145,7 +5145,13 @@ for row in sorted(rows):
       # the emitted line, not by reading it.
       local _py='import ctypes; ctypes.cdll.LoadLibrary("/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth").IOBluetoothPreferenceSetControllerPowerState('
       local _cmd="/usr/bin/python3 -c '${_py}${_flag})'"
-      log_line "Cmd: # NOTE: Bluetooth turned $_st — the state is in no plist, so no \`defaults\` command reproduces it. Deploy with: $_cmd"
+      # The note states the fact, the command sits on its OWN line underneath: an
+      # admin copies a line, not a sentence. No "not reproducible via defaults"
+      # here, unlike the other notes — the command right below already says that,
+      # and it is emitted as a real command rather than inside the comment because
+      # this one runs on any Mac as it stands.
+      log_line "Cmd: # NOTE: Bluetooth turned $_st"
+      log_line "Cmd: $_cmd"
       return 0
     }
     _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty
