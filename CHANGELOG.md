@@ -2,14 +2,30 @@
 
 ## 1.4.4 — unreleased
 
+### Feature
+- The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand — the tools PrefWatch itself emits. Their read verbs are dropped, only writes surface.
+- Bluetooth on/off → the `python3` line that reproduces it, under a `# NOTE:` saying which way it went. The state is in no plist, and nothing needs installing.
+- Shared folders → `sharing -a`/`-e`/`-r`, for add, edit and remove alike. The share point lives in OpenDirectory, not in a plist.
+- Network service order, DNS, search domains, proxies, the TCP/IP method and a service's on/off → their `networksetup` command, addressed by service name.
+- Network location → `scselect "<location>"`. The raw `:CurrentSet` write named a UUID that means nothing elsewhere, and is filtered now.
+- Wi-Fi on/off → `networksetup -setairportpower`. The raw `PowerEnabled` write went to a file airportd owns, and is filtered now.
+- Time Machine's "Back up automatically" and its exclusion list → `tmutil enable`/`disable`/`addexclusion`/`removeexclusion`; the raw writes to backupd's file are filtered.
+- Startup sound → `sudo nvram StartupMute=…`. It lives in NVRAM, where no plist diff can see it.
+
 ### Fix
-- Turning Bluetooth on or off emitted nothing: the state is in no plist. It is polled now, and a `# NOTE:` carries the `python3` line that reproduces it — nothing to install.
-- Sharing a folder emitted nothing: the share point lives in OpenDirectory, not in a plist. Adding, editing and removing one now emits the matching `sharing` command.
-- A wallpaper set with `desktoppr` was reported as a `defaults write` of desktoppr's own record of it, which sets nothing. PrefWatch now emits the command that does: `desktoppr "<image>"`.
+- A wallpaper change emitted a `defaults write` of desktoppr's own record — which sets nothing — or a `/path/to/image.jpg` placeholder. It now emits the real path, whatever set the wallpaper.
+- Changing the colour behind the wallpaper emitted nothing. `desktoppr color <hex>` reproduces it, and is emitted now. A solid system colour is not: the Store keeps its name, not its shade.
 - `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
 
+### Noise
+- Un-excluded domains holding real prefs, now filtered per key: `com.apple.Music`/`TV` (crossfade, EQ, import encoder), `AddressBook` (text size), `sharingd` (AirDrop discoverability).
+
 ### Note
+- Media Sharing is reported but not reproducible: its keys mirror state the daemon never reads back. Measured — restarting the daemon and the Settings pane changes nothing.
+- AirDrop discoverability says to run `killall sharingd`: measured, the write alone is inert and Control Center keeps the previous value until the daemon restarts.
+- A privacy permission change names the permission and points at a PPPC profile — `tccutil` only resets, it cannot grant. Without Full Disk Access the change is reported but not named.
+- System Integrity Protection is now read alongside FileVault, Gatekeeper and the firewall, and says only Recovery can change it.
 - The new-domain `# NOTE:` said "did not exist at startup". It now says the domain is new and the commands below are its full configuration.
 - Spotlight category changes say the Settings pane must be reopened to take effect, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
