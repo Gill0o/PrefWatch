@@ -701,7 +701,14 @@ typeset -a EXCLUDE_PATTERNS _raw_excl
 IFS=',' read -rA _raw_excl <<< "$EXCLUDE_DOMAINS_RAW"
 EXCLUDE_PATTERNS=()
 for p in "${_raw_excl[@]}"; do
-  p=$(printf '%s' "$p" | /usr/bin/sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  # Trim in zsh, not through `printf | sed`. That form was a CAPTURED PIPE under
+  # `set -e -o pipefail`: any failing link kills the script before LOGFILE even
+  # exists, so the only trace is /tmp/prefwatch-abort.log. And it does fail —
+  # `sed` exits 1 with "illegal byte sequence" on an invalid UTF-8 byte, which a
+  # --exclude value is free to contain. Reproduced before removing it.
+  # It also cost 322 forks and ~310 ms at every launch, against 0.5 ms here.
+  p="${p#"${p%%[![:space:]]*}"}"
+  p="${p%"${p##*[![:space:]]}"}"
   [ -n "$p" ] && EXCLUDE_PATTERNS+=("$p")
 done
 
