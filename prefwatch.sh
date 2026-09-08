@@ -6141,33 +6141,62 @@ WP
       done
     }
     _onchange_tcc() {
-      local _snap="$1" _curr="$2" _added _removed _n _line _svc _cli _val _sc _label
+      local _snap="$1" _curr="$2" _added _removed _scope _svc _cli _val _key _label
       _added=$(/usr/bin/comm -13 <(/usr/bin/sort "$_snap") <(/usr/bin/sort "$_curr") 2>/dev/null) || _added=""
       _removed=$(/usr/bin/comm -23 <(/usr/bin/sort "$_snap") <(/usr/bin/sort "$_curr") 2>/dev/null) || _removed=""
       _note_should_show __tcc__ || return 0
       log_line "Cmd: # NOTE: privacy permission changed (System Settings > Privacy & Security) — NOT"
       log_line "Cmd: #       reproducible by command: tccutil only RESETS a grant, it cannot create one."
-      log_line "Cmd: #       Deploy it as a PPPC configuration profile (Jamf: Privacy Preferences Policy Control)."
+      log_line "Cmd: #       Deploy it as a PPPC (Privacy Preferences Policy Control) configuration profile."
       if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q 'UNREADABLE'; then
         log_line "Cmd: #       Which permission moved is not visible here — reading TCC.db needs Full Disk Access."
         return 0
       fi
-      # Cap the listing: a first grant to a freshly installed app can move a
-      # dozen rows at once, and the NOTE is a pointer, not an inventory.
-      _n=0
-      for _sc in + -; do
-        [ "$_sc" = "+" ] && _line="$_added" || _line="$_removed"
-        [ -n "$_line" ] || continue
-        printf '%s\n' "$_line" | while IFS=$'\t' read -r _scope _svc _cli _val; do
-          [ -n "$_svc" ] || continue
-          [ "$_svc" = "UNREADABLE" ] && continue
-          case "$_val" in
-            0) _label="denied" ;;
-            2) _label="allowed" ;;
-            *) _label="auth_value $_val" ;;
-          esac
-          log_line "Cmd: #       ${_sc} ${_scope}  ${_svc#kTCCService}  ${_cli}  ${_label}"
-        done
+
+      # A permission that CHANGES is one row leaving and one arriving, keyed the
+      # same. Printed as a raw +/- pair it is the reader's job to match them up,
+      # and a settings pane that flips five permissions at once produces ten
+      # lines to pair by eye. Same key on both sides → one "before → after" line;
+      # a genuine arrival or departure keeps its + or -.
+      #
+      # Here-strings, never `printf | while`: a pipeline runs the loop in a
+      # subshell and the arrays filled in it would be gone by the next line.
+      # $'\t' is NOT expanded inside an array subscript — it stays the four
+      # literal characters, so every key was one blob and the field splits below
+      # returned the whole thing three times. Build the separator once.
+      local -A _was _now
+      local _T=$'\t'
+      _label() {
+        case "$1" in
+          0) print -r -- "denied" ;;
+          2) print -r -- "allowed" ;;
+          *) print -r -- "auth_value $1" ;;
+        esac
+      }
+      if [ -n "$_removed" ]; then
+        while IFS=$'\t' read -r _scope _svc _cli _val; do
+          [ -n "$_svc" ] && [ "$_svc" != "UNREADABLE" ] || continue
+          _key="${_scope}${_T}${_svc}${_T}${_cli}"; _was[$_key]="$_val"
+        done <<< "$_removed"
+      fi
+      if [ -n "$_added" ]; then
+        while IFS=$'\t' read -r _scope _svc _cli _val; do
+          [ -n "$_svc" ] && [ "$_svc" != "UNREADABLE" ] || continue
+          _key="${_scope}${_T}${_svc}${_T}${_cli}"; _now[$_key]="$_val"
+        done <<< "$_added"
+      fi
+      for _key in ${(k)_now}; do
+        _scope="${_key%%${_T}*}"; _svc="${${_key#*${_T}}%%${_T}*}"; _cli="${_key##*${_T}}"
+        if [ -n "${_was[$_key]+set}" ]; then
+          log_line "Cmd: #       ${_scope}  ${_svc#kTCCService}  ${_cli}  $(_label "${_was[$_key]}") → $(_label "${_now[$_key]}")"
+          unset "_was[$_key]"
+        else
+          log_line "Cmd: #       + ${_scope}  ${_svc#kTCCService}  ${_cli}  $(_label "${_now[$_key]}")"
+        fi
+      done
+      for _key in ${(k)_was}; do
+        _scope="${_key%%${_T}*}"; _svc="${${_key#*${_T}}%%${_T}*}"; _cli="${_key##*${_T}}"
+        log_line "Cmd: #       - ${_scope}  ${_svc#kTCCService}  ${_cli}  $(_label "${_was[$_key]}")"
       done
       return 0
     }
