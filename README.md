@@ -4,7 +4,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy` or the right built-in CLI (`networksetup`, `scselect`, `scutil`, `systemsetup`, `tmutil`, `nvram`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `cupsctl`, `launchctl`, `dscl`)
+- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy`, or the right built-in CLI (`networksetup`, `scselect`, `scutil`, `systemsetup`, `sharing`, `tmutil`, `nvram`, `spctl`/`socketfilterfw`, `mdutil`, `pmset`, `lpadmin`, `cupsctl`, `launchctl`, `kickstart`, `dscl`), or — where macOS offers no CLI at all — a `python3` one-liner on the Apple framework behind the setting (Bluetooth)
 - **ALL mode** — watch every domain at once; no need to know which one changed
 - **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
