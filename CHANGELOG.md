@@ -13,6 +13,7 @@
 - Startup sound → `sudo nvram StartupMute=…`. It lives in NVRAM, where no plist diff can see it.
 
 ### Fix
+- A system-level `defaults write` was emitted bare, under a `# NOTE:` saying to replay it as root — a line nobody can paste. It carries `sudo` now, like every other privileged command here.
 - A wallpaper change emitted a `defaults write` of desktoppr's own record — which sets nothing — or a `/path/to/image.jpg` placeholder. It now emits the real path, whatever set the wallpaper.
 - Changing the colour behind the wallpaper emitted nothing. `desktoppr color <hex>` reproduces it, and is emitted now. A solid system colour is not: the Store keeps its name, not its shade.
 - `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.

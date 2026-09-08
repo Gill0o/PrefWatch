@@ -2398,15 +2398,6 @@ _log_kind() {
   esac
 }
 
-# One-per-burst NOTE when the current diff targets a system-level pref: the
-# emitted defaults/PlistBuddy commands write a root-owned /Library/Preferences
-# file and must be replayed as root.
-_maybe_sys_note() {
-  [ "${_EMIT_SYS:-false}" = "true" ] || return 0
-  _note_should_show __sys_root__ || return 0
-  # "Cmd: " prefix required so the note survives ONLY_CMDS (Jamf) filtering.
-  _log_kind "$1" "Cmd: # NOTE: system-level pref (/Library/Preferences) — replay these commands as root (sudo)"
-}
 
 # One-per-burst NOTE when an emitted path was templatized to $UUID (MDM mode,
 # ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
@@ -2808,7 +2799,15 @@ _dbg_filtered() { [ "${DEBUG_FILTER:-false}" = "true" ] && log_line "Cmd: # FILT
 # Gated on _EMIT_SYS: system-level commands (/Library/Preferences) stay plain root.
 # No-op outside --mdm, and on comment lines (only real command lines are passed in).
 _mdm_wrap() {
-  if [ "$MDM_OUTPUT" = "true" ] && [ "${_EMIT_SYS:-false}" != "true" ]; then
+  if [ "${_EMIT_SYS:-false}" = "true" ]; then
+    # System-level pref: the command writes a root-owned file under
+    # /Library/Preferences, so it carries `sudo` the same way every tool command
+    # here does. It used to be emitted bare, under a NOTE saying "replay these
+    # as root" — a line nobody can paste, in a log whose whole purpose is lines
+    # you paste. The NOTE is gone with it. Under --mdm the policy already runs
+    # as root and `sudo` is a no-op there, so one form serves both.
+    printf 'sudo %s' "$1"
+  elif [ "$MDM_OUTPUT" = "true" ]; then
     printf 'runAsUser %s' "$1"
   else
     printf '%s' "$1"
@@ -2855,7 +2854,6 @@ _emit_cmd() {
     return 0
   fi
 
-  _maybe_sys_note "$kind"
 
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
@@ -2921,7 +2919,6 @@ _process_py_meta() {
         _emit_contextual_note "$dom" "$_last_array_base"
         _domain_note_emitted=true
       fi
-      _maybe_sys_note "$kind"
       if (( ${#_pending_comments[@]} > 0 )); then
         for _pc in "${_pending_comments[@]}"; do
           # Precede a dockutil info comment with the "it's an ALTERNATIVE" NOTE.
