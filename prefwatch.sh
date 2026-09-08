@@ -609,8 +609,6 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Spotlight knowledge daemon (internal sync counters, timestamps)
   "com.apple.spotlightknowledged.pipeline"
 
-  # Media sharing daemon (internal playlist/sharing state)
-
   # TeamViewer internals (AI nudge, license, version, UI phases)
   "com.teamviewer*"
 
@@ -684,7 +682,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.textunderstanding*"
 
   # Filtered per-key in is_noisy_key (not excluded) so real prefs survive:
-  # dock, finder, Safari, systemsettings, Mail, Messages.
+  # dock, finder, Safari, systemsettings, Mail, Messages, and — un-excluded
+  # 2026-09-08 — Music, TV, AddressBook, sharingd (AirDrop discoverability) and
+  # amp.mediasharingd (detected, but every key filtered: they mirror state the
+  # daemon never reads back, so _note_mediasharing speaks for the domain).
 )
 
 # Merge user-provided exclusions with defaults
@@ -1007,7 +1008,13 @@ is_noisy_key() {
     # Keep: NSTableViewDefaultSizeMode is the sidebar icon size (real pref),
     # NOT table-view UI state — must precede the NSTableView* noise glob below
     NSTableViewDefaultSizeMode) return 1 ;;
-    # Window positions & UI state (changes on every resize/move)
+    # Window positions & UI state (changes on every resize/move).
+    # NSStatusItem* here is GLOBAL, so it already covers com.apple.controlcenter,
+    # com.apple.Spotlight and every third-party menu-bar app: those domains used
+    # to repeat the pattern in their own case block, where it could never be
+    # reached. (It also swallows `NSStatusItem VisibleCC <Module>` — a known,
+    # deliberate trade-off; do not narrow it without measuring what a System
+    # Settings toggle really writes.)
     NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
       return 0 ;;
 
@@ -1191,7 +1198,7 @@ is_noisy_key() {
     com.apple.dock)
       case "$keyname" in
         # Noisy: workspace IDs, counts, expose gestures, trash state, recent apps
-        workspace-*|mod-count|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
+        workspace-*|showAppExposeGestureEnabled|last-messagetrace-stamp|lastShowIndicatorTime|trash-full|recent-apps)
           return 0 ;;
         # Noisy: internal tile metadata (reorder noise)
         GUID|dock-extra|tile-type|is-beta|file-type|file-mod-date|parent-mod-date|book|file-data|tile-data)
@@ -1227,7 +1234,7 @@ is_noisy_key() {
     com.apple.systemsettings*)
       case "$keyname" in
         # Noisy: last seen timestamps, navigation state, indexing timestamps, extension state
-        *-last-seen|*LastUpdate*|*NavigationState*|*update-state-indexing*|*.extension)
+        *NavigationState*|*update-state-indexing*|*.extension)
           return 0 ;;
       esac
       ;;
@@ -1260,15 +1267,6 @@ is_noisy_key() {
     com.sketchup.*)
       case "$keyname" in
         WebDialog.*.X|WebDialog.*.Y|WebDialog.*.Width|WebDialog.*.Height) return 0 ;;
-      esac
-      ;;
-
-    # Control Center: Filter UI positioning state
-    com.apple.controlcenter)
-      case "$keyname" in
-        # Noisy: status item visibility/position changes from UI interaction
-        NSStatusItem*)
-          return 0 ;;
       esac
       ;;
 
@@ -1391,7 +1389,7 @@ is_noisy_key() {
           return 0 ;;
         queryViewOptions|PasteboardHistoryVersion|PreferencesVersion|version)
           return 0 ;;
-        NSStatusItem*|__NSEnable*|SSAction*|FTEReset*)
+        __NSEnable*|SSAction*|FTEReset*)
           return 0 ;;
         # Noisy: auto-learned shortcuts, reload trigger
         mailShortcuts|reloadShortcuts)

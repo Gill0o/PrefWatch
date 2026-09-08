@@ -23,6 +23,9 @@
 ### Noise
 - Un-excluded domains holding real prefs, now filtered per key: `com.apple.Music`/`TV` (crossfade, EQ, import encoder), `AddressBook` (text size), `sharingd` (AirDrop discoverability).
 
+### Refactor
+- Four `case` branches could never be reached: the global key filter runs first and already catches their patterns. Removed, with no behavior change — the global filter now names what it covers.
+
 ### Note
 - Media Sharing is reported but not reproducible: its keys mirror state the daemon never reads back. Measured — restarting the daemon and the Settings pane changes nothing.
 - AirDrop discoverability says to run `killall sharingd`: measured, the write alone is inert and Control Center keeps the previous value until the daemon restarts.
