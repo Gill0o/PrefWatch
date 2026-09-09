@@ -13,12 +13,25 @@
 - Startup sound → `sudo nvram StartupMute=…`. It lives in NVRAM, where no plist diff can see it.
 
 ### Fix
+- `cups_watch` died on the first `lpstat -v` that failed — a captured pipe under `set -e`. Adding a printer reloads cupsd, which is exactly when that read fails.
+- An unreadable plist read as an empty one emitted a `defaults delete` for every key of the domain, then froze the baseline. The other half of the diff engine has guarded this for a while.
 - Parsing the exclusion list trimmed each pattern through `printf | sed` — a captured pipe that kills the script under `set -e -o pipefail` when sed rejects an invalid byte. Trimmed in zsh now.
 - A system-level `defaults write` was emitted bare, under a `# NOTE:` saying to replay it as root — a line nobody can paste. It carries `sudo` now, like every other privileged command here.
 - A wallpaper change emitted a `defaults write` of desktoppr's own record — which sets nothing — or a `/path/to/image.jpg` placeholder. It now emits the real path, whatever set the wallpaper.
 - Changing the colour behind the wallpaper emitted nothing. `desktoppr color <hex>` reproduces it, and is emitted now. A solid system colour is not: the Store keeps its name, not its shade.
 - `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.
+- Any exit that was not Console-close or a trapped signal — an abort under `set -e` — removed the tmpdir and left the watcher tree running, reparented to launchd. `EXIT` now tears it down too.
+- A bare `wait` in the diff also waited on the cfprefsd flush `fs_watch` deliberately backgrounds, so every diff blocked on that read while holding the plist lock. It waits on its own dumps now.
+- Gatekeeper on → `spctl --master-enable`, gone from `--help` and the man page since macOS 26. It emits the documented `--global-enable`; the disable side keeps its verb, under a `# NOTE:`.
+- A `pmset -g custom` display label (`Sleep On Power Button`) was emitted as a setting name. `pmset` rejects it — no multi-word name exists. Such a key now prints where to set it.
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
+
+### Security
+- The exec watcher matched a tool by BASENAME alone: any user could run their own file named `sharing` and have PrefWatch write `sudo <their path>` into a root-replayed log. The path is checked now.
+- Per-app firewall and printer commands put a path or a queue name into a `sudo` line unescaped, where `$(…)` runs before the tool does. Escaped, like every other emitted value.
+- An argument carrying a newline was re-emitted as two lines, the second one reading as a command of its own. Rejected now.
+- The log is created `0600` — it carries the whole TCC table, which apps hold microphone, camera and Full Disk Access, and was world-readable.
+- The `/tmp` log fallback truncated whatever sat at a predictable path, symlink included. It refuses anything that is not a plain file it owns.
 
 ### Noise
 - Un-excluded domains holding real prefs, now filtered per key: `com.apple.Music`/`TV` (crossfade, EQ, import encoder), `AddressBook` (text size), `sharingd` (AirDrop discoverability).

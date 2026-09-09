@@ -907,8 +907,24 @@ prepare_logfile() {
     local fname
     fname="$(/usr/bin/basename "$path")"
     path="/tmp/${fname}"
+    # The /tmp fallback is a PREDICTABLE name in a world-writable directory, so
+    # another user can pre-create it — as a symlink to a file of theirs, which
+    # this truncate would then destroy. `>|` still follows one; refusing to run
+    # on anything that is not a plain file we can own is the only safe answer.
+    # -L FIRST and on its own: `[ -e ]` FOLLOWS the link, so a symlink aimed at a
+    # file that does not exist yet answers "absent", skips the guard, and the
+    # truncate below CREATES the attacker's target. That dangling case is the
+    # dangerous one, and the first version of this guard walked straight into it.
+    if [ -L "$path" ] || { [ -e "$path" ] && { [ ! -f "$path" ] || [ ! -O "$path" ]; }; }; then
+      path="${path%.log}.$$.log"
+    fi
     : > "$path" 2>/dev/null || true
   fi
+  # The log carries the whole TCC table — which apps hold microphone, camera,
+  # Full Disk Access — plus network config, share paths and account names. It was
+  # created 0644, readable by every local user, with no umask anywhere in the
+  # script. Owner-only, and never fatal if the chmod cannot apply.
+  /bin/chmod 600 "$path" 2>/dev/null || true
   echo "$path"
 }
 
@@ -3994,10 +4010,18 @@ PY
 _run_py_diff_workers() {
   local kind="$1" dom="$2" prev_json="$3" curr_json="$4" pb_plist_path="$5" key="$6"
   local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
+  # Wait on THESE three by pid, never a bare `wait`: fs_watch fires its cfprefsd
+  # flush hint (`defaults read &`) just before calling into the diff, and a bare
+  # wait blocks on that too -- see the note above the same pattern in
+  # show_plist_diff.
+  local _pyw_add _pyw_del _pyw_nest
   emit_array_additions "$kind" "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
+  _pyw_add=$!
   _py_deletions_raw "$dom" "$prev_json" "$curr_json" > "$_py_del" 2>/dev/null &
+  _pyw_del=$!
   emit_nested_dict_changes "$kind" "$dom" "$prev_json" "$curr_json" > "$_py_nest" 2>/dev/null &
-  wait
+  _pyw_nest=$!
+  wait "$_pyw_add" "$_pyw_del" "$_pyw_nest" 2>/dev/null || true
   local _array_meta_raw _nested_raw
   _array_meta_raw=$(< "$_py_add")
   _nested_raw=$(< "$_py_nest")
@@ -4283,9 +4307,20 @@ show_plist_diff() {
   done
 
   if [ "$silent" != "true" ]; then
+    # Wait on THESE two by pid. A bare `wait` waits for every job of the calling
+    # shell, and fs_watch deliberately backgrounds its cfprefsd flush hint
+    # (`defaults read &`) on the line before it calls us -- so a bare wait made
+    # the diff block until that read returned, which is exactly what backgrounding
+    # it was meant to avoid (measured: 3.00s vs 0.06s on a model of this pattern).
+    # Worse, a hung cfprefsd then froze the diff here while HOLDING $lockdir --
+    # the hazard poll_watch guards with a watchdog, inherited through a bare wait
+    # in another function.
+    local _dp_pid _dpj_pid
     dump_plist "$path" "$curr" &
+    _dp_pid=$!
     dump_plist_json "$path" "$curr_json" &
-    wait
+    _dpj_pid=$!
+    wait "$_dp_pid" "$_dpj_pid" 2>/dev/null || true
   else
     dump_plist "$path" "$curr"
   fi
@@ -4338,6 +4373,19 @@ show_plist_diff() {
       /bin/rmdir "$lockdir" 2>/dev/null || true
       return 0
     fi
+  fi
+
+  # An EMPTY dump is not "every key was deleted". dump_plist truncates its output
+  # first and falls back to `cat`; if both fail — an app rewriting its plist
+  # non-atomically, which is exactly the write fs_usage fires on — `curr` is 0
+  # bytes. Without this, _process_diff_lines emits a `defaults delete` for EVERY
+  # key of the domain, then `mv curr prev` freezes the baseline empty and the next
+  # cycle is a re-add storm. show_domain_diff has guarded this since 1.4.x with
+  # the same one-liner; this half was missed. Release the lock on the way out.
+  if [ ! -s "$curr" ]; then
+    /bin/rm -f "$curr" "$curr_json" 2>/dev/null || true
+    /bin/rmdir "$lockdir" 2>/dev/null || true
+    return 0
   fi
 
   typeset -gA _SKIP_KEYS
@@ -4737,9 +4785,12 @@ start_watch_all() {
     local curr="$CACHE_DIR/${key}.curr"
     local prev_json="$CACHE_DIR/${key}.prev.json"
     local curr_json="$CACHE_DIR/${key}.curr.json"
+    local _sp_pid _spj_pid
     dump_plist "$path" "$curr" &
+    _sp_pid=$!
     dump_plist_json "$path" "$curr_json" &
-    wait
+    _spj_pid=$!
+    wait "$_sp_pid" "$_spj_pid" 2>/dev/null || true
     /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
     /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
   }
@@ -5145,14 +5196,23 @@ start_watch_all() {
         log_line "Cmd: # CUPS: printer added — $printer"
 
         local uri=""
-        uri=$(/usr/bin/lpstat -v "$printer" 2>/dev/null | /usr/bin/sed -nE 's/.*:[[:space:]]+(.*)/\1/p')
+        # `|| uri=""` is not cosmetic: `lpstat -v <unknown>` exits 1, and a captured
+        # pipe under set -e + pipefail takes the whole watcher with it — reproduced,
+        # the loop body dies and cups_watch never runs again for the session, its
+        # only trace a `# ABORT` line. Adding a printer RELOADS cupsd, and during
+        # the reload lpstat answers "Unable to connect to server": the race is real.
+        # The very next line already carries this guard, with a comment saying why.
+        uri=$(/usr/bin/lpstat -v "$printer" 2>/dev/null | /usr/bin/sed -nE 's/.*:[[:space:]]+(.*)/\1/p') || uri=""
 
         # Extract non-default options
         local opts=""
         opts=$( { /usr/bin/lpoptions -p "$printer" 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/grep -E '^(media|sides|print-color-mode|print-quality|printer-is-shared)=' | while IFS= read -r o; do printf " -o %s" "$o"; done; } || true)  # grep exits 1 if the printer has none of these → guard set -e
 
-        local cmd="sudo lpadmin -p \"$printer\""
-        [ -n "$uri" ] && cmd="$cmd -v \"$uri\""
+        # Same reason as fw_apps above. A CUPS queue name forbids space and '/'
+        # but NOT `$`, backtick or parentheses, and the device URI carries fields
+        # straight out of an mDNS announcement.
+        local cmd="sudo lpadmin -p \"$(_escape_dq "$printer")\""
+        [ -n "$uri" ] && cmd="$cmd -v \"$(_escape_dq "$uri")\""
         cmd="$cmd -m everywhere -E${opts}"
         log_line "Cmd: $cmd"
       done
@@ -5161,7 +5221,7 @@ start_watch_all() {
       /usr/bin/comm -23 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
         log_line "Cmd: # CUPS: printer removed — $printer"
-        log_line "Cmd: sudo lpadmin -x \"$printer\""
+        log_line "Cmd: sudo lpadmin -x \"$(_escape_dq "$printer")\""
       done
 
       /bin/cp -f "$cups_current" "$cups_snapshot" 2>/dev/null || true
@@ -5195,8 +5255,25 @@ start_watch_all() {
       | "$PYTHON3_BIN" -u -c '
 import json, sys, shlex, time
 # Direct sharing-toolkit binaries — any invocation is relevant
-DIRECT_BINS = ("kickstart", "systemsetup", "sharing", "networksetup",
-               "scselect", "tmutil", "nvram", "AssetCacheManagerUtil")
+# basename -> the ONE path that basename is allowed to have. The filter used to
+# be `basename in DIRECT_BINS`, on the basename ALONE: any local user could drop
+# a file named `sharing` in their home, run it, and PrefWatch wrote
+# `sudo /Users/eve/bin/sharing …` into a log whose whole purpose is to be pasted
+# into a root shell. No privilege, no metacharacter, and shlex.quote is no help —
+# the PATH itself is the payload. Verified by replaying a synthetic exec event
+# through this parser. An exec whose path is not the canonical one is dropped:
+# a copy of the tool somewhere else is not a setting change worth replaying.
+CANONICAL_BINS = {
+    "kickstart": "/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart",
+    "systemsetup": "/usr/sbin/systemsetup",
+    "sharing": "/usr/sbin/sharing",
+    "networksetup": "/usr/sbin/networksetup",
+    "scselect": "/usr/sbin/scselect",
+    "nvram": "/usr/sbin/nvram",
+    "tmutil": "/usr/bin/tmutil",
+    "AssetCacheManagerUtil": "/usr/bin/AssetCacheManagerUtil",
+}
+DIRECT_BINS = tuple(CANONICAL_BINS)
 # kickstart is a Perl script → its exec reports `perl` with .../kickstart in args.
 # Resolve the real command from args for interpreters only, NOT launchers like
 # sudo (which re-exec the target as its own event → would emit it twice).
@@ -5277,14 +5354,24 @@ while True:
                     exe, args, basename = args[i], args[i:], args[i].rsplit("/", 1)[-1]
                     break
         if basename in DIRECT_BINS:
+            if exe != CANONICAL_BINS[basename]:
+                continue
             if is_readonly(basename, args):
+                continue
+            # An argument carrying a newline would be re-emitted as TWO `Cmd:`
+            # lines, the second one being attacker text presented as a command —
+            # shlex.quote preserves \n, and the shell side reads this stream line
+            # by line. Nothing legitimate needs it.
+            if any("\n" in a for a in args):
                 continue
             tail = " ".join(shlex.quote(a) for a in args[1:]) if len(args) > 1 else ""
             # shlex.quote on the PATH too, not only on the args below it: `exe`
             # is the path of any binary any local user just ran, and it lands in a
             # `sudo …` line an admin replays as root.
             emit((shlex.quote(exe) + " " + tail).rstrip())
-        elif basename == "launchctl" and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS:
+        elif (basename == "launchctl" and exe == "/bin/launchctl"
+              and len(args) > 1 and args[1] in LAUNCHCTL_SUBCMDS
+              and not any("\n" in a for a in args)):
             # Sharing-only: drop third-party LaunchAgent churn (e.g. Zoom/MS
             # updaters bootstrapping us.zoom.updater.* in gui/<uid>).
             if not any(lbl in " ".join(args) for lbl in SHARING_LABELS):
@@ -5558,7 +5645,21 @@ PY
           else
             log_line "Cmd: # Energy: ${section} — ${key} set to ${new_label}"
           fi
-          log_line "Cmd: sudo /usr/bin/pmset ${flag} ${key} ${val}"
+          # `pmset -g custom` prints DISPLAY LABELS, and a label is not a setting
+          # name. Measured on 26.6.2: every name pmset accepts is a single token
+          # (its man page lists no other shape), and the one multi-word key this
+          # machine produces — `Sleep On Power Button` — is REJECTED with `Usage:`
+          # while every single-word key gets as far as the root check. It was also
+          # emitted unquoted, so it arrived as four arguments. A space is the
+          # test, not a list of known labels: any label Apple adds next would
+          # otherwise produce the same dead command.
+          case "$key" in
+            *\ *)
+              _note_should_show "__pmset_label__:$key" \
+                && log_line "Cmd: #       (no pmset setting name for '$key' — set it in System Settings > Battery)" ;;
+            *)
+              log_line "Cmd: sudo /usr/bin/pmset ${flag} ${key} ${val}" ;;
+          esac
         done <<< "$curr_parsed"
       fi
 
@@ -6324,11 +6425,28 @@ WP
             filevault)
               # Enabling needs a recovery key (interactive/MDM) — not a single command.
               log_line "Cmd: # NOTE: FileVault is now ${_v#is } — not reproducible by one command; enable needs a recovery key (sudo fdesetup enable) or an MDM/config profile" ;;
+            # `--master-enable`/`--master-disable` are GONE from both `spctl --help`
+            # and `man spctl` on 26.6.2 — the man mentions "master" zero times. They
+            # still parse (`--master-enable` answers "Operation not permitted", while
+            # `--bogus-enable` answers "unrecognized option"), so they are surviving
+            # undocumented aliases: exactly what disappears at the next release.
+            #
+            # Only the ENABLE side has a documented replacement. The man defines
+            # `--global-enable` as "Enable the assessment subsystem", word for word
+            # what `--master-enable` did, so that one is switched outright.
+            # `--global-disable` is NOT the counterpart — the man says it "reveals
+            # the option to allow applications downloaded from anywhere in the
+            # Privacy & Security settings pane", which is a different act. Emitting
+            # it would be a command that looks right and does something else, so the
+            # disable side keeps the undocumented verb and says so.
             gatekeeper)
               if [ "$_v" = enabled ]; then
-                log_line "Cmd: sudo /usr/sbin/spctl --master-enable"
+                log_line "Cmd: sudo /usr/sbin/spctl --global-enable"
               else
                 log_line "Cmd: sudo /usr/sbin/spctl --master-disable"
+                log_line "Cmd: # NOTE: --master-disable is undocumented since macOS 26 (gone from --help and the man"
+                log_line "Cmd: #       page) and may stop working. --global-disable is NOT a replacement: it only"
+                log_line "Cmd: #       reveals the 'anywhere' option in the settings pane."
                 log_line "Cmd: # NOTE: on macOS 15+ disabling Gatekeeper also needs confirming in Settings > Privacy & Security"
               fi ;;
             gatekeeper-devid)
@@ -6386,15 +6504,21 @@ WP
         _oldstate=$(/usr/bin/awk -F'\t' -v p="$_path" '$1==p{print $2}' "$_snap" 2>/dev/null)
         [ "$_oldstate" = "$_state" ] && continue
         _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule (Firewall > Options)"
-        if [ -z "$_oldstate" ]; then log_line "Cmd: sudo $sfw --add \"$_path\""; fi
-        [ "$_state" = block ] && log_line "Cmd: sudo $sfw --blockapp \"$_path\"" || log_line "Cmd: sudo $sfw --unblockapp \"$_path\""
+        # _escape_dq on the path: it comes from `socketfilterfw --listapps`, i.e.
+        # a bundle path the user chose, and it lands inside double quotes in a
+        # line meant to be pasted as root — `$(…)` there runs BEFORE socketfilterfw.
+        # Its neighbour sharepoints_watch has escaped its own names since 1.4.4;
+        # this watcher was missed.
+        local _pq; _pq=$(_escape_dq "$_path")
+        if [ -z "$_oldstate" ]; then log_line "Cmd: sudo $sfw --add \"$_pq\""; fi
+        [ "$_state" = block ] && log_line "Cmd: sudo $sfw --blockapp \"$_pq\"" || log_line "Cmd: sudo $sfw --unblockapp \"$_pq\""
       done < "$_curr"
       # Removed rules (in snap, gone from curr → the app's rule was deleted)
       while IFS=$'\t' read -r _path _state; do
         [ -n "$_path" ] || continue
         /usr/bin/awk -F'\t' -v p="$_path" '$1==p{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
         _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule removed (Firewall > Options)"
-        log_line "Cmd: sudo $sfw --remove \"$_path\""
+        log_line "Cmd: sudo $sfw --remove \"$(_escape_dq "$_path")\""
       done < "$_snap"
       return 0
     }
@@ -6565,6 +6689,10 @@ _kill_tree() {
   kill -TERM "$_root" 2>/dev/null || true
 }
 _shutdown_watcher() {
+  # Idempotent: the signal traps run it then `exit`, which fires the EXIT trap,
+  # which runs it again. Second call is a no-op rather than a second kill/rm pass.
+  [ "${_SHUTDOWN_DONE:-false}" = "true" ] && return 0
+  typeset -g _SHUTDOWN_DONE=true
   _kill_tree "${WATCH_PID:-}"
   wait ${WATCH_PID:-} 2>/dev/null || true
   # A kill DURING the initial snapshot leaves transient `_snapshot_one_plist &` workers
@@ -6580,6 +6708,14 @@ _shutdown_watcher() {
 trap '_shutdown_watcher; exit 143' TERM
 trap '_shutdown_watcher; exit 130' INT
 trap '_shutdown_watcher; exit 129' HUP
+# Re-arm EXIT on the same teardown. Until here it only removed the tmpdir, so ANY
+# exit that is not one of the paths above -- an ERR_EXIT abort under `set -e`, an
+# internal `exit`, a signal with no trap -- cleaned the tmpdir and left the whole
+# watcher tree running: root eslogger/fs_usage a standard user cannot kill. That is
+# the 1.4.3 leak's shape; it was fixed one `|| true` at a time, while the last-resort
+# net itself never killed anything. Measured on a model: EXIT fires in the MAIN pid
+# only (not in `&` jobs, not in `( )` subshells), so this is safe to arm globally.
+trap '_shutdown_watcher' EXIT
 
 if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   # Robust Console-close detection. Two hazards over a long run (each would stop
