@@ -832,6 +832,7 @@ fi
 # Fork-free strftime + stat (zsh built-in modules)
 zmodload zsh/datetime 2>/dev/null && HAVE_ZSH_STRFTIME=true || HAVE_ZSH_STRFTIME=false
 zmodload zsh/stat 2>/dev/null && HAVE_ZSH_STAT=true || HAVE_ZSH_STAT=false
+zmodload zsh/system 2>/dev/null && HAVE_ZSH_SYSTEM=true || HAVE_ZSH_SYSTEM=false
 
 # Helper function for optimized timestamp
 get_timestamp() {
@@ -4665,6 +4666,41 @@ _wt_kill_tree() {
   kill -TERM "$_r" 2>/dev/null || true
 }
 
+# Notice being orphaned, and tear the tree down. Main cannot do this for itself:
+# SIGKILL runs no trap anywhere, so a force-quit leaves this whole subtree alive
+# -- its watchers, its eslogger and, worst, its fs_usage, which holds the
+# machine's only ktrace slot and silently disables real-time detection for every
+# later run.
+#
+# Measured 2026-09-10, and it is why this exists: after `kill -9` on main, 20 of
+# 21 processes kept running, reparented to launchd. A later run reclaimed the
+# stale tmpdir -- that mechanism does work -- and not one process. The comment
+# above _wt_kill_tree had described this watchdog for two releases; it had never
+# been written.
+#
+# The signal is the watcher ROOT's own PPID turning 1, measured to happen within
+# a second of main dying. Preferred over `kill -0` on main's pid: that answers
+# yes on a recycled pid, and "kill -0 is not a liveness test" is a trap this
+# project has already been bitten by twice.
+#
+# It SIGNALS rather than tearing down itself, so the one already-tested path runs
+# -- the root's own TERM trap. And it registers in _WATCH_PIDS, or the watchdog
+# would be the single process left behind by every clean shutdown.
+_orphan_watchdog() {
+  local _root="$1" _pp
+  [ -n "$_root" ] || return 0
+  while :; do
+    /bin/sleep 5
+    _pp=$(/bin/ps -o ppid= -p "$_root" 2>/dev/null | /usr/bin/tr -d ' ') || _pp=""
+    # Empty means the root is already gone: nothing to signal, and staying would
+    # make this the orphan.
+    [ -n "$_pp" ] || return 0
+    [ "$_pp" = 1 ] || continue
+    /bin/kill -TERM "$_root" 2>/dev/null || true
+    return 0
+  done
+}
+
 _watchers_teardown() {
   # Idempotent: the signal traps run it and then exit, which fires the EXIT trap
   # below, which would otherwise run the whole kill/rm pass a second time.
@@ -4843,6 +4879,15 @@ start_watch() {
   fi
 
   _emit_mdm_resolver_header
+
+  # Arm the orphan watchdog before the traps: it is the only thing that survives a
+  # SIGKILL of main, which no trap can catch.
+  local _wt_self=""
+  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
+  if [ -n "$_wt_self" ]; then
+    _orphan_watchdog "$_wt_self" &
+    _WATCH_PIDS+=($!)
+  fi
 
   # EXIT as well, and it must be armed HERE, inside the subshell: a trap
   # inherited from main does NOT fire in a `&` job (measured), so the watcher root
@@ -6840,6 +6885,15 @@ WP
     _watcher_parse "$_w"
     if eval "$_W_GUARD"; then _spawn "$_W_FN"; fi
   done
+
+  # Arm the orphan watchdog before the traps: it is the only thing that survives a
+  # SIGKILL of main, which no trap can catch.
+  local _wt_self=""
+  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
+  if [ -n "$_wt_self" ]; then
+    _orphan_watchdog "$_wt_self" &
+    _WATCH_PIDS+=($!)
+  fi
 
   # EXIT as well, and it must be armed HERE, inside the subshell: a trap
   # inherited from main does NOT fire in a `&` job (measured), so the watcher root

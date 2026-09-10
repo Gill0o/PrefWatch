@@ -16,6 +16,7 @@
 - Touch ID → `bioutil`, for both scopes. The user-scope line says it asks for a password on stdin: measured, it prompts even writing back the value in place, so it cannot be deployed unattended.
 
 ### Fix
+- A `kill -9` on the main process left the whole watcher tree running — 20 of 21, reparented to launchd, including the `fs_usage` that holds the machine's only ktrace slot. It now notices and stops.
 - A print preset dropped the colour model, resolution, binding edge, colour profile, paper size and its own name as noise. Its key filter is a reject list now, shared with the diff worker.
 - Its `# NOTE:` was keyed on a key no machine has, so it never fired. It now says a logout is needed, and that neither the queue name in the domain nor a built-in preset name travels.
 - Removing one array element emitted a `python3` line. It now rewrites the list with `defaults write … -array`, which needs nothing installed — kept only where faithful, `-array` stringifies.
