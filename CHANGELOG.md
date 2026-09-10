@@ -16,6 +16,9 @@
 - Touch ID → `bioutil`, for both scopes. The user-scope line says it asks for a password on stdin: measured, it prompts even writing back the value in place, so it cannot be deployed unattended.
 
 ### Fix
+- Print presets were filtered by TWO whitelists that disagreed on 9 of 104 real keys: the worker held the shell's globs but matched them with `startswith`, so 9 of its 14 entries were dead.
+- One list now, shared, and a reject list: the colour model, resolution, binding edge, colour profile, custom paper size and the preset's own NAME were all being dropped as noise.
+- The print-preset `# NOTE:` was keyed on a key that exists on no machine, so it never fired once. It now says the change needs a logout, and that neither the queue name nor a built-in preset name travels.
 - Removing one array element emitted a `python3` line. It now rewrites the list with `defaults write … -array`, which needs nothing installed — kept only where faithful, `-array` stringifies.
 - The two commands that do need `python3` on the TARGET say so. Without the Command Line Tools `/usr/bin/python3` offers to install them instead of running, so a root policy replaying them fails.
 - `cups_watch` died on the first `lpstat -v` that failed — a captured pipe under `set -e`. Adding a printer reloads cupsd, which is exactly when that read fails.
