@@ -21,6 +21,7 @@
 - Changing the colour behind the wallpaper emitted nothing. `desktoppr color <hex>` reproduces it, and is emitted now. A solid system colour is not: the Store keeps its name, not its shade.
 - `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.
 - Any exit that was not Console-close or a trapped signal — an abort under `set -e` — removed the tmpdir and left the watcher tree running, reparented to launchd. `EXIT` now tears it down too.
+- Same hole one level down, and worse: the watcher root aborting left all 16 sub-watchers reparented to launchd, where the main teardown can no longer find them. Its subshell arms `EXIT` too.
 - A bare `wait` in the diff also waited on the cfprefsd flush `fs_watch` deliberately backgrounds, so every diff blocked on that read while holding the plist lock. It waits on its own dumps now.
 - Gatekeeper on → `spctl --master-enable`, gone from `--help` and the man page since macOS 26. It emits the documented `--global-enable`; the disable side keeps its verb, under a `# NOTE:`.
 - A `pmset -g custom` display label (`Sleep On Power Button`) was emitted as a setting name. `pmset` rejects it — no multi-word name exists. Such a key now prints where to set it.
