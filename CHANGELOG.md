@@ -16,6 +16,8 @@
 - Touch ID → `bioutil`, for both scopes. The user-scope line says it asks for a password on stdin: measured, it prompts even writing back the value in place, so it cannot be deployed unattended.
 
 ### Fix
+- Removing one array element emitted a `python3` line. It now rewrites the list with `defaults write … -array`, which needs nothing installed — kept only where faithful, `-array` stringifies.
+- The two commands that do need `python3` on the TARGET say so. Without the Command Line Tools `/usr/bin/python3` offers to install them instead of running, so a root policy replaying them fails.
 - `cups_watch` died on the first `lpstat -v` that failed — a captured pipe under `set -e`. Adding a printer reloads cupsd, which is exactly when that read fails.
 - An unreadable plist read as an empty one emitted a `defaults delete` for every key of the domain, then froze the baseline. The other half of the diff engine has guarded this for a while.
 - Parsing the exclusion list trimmed each pattern through `printf | sed` — a captured pipe that kills the script under `set -e -o pipefail` when sed rejects an invalid byte. Trimmed in zsh now.

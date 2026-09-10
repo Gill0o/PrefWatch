@@ -3630,13 +3630,36 @@ for path_tuple, index, item in results:
     if isinstance(item, str) and isinstance(prev.get(array_name), list):
         if sum(1 for e in prev[array_name] if e == item) == 1 and "\t" not in item and "\n" not in item:
             value = item
+    # A 6th field: the whole array rewritten WITHOUT the removed element, ready to
+    # paste as `defaults write … -array …`. This is the only python3-free way to
+    # remove one element -- PlistBuddy addresses arrays by index only -- and it
+    # matters because the machine that REPLAYS the command is usually not the one
+    # PrefWatch ran on, and usually has no Command Line Tools, where
+    # /usr/bin/python3 is a shim that offers to install them instead of running.
+    #
+    # Deliberately narrow, because `-array` is lossy in two measured ways:
+    #   · it STRINGIFIES: `-array 42 3.5` writes "42" and "3.5". So the fast path
+    #     is taken only when EVERY element is already a string -- otherwise the
+    #     rewrite would silently retype the whole array (the 1.4.2 class of bug).
+    #   · a value carrying " or \ needs a second, defaults-level quoting layer on
+    #     top of the shell's. Not worth the ambiguity: those fall back.
+    # $ and ` are escaped rather than excluded -- they are ordinary in a path and
+    # would otherwise run when the line is pasted into a root shell.
+    rewrite = ""
+    if value:
+        elements = prev[array_name]
+        if all(isinstance(e, str) for e in elements):
+            remaining = [e for e in elements if e != item]
+            if remaining and not any(any(c in e for c in '"\\\n\t') for e in remaining):
+                rewrite = ' '.join(
+                    '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
     # \x1f (unit separator), NOT tab: tab is an IFS *whitespace* character, so zsh
     # collapses a run of them into ONE delimiter. With `keys` and `app_label` both
     # empty — every scalar array — `\t\t\t` became a single separator and the value
     # landed in `keylist`, three variables early. Measured, not guessed: the
     # emitter silently kept using the positional form. A non-whitespace separator
     # yields one empty field per empty column, which is what the reader expects.
-    print(f"{array_name}\x1f{index}\x1f{keys}\x1f{app_label}\x1f{value}")
+    print(f"{array_name}\x1f{index}\x1f{keys}\x1f{app_label}\x1f{value}\x1f{rewrite}")
 PY
 }
 
@@ -3675,7 +3698,7 @@ emit_array_deletions() {
   [ -n "$py_output" ] || return 0
 
   typeset -A _noted_del_arrays=()
-  while IFS=$'\x1f' read -r base idx keylist app_label elem_value; do
+  while IFS=$'\x1f' read -r base idx keylist app_label elem_value elem_rewrite; do
     [ -n "$base" ] || continue
 
     # Skip noisy arrays
@@ -3702,17 +3725,33 @@ emit_array_deletions() {
     # same construction in _build_defaults_delete_cmd escapes its target.
     local delete_cmd="defaults delete \"$(_escape_dq "$dom")\" \":$(_escape_dq "$base"):${idx}\""
 
-    local _val_cmd=""
-    if [ -n "${elem_value:-}" ]; then _val_cmd=$(_build_array_value_delete "$dom" "$base" "$elem_value") || _val_cmd=""; fi
+    local _val_cmd="" _rw_cmd=""
+    # Prefer the python3-FREE form when the worker judged it faithful: it runs on
+    # any Mac, where the python3 one needs the Command Line Tools on the target.
+    if [ -n "${elem_rewrite:-}" ]; then
+      _rw_cmd="defaults write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$base")\" -array ${elem_rewrite}"
+    fi
+    if [ -z "$_rw_cmd" ] && [ -n "${elem_value:-}" ]; then _val_cmd=$(_build_array_value_delete "$dom" "$base" "$elem_value") || _val_cmd=""; fi
 
     if is_noisy_command "$delete_cmd"; then
       :
     elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
       :
+    elif [ -n "$_rw_cmd" ]; then
+      # Rewriting the whole array has no index to shift, so the "run these in the
+      # order shown" warning does not apply. It DOES replace the target's list
+      # wholesale rather than editing it -- which is the point: it reproduces the
+      # configuration, it does not merge with whatever was there.
+      _note_should_show "__arrayrw__:$dom:$base" \
+        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$base' list — reproduces it, does not merge)"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$_rw_cmd")"
     elif [ -n "$_val_cmd" ]; then
       # Value-targeted: no index to shift, so the "run these in the order shown"
       # warning does not apply and is not emitted for this line.
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$_val_cmd")"
+      # Same caveat as the Bluetooth line: this one runs python3 on the TARGET.
+      _note_should_show __arraydel_py__ \
+        && _log_kind "$kind" "Cmd: #       (needs python3 on the TARGET — without the Command Line Tools /usr/bin/python3 only offers to install them)"
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" 2>/dev/null); then
@@ -5908,6 +5947,15 @@ for row in sorted(rows):
       # this one runs on any Mac as it stands.
       log_line "Cmd: # NOTE: Bluetooth turned $_st"
       log_line "Cmd: $_cmd"
+      # The TARGET needs a working python3, and that is not a given. Without the
+      # Command Line Tools `/usr/bin/python3` is a SHIM: it does not run the code,
+      # it offers to install them -- so under a root policy the line fails, and in
+      # a user session it pops an install dialog on someone's screen. PrefWatch
+      # warns about python3 on the machine it RUNS on; nothing said anything about
+      # the machine the command is replayed on, which is usually a different one
+      # and usually the one without the tools.
+      _note_should_show __bluetooth_py__ \
+        && log_line "Cmd: #       (needs python3 on the TARGET — without the Command Line Tools /usr/bin/python3 only offers to install them)"
       return 0
     }
     _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty
