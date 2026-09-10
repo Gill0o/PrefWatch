@@ -4647,6 +4647,8 @@ typeset -ga _WATCHERS=(
   'security|[ -x /usr/sbin/spctl ]|security_watch|y'
   'fw_apps|[ -x /usr/libexec/ApplicationFirewall/socketfilterfw ]|fw_apps_watch|y'
   'spotlight_index|[ -x /usr/bin/mdutil ]|spotlight_watch|y'
+  'defprinter|[ -x /usr/bin/lpoptions ]|defprinter_watch|y'
+  'touchid|[ -x /usr/bin/bioutil ]|touchid_watch|y'
   'sharing_exec|[ "$(id -u)" -eq 0 ] && [ -x /usr/bin/eslogger ] && [ -n "$PYTHON3_BIN" ]|sharing_exec_watch|y'
   'launchd_state|[ "$(id -u)" -eq 0 ] && [ -n "$PYTHON3_BIN" ]|launchd_state_watch|y'
 )
@@ -6536,18 +6538,192 @@ WP
     _snapshot_watch fw_apps 3 _read_fwapps _onchange_fwapps _guard_nonempty
   }
 
+  # Touch ID (System Settings > Touch ID & Password). Not in any plist: the
+  # settings live in the Secure Enclave's own store, read and written by
+  # `bioutil`. `/Library/Preferences/com.apple.biometrickitd.plist` is pure
+  # telemetry and is already excluded -- do not confuse the two.
+  #
+  # TWO scopes, and they are not interchangeable. `-r` reads the CURRENT USER's
+  # settings and depends on the uid, not on $HOME, so it goes through
+  # RUN_AS_USER; `-r -s` reads the machine-wide ones and must NOT (as root it
+  # would then read them as the console user and get nothing).
+  #
+  # "Effective biometrics for …" is dropped on purpose: it is the AND of the
+  # system and user flags, so it moves whenever either of them does and would
+  # report every change twice, once as a setting and once as its own shadow.
+  #
+  # Measured on 26.6.2: bioutil's output is English even on a French system --
+  # unlike `lpstat -d`, which is localised. Keying on the English labels is
+  # therefore safe here and would not be there.
+  touchid_watch() {
+    [ -x /usr/bin/bioutil ] || return 0
+    _read_touchid() {
+      local _scope
+      for _scope in user system; do
+        if [ "$_scope" = system ]; then
+          /usr/bin/bioutil -r -s 2>/dev/null
+        else
+          "${RUN_AS_USER[@]}" /usr/bin/bioutil -r 2>/dev/null
+        fi | /usr/bin/awk -v sc="$_scope" -F': *' '
+          /^[[:space:]]+Effective/ { next }
+          /^[[:space:]]+[A-Z].*: *[0-9]+[[:space:]]*$/ {
+            key = $1; sub(/^[[:space:]]+/, "", key); sub(/[[:space:]]+$/, "", key)
+            val = $2; sub(/[[:space:]]+$/, "", val)
+            print sc "\t" key "\t" val
+          }'
+      done
+    }
+    # A read that produced no system line failed (bioutil absent from the Secure
+    # Enclave path, or a transient) -- keep the last good baseline rather than
+    # report every setting as removed.
+    _guard_touchid() { /usr/bin/awk -F'\t' '$1=="system"{ok=1} END{exit !ok}' "$1" 2>/dev/null; }
+    _onchange_touchid() {
+      local _snap="$1" _curr="$2" _scope _key _val _old _cmd
+      while IFS=$'\t' read -r _scope _key _val; do
+        [ -n "$_key" ] || continue
+        _old=$(/usr/bin/awk -F'\t' -v s="$_scope" -v k="$_key" '$1==s && $2==k{print $3}' "$_snap" 2>/dev/null)
+        [ "$_old" = "$_val" ] && continue
+        _cmd=""
+        if [ "$_scope" = user ]; then
+          case "$_key" in
+            "Biometrics for unlock")   _cmd="/usr/bin/bioutil -w -u $_val" ;;
+            "Biometrics for ApplePay") _cmd="/usr/bin/bioutil -w -a $_val" ;;
+          esac
+          # Per-user Secure Enclave settings: a root policy replaying this bare
+          # would configure ROOT's Touch ID, so it is wrapped like a user
+          # `defaults`. -a exists ONLY at user scope (bioutil's own usage).
+          if [ -n "$_cmd" ]; then
+            log_line "Cmd: $(_mdm_wrap "$_cmd")"
+            # Measured on 26.6.2: a USER-scope write always prompts for that
+            # user's password on stdin -- even writing back the value already in
+            # place, so it is the scope that prompts, not the change. Unattended,
+            # the line does not fail cleanly, it WAITS. An admin has to know that
+            # before putting it in a policy. (System scope does not: it answers
+            # "Only an admin can adjust…", which the emitted `sudo` covers.)
+            _note_should_show __touchid_prompt__ \
+              && log_line "Cmd: #       (asks the user for their password on stdin — cannot be deployed unattended)"
+          fi
+        else
+          case "$_key" in
+            "Biometrics functionality")          _cmd="/usr/bin/bioutil -w -s -f $_val" ;;
+            "Biometrics for unlock")             _cmd="/usr/bin/bioutil -w -s -u $_val" ;;
+            "Biometric timeout (in seconds)")    _cmd="/usr/bin/bioutil -w -s --btimeout $_val" ;;
+            "Match timeout (in seconds)")        _cmd="/usr/bin/bioutil -w -s --mtimeout $_val" ;;
+            "Passcode input timeout (in seconds)") _cmd="/usr/bin/bioutil -w -s --ptimeout $_val" ;;
+          esac
+          [ -n "$_cmd" ] && log_line "Cmd: sudo $_cmd"
+        fi
+        # A label with no verb is reported, never guessed into a command: bioutil
+        # rejects what it does not know, and a dead line in a paste-this log is
+        # worse than an honest sentence.
+        if [ -z "$_cmd" ] && _note_should_show "__touchid_label__:$_scope:$_key"; then
+          log_line "Cmd: # NOTE: Touch ID ($_scope) '$_key' is now $_val — bioutil has no write verb for it"
+        fi
+      done < "$_curr"
+      return 0
+    }
+    _snapshot_watch touchid 3 _read_touchid _onchange_touchid _guard_touchid
+  }
+
+  # Default printer (System Settings > Printers & Scanners > "Default printer").
+  # cups_watch sees printers ARRIVE and LEAVE; WHICH one is the default is a
+  # separate setting, and nothing emitted it.
+  #
+  # NOT read from `lpstat -d`. That line is LOCALISED and `LC_ALL=C` does not
+  # neutralise it -- measured on 26.6.2, it answers "destination systeme par
+  # defaut : NAME" on a French system. With no default set it prints a localised
+  # sentence whose LAST WORD is a translated word, so the obvious `awk '{print
+  # $NF}'` would hand an admin `lpoptions -d "defaut"`. The lpoptions file
+  # carries the queue name alone, in no language.
+  #
+  # Read as a plain file rather than through RUN_AS_USER: root can read it, and
+  # this saves two forks every cycle. The EMITTED command is another matter --
+  # `lpoptions -d` writes the per-user file, so a root policy replaying it bare
+  # would set ROOT's default printer. It is wrapped like a user `defaults`.
+  defprinter_watch() {
+    [ -x /usr/bin/lpoptions ] || return 0
+    _read_defprinter() {
+      local _f _name=""
+      # Per-user first: `lpoptions -d` writes that one, and it is what wins for
+      # the logged-in user when both files name a default.
+      for _f in "$TARGET_HOME/.cups/lpoptions" /etc/cups/lpoptions; do
+        [ -f "$_f" ] || continue
+        _name=$(/usr/bin/awk '$1=="Default"{print $2; exit}' "$_f" 2>/dev/null) || _name=""
+        [ -n "$_name" ] && break
+      done
+      printf '%s' "$_name"
+    }
+    _onchange_defprinter() {
+      local _name
+      _name=$(/usr/bin/head -1 "$2" 2>/dev/null)
+      # Empty = no default at all. There is no command for that (`lpoptions -d`
+      # requires a destination), so report nothing rather than invent one.
+      [ -n "$_name" ] || return 0
+      # A default naming a queue that no longer exists is a transient: CUPS picks
+      # a new one within the same burst, and cups_watch reports the removal. Emit
+      # only a default that can actually be replayed.
+      /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk -v q="$_name" '$1==q{f=1} END{exit !f}' || return 0
+      _note_should_show "__defprinter__:$_name" || return 0
+      log_line "Cmd: # Printers: default printer is now $_name"
+      log_line "Cmd: $(_mdm_wrap "/usr/bin/lpoptions -d \"$(_escape_dq "$_name")\"")"
+      return 0
+    }
+    _snapshot_watch defprinter 3 _read_defprinter _onchange_defprinter
+  }
+
   # Spotlight indexing state lives in the metadata store, not a plist — read it
   # with `mdutil -s` (no root) and emit `mdutil -i` on change. Common MDM op
   # (disabling indexing on a volume). Distinct from the com.apple.Spotlight plist
   # (search categories), which the diff already covers.
+  #
+  # EVERY volume, not just `/`. The probe used to be `mdutil -s /`, so indexing
+  # turned off on the data volume or on an external disk was invisible — and
+  # `/System/Volumes/Data` is the one that actually holds the user's files, so
+  # the single most useful case was the one that was missed. Measured here: five
+  # volumes answer (`/`, `/System/Volumes/Data`, `/System/Volumes/Preboot`, and
+  # two under `/Volumes`).
+  #
+  # `-v` is deliberately NOT used: it appends "Scan base time: … (N seconds ago)",
+  # a counter that moves at every probe, which would make this watcher fire
+  # forever. Bare `-s -a` is stable.
   spotlight_watch() {
     [ -x /usr/bin/mdutil ] || return 0
-    # `|| true` INSIDE the pipe: grep exits 1 when mdutil's output has no
-    # enabled/disabled token → pipefail + set -e would abort (kill) this watcher.
-    _read_spotlight() { /usr/bin/mdutil -s / 2>/dev/null | /usr/bin/grep -oE '(enabled|disabled)' | /usr/bin/head -1 || true; }
+    # `<volume>\t<state>` per line. `mdutil -s -a` prints the volume path on its
+    # own line ending in ":", then an indented sentence carrying the state.
+    # `|| true` INSIDE the pipe: awk finding nothing exits 0, but mdutil itself
+    # can exit non-zero → pipefail + set -e would abort (kill) this watcher.
+    _read_spotlight() {
+      /usr/bin/mdutil -s -a 2>/dev/null | /usr/bin/awk '
+        /^\// && /:$/ { vol = substr($0, 1, length($0) - 1); next }
+        vol != "" && /[Ii]ndexing/ {
+          st = (/disabled/) ? "disabled" : (/enabled/ ? "enabled" : "")
+          if (st != "") print vol "\t" st
+          vol = ""
+        }' || true
+    }
     _onchange_spotlight() {
-      local _v; _v=$(/bin/cat "$2" 2>/dev/null)
-      [ "$_v" = enabled ] && log_line "Cmd: sudo /usr/bin/mdutil -i on /" || log_line "Cmd: sudo /usr/bin/mdutil -i off /"
+      local _snap="$1" _curr="$2" _vol _state _old
+      while IFS=$'\t' read -r _vol _state; do
+        [ -n "$_vol" ] || continue
+        _old=$(/usr/bin/awk -F'\t' -v v="$_vol" '$1==v{print $2}' "$_snap" 2>/dev/null)
+        # A volume ABSENT from the snapshot was just mounted — its indexing state
+        # is what it always was, not a change someone made. Mounting a disk must
+        # not emit a command. Same on the way out: a volume that disappeared was
+        # unmounted, and there is nothing to reproduce.
+        [ -n "$_old" ] || continue
+        [ "$_old" = "$_state" ] && continue
+        _note_should_show "__spotlight_vol__:$_vol:$_state" || continue
+        [ "$_state" = enabled ] \
+          && log_line "Cmd: sudo /usr/bin/mdutil -i on \"$(_escape_dq "$_vol")\"" \
+          || log_line "Cmd: sudo /usr/bin/mdutil -i off \"$(_escape_dq "$_vol")\""
+        # A path under /Volumes is a mounted disk NAMED by whoever formatted it.
+        # The command is right here and means nothing on another Mac — the same
+        # trap as the ColorSync display UUID, so it gets the same treatment.
+        case "$_vol" in
+          /Volumes/*)
+            log_line "Cmd: #       ('$_vol' is a mounted volume on THIS Mac — the path is not portable)" ;;
+        esac
+      done < "$_curr"
       return 0
     }
     _snapshot_watch spotlight 3 _read_spotlight _onchange_spotlight _guard_nonempty
