@@ -1,7 +1,7 @@
 #!/bin/zsh
 # ============================================================================
 # Script: prefwatch.sh
-# Version: 1.4.4
+# Version: 1.5.0
 # Author: Gilles Bonpain
 # Powered by Claude AI
 # Description: Monitor and log changes to macOS preference domains
@@ -6518,7 +6518,7 @@ WP
         # _escape_dq on the path: it comes from `socketfilterfw --listapps`, i.e.
         # a bundle path the user chose, and it lands inside double quotes in a
         # line meant to be pasted as root — `$(…)` there runs BEFORE socketfilterfw.
-        # Its neighbour sharepoints_watch has escaped its own names since 1.4.4;
+        # Its neighbour sharepoints_watch has escaped its own names since 1.5.0;
         # this watcher was missed.
         local _pq; _pq=$(_escape_dq "$_path")
         if [ -z "$_oldstate" ]; then log_line "Cmd: sudo $sfw --add \"$_pq\""; fi

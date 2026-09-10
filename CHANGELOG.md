@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.4 — unreleased
+## 1.5.0 — unreleased
 
 ### Feature
 - The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand — the tools PrefWatch itself emits. Their read verbs are dropped, only writes surface.
