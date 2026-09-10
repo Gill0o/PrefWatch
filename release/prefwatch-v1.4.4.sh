@@ -4585,6 +4585,10 @@ _wt_kill_tree() {
 }
 
 _watchers_teardown() {
+  # Idempotent: the signal traps run it and then exit, which fires the EXIT trap
+  # below, which would otherwise run the whole kill/rm pass a second time.
+  [ "${_TEARDOWN_DONE:-false}" = "true" ] && return 0
+  typeset -g _TEARDOWN_DONE=true
   # Kill each watcher's whole SUBTREE, and never block on `wait`.
   #
   # The old form TERMed the direct pids then waited for them. A watcher whose
@@ -4612,7 +4616,6 @@ _watchers_teardown() {
     [ "$_alive" -eq 0 ] && break
   done
   /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
-  exit 0
 }
 
 # Declarative watcher registry: "name|guard|fn|summary". SINGLE SOURCE — the
@@ -4758,7 +4761,15 @@ start_watch() {
 
   _emit_mdm_resolver_header
 
-  trap '_watchers_teardown' TERM INT
+  # EXIT as well, and it must be armed HERE, inside the subshell: a trap
+  # inherited from main does NOT fire in a `&` job (measured), so the watcher root
+  # dying any other way -- an ERR_EXIT abort under `set -e` -- signalled nothing and
+  # left every sub-watcher reparented to launchd. Measured in ALL mode: 16 survivors
+  # with PPID 1, and main cannot clean them up afterwards because `_kill_tree` walks
+  # down from WATCH_PID, which is by then already dead and has no children left to
+  # find. Under root those 16 include the eslogger and fs_usage a user cannot kill.
+  trap '_watchers_teardown; exit 0' TERM INT
+  trap '_watchers_teardown' EXIT
   wait
 }
 
@@ -6564,7 +6575,15 @@ WP
     if eval "$_W_GUARD"; then _spawn "$_W_FN"; fi
   done
 
-  trap '_watchers_teardown' TERM INT
+  # EXIT as well, and it must be armed HERE, inside the subshell: a trap
+  # inherited from main does NOT fire in a `&` job (measured), so the watcher root
+  # dying any other way -- an ERR_EXIT abort under `set -e` -- signalled nothing and
+  # left every sub-watcher reparented to launchd. Measured in ALL mode: 16 survivors
+  # with PPID 1, and main cannot clean them up afterwards because `_kill_tree` walks
+  # down from WATCH_PID, which is by then already dead and has no children left to
+  # find. Under root those 16 include the eslogger and fs_usage a user cannot kill.
+  trap '_watchers_teardown; exit 0' TERM INT
+  trap '_watchers_teardown' EXIT
   wait
 }
 
