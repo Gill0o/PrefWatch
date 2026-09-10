@@ -11,6 +11,9 @@
 - Wi-Fi on/off → `networksetup -setairportpower`. The raw `PowerEnabled` write went to a file airportd owns, and is filtered now.
 - Time Machine's "Back up automatically" and its exclusion list → `tmutil enable`/`disable`/`addexclusion`/`removeexclusion`; the raw writes to backupd's file are filtered.
 - Startup sound → `sudo nvram StartupMute=…`. It lives in NVRAM, where no plist diff can see it.
+- Default printer → `lpoptions -d`. Read from `~/.cups/lpoptions`, not `lpstat -d`: that line is localised and `LC_ALL=C` does not neutralise it, so its last word is a translated one.
+- Spotlight indexing is now read on EVERY volume, not just `/`. Turning it off on `/System/Volumes/Data` — the one holding the user's files — was invisible. Mounting a disk emits nothing.
+- Touch ID → `bioutil`, for both scopes. The user-scope line says it asks for a password on stdin: measured, it prompts even writing back the value in place, so it cannot be deployed unattended.
 
 ### Fix
 - `cups_watch` died on the first `lpstat -v` that failed — a captured pipe under `set -e`. Adding a printer reloads cupsd, which is exactly when that read fails.
