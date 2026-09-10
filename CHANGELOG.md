@@ -51,6 +51,7 @@
 - Four `case` branches could never be reached: the global key filter runs first and already catches their patterns. Removed, with no behavior change — the global filter now names what it covers.
 
 ### Note
+- A domain that exists only inside a group container is now explained instead of watched: `defaults` cannot address one by name (0 of 23 answer), so nothing could ever be emitted for it.
 - Media Sharing is reported but not reproducible: its keys mirror state the daemon never reads back. Measured — restarting the daemon and the Settings pane changes nothing.
 - AirDrop discoverability says to run `killall sharingd`: measured, the write alone is inert and Control Center keeps the previous value until the daemon restarts.
 - A privacy permission change names the permission and points at a PPPC profile — `tccutil` only resets, it cannot grant. Without Full Disk Access the change is reported but not named.

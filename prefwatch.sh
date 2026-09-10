@@ -4571,6 +4571,33 @@ show_domain_diff() {
 
 # Get the plist file path for a given domain
 # Returns the full path to the .plist file, or empty string if not found
+# A domain whose only plist sits in a GROUP container is not addressable by name,
+# so nothing can ever be emitted for it. Measured 2026-09-10: 23 of 23 such
+# domains here return ZERO keys from `defaults export <domain>` while their file
+# holds 1 to 39 -- show_domain_diff bails on the empty export every single time.
+#
+# It used to be worse than silent. get_plist_path_for_domain returned that path,
+# start_watch then announced "optimized mtime polling" naming the real file, and
+# an admin reads that as "it is being watched". A mode that looks right and can
+# report nothing is the same defect as a command that looks right and does
+# nothing -- so say what is true instead, which is also what the README already
+# says about container prefs.
+#
+# ~/Library/Containers is NOT this case and keeps its branch: 4 of 5 domains there
+# ARE reachable by name (`defaults read com.apple.Notes` answers 79 keys with no
+# flat plist in existence), so returning that path is correct.
+_note_group_container_domain() {
+  local dom="$1"
+  local -a _gc
+  _gc=( "$TARGET_HOME/Library/Group Containers"/*/Library/Preferences/"${dom}.plist"(N.) )
+  (( ${#_gc[@]} )) || return 1
+  log_line "Cmd: # NOTE: '$dom' has no preference file of its own — it lives in a group container:"
+  log_line "Cmd: #       ${_gc[1]}"
+  log_line "Cmd: #       'defaults' cannot address a group container by domain name (measured: the export"
+  log_line "Cmd: #       comes back empty), so no command can be emitted for it and none will be."
+  return 0
+}
+
 get_plist_path_for_domain() {
   local domain="$1"
   local plist_path=""
@@ -4595,32 +4622,6 @@ get_plist_path_for_domain() {
   # pipefail + set -e would abort start_watch at startup. Empty is the right value.
   plist_path=$(/bin/ls $plist_path 2>/dev/null | head -1) || plist_path=""
   [ -n "$plist_path" ] && [ -f "$plist_path" ] && echo "$plist_path" && return 0
-
-  # Try Group Containers (for app groups). A glob at the ONE depth such a plist can
-  # live at, never a recursive `find`.
-  #
-  # This runs before the watcher starts, so its cost is pure startup latency --
-  # and the recursive form was unbounded. Measured here: 43 353 files under Group
-  # Containers, 2.23s per call; reported from another Mac in the same fleet, 35
-  # SECONDS between "Console disabled" and "Mode: standard polling", long enough
-  # that a change made in that window was simply not watched yet. The glob is
-  # 0.007s, and forks nothing.
-  #
-  # It is also a privacy fix, and that half is not incidental: 40 245 of those
-  # 43 353 files sit outside any `Library/` directory -- they are the user's
-  # synced documents (OneDrive and the like), and the recursive walk read every
-  # name. A group-container preference can only ever be at
-  # <group>/Library/Preferences/<domain>.plist, so the rest bought nothing.
-  # The domain is QUOTED inside the pattern: it is a filename, free text, and an
-  # unquoted one would be read as a glob of its own.
-  if [ -d "$TARGET_HOME/Library/Group Containers" ]; then
-    local -a _gc_hits
-    _gc_hits=( "$TARGET_HOME/Library/Group Containers"/*/Library/Preferences/"${domain}.plist"(N.) )
-    if (( ${#_gc_hits[@]} )); then
-      echo "${_gc_hits[1]}"
-      return 0
-    fi
-  fi
 
   return 1
 }
@@ -4883,6 +4884,7 @@ start_watch() {
     _WATCH_PIDS+=($!)
   else
     # Fallback mode: traditional polling for domains without plist file
+    _note_group_container_domain "$DOMAIN" || true
     log_line "Mode: standard polling (plist not found, checking domain every 1s)"
 
     (
