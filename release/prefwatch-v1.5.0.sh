@@ -1484,23 +1484,13 @@ is_noisy_key() {
       esac
       ;;
 
-    # Print presets: Filter Fiery driver defaults & print metadata
+    # Print presets: drop the driver internals and the last job's traces, keep
+    # everything else. See _PRINT_PRESET_NOISE for why this is a reject list.
     com.apple.print.custompresets*)
-      case "$keyname" in
-        # Keep: preset array (for emit_array_additions/deletions)
-        com.apple.print.customPresetsInfo) ;;
-        # Keep: preset identity
-        PresetName|PresetBehavior|com.apple.print.preset.id|com.apple.print.preset.behavior) ;;
-        # Keep: core print settings
-        Duplex|*PageSize|*InputSlot|*MediaType|AP_ColorMatchingMode) ;;
-        # Keep: useful Fiery settings
-        *EFDuplex|*EFColorMode|*EFMediaType|*EFResolution|*EFSort|*EFNUpOption) ;;
-        # Keep: Apple print settings
-        com.apple.print.PrintSettings.PMDuplexing|com.apple.print.PrintSettings.PMColorSpaceModel) ;;
-        com.apple.print.PageFormat.PMOrientation|com.apple.print.preset.Orientation) ;;
-        # Filter: everything else (Fiery defaults, PPD metadata, transient data)
-        *) return 0 ;;
-      esac
+      local _ppn
+      for _ppn in "${_PRINT_PRESET_NOISE[@]}"; do
+        [[ "$keyname" == ${~_ppn} ]] && return 0
+      done
       ;;
 
     # Adobe Crash Reporter: Filter crash state
@@ -1865,6 +1855,36 @@ is_noisy_command() {
 #     there is a deliberate, deployable setting → must survive.
 # A bare marker would silence both. Also NOT matching "Non Keyboard Input Method" —
 # com.apple.PressAndHold is one too and does not behave this way.
+# Print presets: the ONE noise list for com.apple.print.custompresets*, held here
+# and handed to the Python worker as data — the pattern _ELEMENT_NOISE_MARKERS
+# below already uses for the same reason. Two copies had drifted: the shell kept a
+# glob whitelist, the worker held the SAME STRINGS used as `startswith()` prefixes,
+# where a leading `*` means "begins with a literal asterisk" instead of "ends
+# with". Measured: 0 of 149 keys start with `*`, so nine of the worker's fourteen
+# entries were dead — including the whole "useful Fiery settings" block — and the
+# two filters returned OPPOSITE verdicts on 9 of 104 real keys.
+#
+# And it is a REJECT list now, not a whitelist. This domain was the only whitelist
+# in the file and it had rotted exactly as the project's own rule predicts: it
+# named `PresetName` and `PresetBehavior`, which exist nowhere on a real machine,
+# while dropping `com.apple.print.preset.displayName` (the preset's own NAME),
+# `ColorModel`, `Resolution`, `DuplexBindingEdge`, `APCustomColorMatchingProfile`
+# and the custom paper size — every one of them a setting someone chose.
+#
+# Matched as globs on BOTH sides (zsh `case` / Python fnmatchcase), so one string
+# cannot mean two things again.
+typeset -ga _PRINT_PRESET_NOISE=(
+  'EPIJ*'                                  # Epson driver internals: opaque codes ('116', '35')
+  'EPSON.PrintModule.Setting.*'            # machine identity — HostName, PrinterName
+  'com.apple.print.ticket.*'               # ticket structure (APIVersion, type)
+  'com.apple.print.DialogDismissedBy'      # which BUTTON was clicked — and localised
+  'com.apple.print.PDEsUsed'               # which pane was open — localised
+  'com.apple.print.pageRange'              # range of the last job — localised ("Toutes les pages (2)")
+  'com.apple.print.totalPages'             # last job
+  'com.apple.print.lastPresetUsedPrefType' # state
+  'PaperInfoIsSuggested'                   # state
+)
+
 typeset -ga _ELEMENT_NOISE_MARKERS=('com.apple.HIToolbox|AppleSelectedInputSources|CharacterPaletteIM')
 
 # Filter noisy key paths in PlistBuddy commands
@@ -3429,11 +3449,6 @@ _emit_contextual_note() {
         menuExtras)
           _note="Run 'killall SystemUIServer' to apply menu bar extra changes" ;;
       esac ;;
-    com.apple.print.custompresets*)
-      case "$array_base" in
-        com.apple.print.customPresetsInfo)
-          _note="Print preset changes require logout/login to take effect" ;;
-      esac ;;
     com.apple.symbolichotkeys)
       _note="Keyboard shortcut changes require logout/login to take effect"
       case "$array_base" in
@@ -3787,7 +3802,7 @@ emit_nested_dict_changes() {
   if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
     py_output=$(< "$precomputed")
   else
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" <<'PY'
+  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_PRINT_PRESET_NOISE}" <<'PY'
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -3905,29 +3920,20 @@ def emit_add_tree(base_parts, obj):
             path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
             print(f"PBCMD\tAdd :{path} {tv[0]} {tv[1]}")
 
-# Print preset: whitelist for com.apple.print.preset.settings keys
-_PRINT_PRESET_KEEP = {
-    'Duplex', 'AP_ColorMatchingMode',
-}
-_PRINT_PRESET_PREFIXES = (
-    '*PageSize', '*InputSlot', '*MediaType',
-    '*EFDuplex', '*EFColorMode', '*EFMediaType', '*EFResolution', '*EFSort', '*EFNUpOption',
-    'com.apple.print.PrintSettings.', 'com.apple.print.PageFormat.',
-    'com.apple.print.preset.displayName', 'com.apple.print.PageToPaperMapping',
-    'com.apple.print.pageRange',
-)
+# Print preset noise, handed in by the shell (_PRINT_PRESET_NOISE) so there is ONE
+# list. Matched with fnmatchcase, i.e. the same glob semantics as the zsh `case`
+# on the other side -- the previous copy used these very strings with
+# startswith(), where a leading `*` means "begins with an asterisk", so nine of
+# its entries could never match anything and the two filters disagreed.
+import fnmatch
+_PRINT_PRESET_NOISE = [g for g in (sys.argv[4] if len(sys.argv) > 4 else '').split(',') if g]
 
 def filter_print_preset_settings(settings_dict):
-    """Filter a print preset settings dict to keep only useful keys."""
+    """Drop the driver internals and last-job traces; keep everything else."""
     if not isinstance(settings_dict, dict):
         return settings_dict
-    filtered = {}
-    for k, v in settings_dict.items():
-        if k in _PRINT_PRESET_KEEP:
-            filtered[k] = v
-        elif any(k.startswith(p) for p in _PRINT_PRESET_PREFIXES):
-            filtered[k] = v
-    return filtered
+    return {k: v for k, v in settings_dict.items()
+            if not any(fnmatch.fnmatchcase(k, g) for g in _PRINT_PRESET_NOISE)}
 
 is_print_preset = domain.startswith('com.apple.print.custompresets')
 
@@ -4023,7 +4029,7 @@ for top_key in sorted(curr.keys()):
         # Print presets: filter noisy driver keys in settings dict
         if is_print_preset and len(path_parts) >= 3 and path_parts[1] == 'com.apple.print.preset.settings':
             settings_key = path_parts[2]
-            if settings_key not in _PRINT_PRESET_KEEP and not any(settings_key.startswith(p) for p in _PRINT_PRESET_PREFIXES):
+            if any(fnmatch.fnmatchcase(settings_key, g) for g in _PRINT_PRESET_NOISE):
                 continue
         if any(p == '' for p in path_parts):
             _note_empty_key(); continue
@@ -4215,6 +4221,40 @@ _note_mediasharing() {
   _log_kind "$kind" "Cmd: # NOTE: Media Sharing changed — not reproducible via defaults: these keys mirror state"
   _log_kind "$kind" "Cmd: #       the daemon writes and never reads back (measured — the write survives a restart of"
   _log_kind "$kind" "Cmd: #       mediasharingd and the pane never follows). Set it in System Settings > General > Sharing."
+}
+
+# Print presets. Three separate things an admin needs before deploying one, and
+# PrefWatch said none of them.
+#
+# The "requires logout/login" note DID exist, keyed on the array
+# `com.apple.print.customPresetsInfo` — a key that is present nowhere on a real
+# machine (0 occurrences across the three preset domains here), so it had never
+# once fired. Same whitelist rot as the key list it sat next to.
+#
+# The two portability traps were never mentioned at all, and both make a correct
+# command address nothing on the target:
+#  · the DOMAIN carries the CUPS queue name
+#    (com.apple.print.custompresets.forprinter.EPSON_WF_C579R_Series). That name
+#    is whatever the printer was added as, so it matches only where the queue was
+#    named the same. Same class as the ColorSync display UUID.
+#  · the top-level KEY is the preset's display name, and the built-in entries are
+#    LOCALISED — this machine holds 'Réglages par défaut' and 'Derniers réglages
+#    utilisés' next to the untranslated technical key `vendorDefaultSettings`. A
+#    `:Réglages par défaut:` path finds nothing on an English Mac. A preset the
+#    admin names themselves travels fine; those two do not.
+_note_print_preset() {
+  local kind="$1" dom="$2"
+  case "$dom" in com.apple.print.custompresets*) ;; *) return 0 ;; esac
+  _note_should_show "__print_preset__:$dom" || return 0
+  _log_kind "$kind" "Cmd: # NOTE: print preset changed — it takes effect after a logout/login."
+  case "$dom" in
+    *.forprinter.*)
+      _log_kind "$kind" "Cmd: #       This domain names the print queue ('${dom##*.forprinter.}'), which is whatever"
+      _log_kind "$kind" "Cmd: #       the printer was added as — the path matches only where the queue has that name." ;;
+  esac
+  _log_kind "$kind" "Cmd: #       The top-level key is the preset's NAME. macOS's own entries are localised"
+  _log_kind "$kind" "Cmd: #       ('Réglages par défaut' here), so their path finds nothing on a Mac in another"
+  _log_kind "$kind" "Cmd: #       language. A preset you named yourself carries the name you chose, and travels."
 }
 
 # Wi-Fi radio on/off (System Settings > Wi-Fi). The state IS in a plist —
@@ -4456,6 +4496,7 @@ show_plist_diff() {
     [ "$_dom" = "com.apple.airport.preferences" ] && _note_wifi_power "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.TimeMachine" ] && _note_timemachine "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.amp.mediasharingd" ] && _note_mediasharing "$kind"
+    _note_print_preset "$kind" "$_dom"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -4514,6 +4555,7 @@ show_domain_diff() {
   if [ "$dom" = "com.scriptingosx.desktoppr" ]; then
     _note_desktoppr DOMAIN "$prev" "$curr"
   fi
+  _note_print_preset DOMAIN "$dom"
   _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
