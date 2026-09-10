@@ -16,6 +16,7 @@
 - Touch ID → `bioutil`, for both scopes. The user-scope line says it asks for a password on stdin: measured, it prompts even writing back the value in place, so it cannot be deployed unattended.
 
 ### Fix
+- Startup walked `~/Library/Group Containers` recursively to find a plist that can only be at one depth — 35s on a Mac with a large sync, during which nothing was watched. A bounded glob, 0.007s.
 - A `kill -9` on the main process left the whole watcher tree running — 20 of 21, reparented to launchd, including the `fs_usage` that holds the machine's only ktrace slot. It now notices and stops.
 - A print preset dropped the colour model, resolution, binding edge, colour profile, paper size and its own name as noise. Its key filter is a reject list now, shared with the diff worker.
 - Its `# NOTE:` was keyed on a key no machine has, so it never fired. It now says a logout is needed, and that neither the queue name in the domain nor a built-in preset name travels.
@@ -36,6 +37,7 @@
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
 
 ### Security
+- That same walk read the name of every file under Group Containers — 40,245 of 43,353 here are the user's synced documents, not preferences. It now looks only where a plist can be.
 - The exec watcher matched a tool by BASENAME alone: any user could run their own file named `sharing` and have PrefWatch write `sudo <their path>` into a root-replayed log. The path is checked now.
 - Per-app firewall and printer commands put a path or a queue name into a `sudo` line unescaped, where `$(…)` runs before the tool does. Escaped, like every other emitted value.
 - An argument carrying a newline was re-emitted as two lines, the second one reading as a command of its own. Rejected now.
