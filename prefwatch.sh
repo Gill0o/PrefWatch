@@ -4266,6 +4266,17 @@ _tm_skippaths() {
       print line
     }' "$1" 2>/dev/null
 }
+# Did AutoBackup change between two dumps? AutoBackupInterval rides on it:
+# measured on 27.0, disabling removes the key and enabling writes 3600 back,
+# so alongside `tmutil disable`/`enable` a Delete and a write of the default
+# came out, both redundant. show_plist_diff skips the key when this is true; an
+# interval changed on its own (a custom value, no tmutil verb) still surfaces.
+_tm_autobackup_moved() {
+  local _p _c
+  _p=$(/usr/bin/sed -n 's/^[[:space:]]*"AutoBackup" => \(.*\)$/\1/p' "$1" 2>/dev/null | /usr/bin/head -1) || _p=""
+  _c=$(/usr/bin/sed -n 's/^[[:space:]]*"AutoBackup" => \(.*\)$/\1/p' "$2" 2>/dev/null | /usr/bin/head -1) || _c=""
+  [ "$_p" != "$_c" ]
+}
 _note_timemachine() {
   local kind="$1" prev="$2" curr="$3" _p _c _path
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
@@ -4568,6 +4579,11 @@ show_plist_diff() {
     # Before the diff: this domain's only reportable content is the desktoppr command.
     if [ "$_dom" = "com.scriptingosx.desktoppr" ]; then
       _note_desktoppr "$kind" "$prev" "$curr"
+    fi
+    # Time Machine: AutoBackupInterval follows AutoBackup (see _tm_autobackup_moved).
+    if [ "$_dom" = "com.apple.TimeMachine" ] && _tm_autobackup_moved "$prev" "$curr"; then
+      _SKIP_KEYS[AutoBackupInterval]=1
+      _dbg_filtered "$_dom AutoBackupInterval (follows AutoBackup, which tmutil handles)"
     fi
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path" "$path"
     # A pure Dock reorder emits nothing above (positional churn is filtered). Flag it.
