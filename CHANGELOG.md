@@ -37,6 +37,7 @@
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
 - On macOS 27 `fs_usage` reports `/System/Volumes/Data/Users/…`, the baseline is keyed on `/Users/…`, so every plist an app rewrote came out as "a new domain — its full configuration" (seven in one log, `com.apple.Console` among them). The prefix is dropped. A plist under a container, or in any tree the snapshot never saw, is no longer diffed either — that could only ever produce the same false dump — and says so under `--debug`; a Safari cache file had passed as a domain named `HSTS`.
 - One file name holding a byte that is not UTF-8 — any file the kernel touched, not a preference — ended real-time detection for the rest of a root run: `sed` stopped on it, `fs_usage` followed, and the log said only "exited without a message". The path filter now runs under `LC_ALL=C` and lets the byte through.
+- The "array index :N is positional" warning printed alone when the Add it introduced was filtered — a Finder window open adds a recent folder, the Add is noise, the warning was not. A NOTE that introduces commands now goes only with them.
 - A new domain whose every key is filtered — one data blob, say — printed "the commands below are its full configuration" over nothing. The NOTE now waits for the first line it introduces, and stays unsaid otherwise.
 
 ### Security
@@ -49,6 +50,7 @@
 
 ### Noise
 - Un-excluded domains holding real prefs, now filtered per key: `com.apple.Music`/`TV` (crossfade, EQ, import encoder), `AddressBook` (text size), `sharingd` (AirDrop discoverability).
+- `WindowLeft`/`WindowTop` join the window-geometry filter — a login plug-in (`com.apple.DFSLoginPlugin`) stores its window corner as two bare floats.
 - Exclude `com.apple.SafariBookmarksSyncAgent`: sync tokens, an account hash, migration blobs and last-launched versions — no key a user sets.
 
 ### Note

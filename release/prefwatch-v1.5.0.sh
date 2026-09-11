@@ -1046,7 +1046,7 @@ is_noisy_key() {
     # reached. (It also swallows `NSStatusItem VisibleCC <Module>` — a known,
     # deliberate trade-off; do not narrow it without measuring what a System
     # Settings toggle really writes.)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|WindowLeft|WindowTop|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -3043,8 +3043,17 @@ _process_py_meta() {
   # NOTE can be the ONLY output — _note_empty_key fires INSTEAD of the commands it
   # skips. Without this final flush that change vanished entirely: in the default
   # quiet mode the log stayed empty, with no trace that anything was seen.
+  # …but only a NOTE that stands for the commands it skipped. The two that
+  # INTRODUCE commands — "array index :N is positional", "new key tree — the
+  # Add commands build it" — are about lines that never came: every PBCMD of
+  # the batch was filtered as noise (a Finder window open adds a recent folder
+  # to FXRecentFolders; the Add is dropped, the positional warning was not).
+  # Seen alone in a root log on 27.0, over nothing.
   if (( ${#_pending_comments[@]} > 0 )) && [ -n "$plist_path" ]; then
     for _pc in "${_pending_comments[@]}"; do
+      case "$_pc" in
+        "# NOTE: array index :N is positional"*|"# NOTE: new key tree"*|"#       If this came from first opening"*) continue ;;
+      esac
       [[ "$_pc" == "# dockutil"* ]] && _note_dockutil_alt "$kind"
       _log_kind "$kind" "Cmd: $(_mdm_wrap_comment "$_pc")"
     done
