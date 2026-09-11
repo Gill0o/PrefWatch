@@ -40,6 +40,9 @@
 - The "array index :N is positional" warning printed alone when the Add it introduced was filtered — a Finder window open adds a recent folder, the Add is noise, the warning was not. A NOTE that introduces commands now goes only with them.
 - A new domain whose every key is filtered — one data blob, say — printed "the commands below are its full configuration" over nothing. The NOTE now waits for the first line it introduces, and stays unsaid otherwise.
 
+### Performance
+- `fs_usage` ran in `filesys` mode — every filesystem syscall of every process — and on a loaded Mac could not push that to its reader: 8 GB resident five minutes into a root run, still climbing. It runs in `pathname` mode now, the only events the detector reads (measured side by side: 6× less memory, 8× fewer lines, the same writes seen), and PrefWatch kills its own `fs_usage` past 1 GB resident (`PREFWATCH_FS_USAGE_RSS_LIMIT_MB`) and says so; polling carries on at the same latency.
+
 ### Security
 - Startup read the name of every file under Group Containers — 40,245 of 43,353 here are the user's synced documents, not preferences. It now looks only where a plist can be.
 - The exec watcher matched a tool by BASENAME alone: any user could run their own file named `sharing` and have PrefWatch write `sudo <their path>` into a root-replayed log. The path is checked now.

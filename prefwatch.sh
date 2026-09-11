@@ -292,6 +292,17 @@ typeset -g _MDM_LIU_QB="'${_MDM_LIU}'"
 unsetopt xtrace verbose 2>/dev/null || true
 
 # ---------------------------------------
+# CONFIGURATION — Real-time detector ceiling
+# ---------------------------------------
+
+# fs_usage keeps every event it has not yet written out. On a Mac whose file
+# activity outruns it — measured: 8 GB and climbing, five minutes into a run
+# during a post-upgrade Spotlight reindex — that is memory with no ceiling. Past
+# this resident size fs_watch kills it and says so; polling carries on, at the
+# same latency (measured). Override via PREFWATCH_FS_USAGE_RSS_LIMIT_MB.
+typeset -gi FS_USAGE_RSS_LIMIT_MB="${PREFWATCH_FS_USAGE_RSS_LIMIT_MB:-1024}"
+
+# ---------------------------------------
 # CONFIGURATION — Hot domains
 # ---------------------------------------
 
@@ -5142,7 +5153,49 @@ start_watch_all() {
     # (demonstrated). Redirecting INSIDE the pty is what actually captures it, and
     # `exec` keeps the process tree unchanged (script → fs_usage) so the teardown
     # still finds it.
-    script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f filesys 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
+    #
+    # `-f pathname`, not `-f filesys`. filesys is every filesystem syscall of
+    # every process — read, write, lseek, fstat included — and on a loaded Mac
+    # (mds reindexing after an OS upgrade, load 45) fs_usage could not push that
+    # to the sed fast enough: 5.1 million lines in 45s, 3 GB resident in those
+    # 45s and 8 GB five minutes in, still climbing. The detector only ever reads
+    # the open/rename cfprefsd does on a plist, and those are pathname events.
+    # Measured side by side under the same load, 45s each: pathname was 612k
+    # lines, 510 MB, and saw every scratch write filesys saw. (Narrowing further
+    # to `cfprefsd configd` saw NOTHING — 0 plist lines — so the writer is not
+    # reliably named that; the mode filter alone is what is safe.)
+    #
+    # And a ceiling, because pathname still climbs under load: a watchdog kills
+    # fs_usage past FS_USAGE_RSS_LIMIT_MB and leaves a marker the shutdown
+    # report reads, so the log says WHY real-time detection ended. It kills
+    # OURS only: the fs_usage whose grandparent (script's parent) is this very
+    # process — never an admin's own fs_usage that happens to hold ktrace
+    # because ours could not start. Needs the real pid of this subshell
+    # (sysparams; $$ is main's), so without zsh/system there is no ceiling
+    # rather than a wrong kill. The watchdog exits with fs_usage and is killed
+    # after the pipeline besides: left alone it would outlive fs_watch and be
+    # reparented to launchd — the 1.4.3 leak, one more time.
+    local _fw_self="" _fw_watchdog=""
+    [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _fw_self="${sysparams[pid]}"
+    if [ -n "$_fw_self" ]; then
+      ( local _fw_pid _fw_gp _fw_rss _fw_seen=false
+        while /bin/sleep 10; do
+          _fw_pid=$(/usr/bin/pgrep -x fs_usage 2>/dev/null | /usr/bin/head -1) || _fw_pid=""
+          if [ -z "$_fw_pid" ]; then [ "$_fw_seen" = true ] && exit 0; continue; fi
+          _fw_gp=$(/bin/ps -o ppid= -p "$(/bin/ps -o ppid= -p "$_fw_pid" 2>/dev/null | /usr/bin/tr -d ' ')" 2>/dev/null | /usr/bin/tr -d ' ') || _fw_gp=""
+          [ "$_fw_gp" = "$_fw_self" ] || continue
+          _fw_seen=true
+          _fw_rss=$(/bin/ps -o rss= -p "$_fw_pid" 2>/dev/null | /usr/bin/tr -d ' ') || _fw_rss=""
+          [ -n "$_fw_rss" ] || continue
+          if (( _fw_rss / 1024 > FS_USAGE_RSS_LIMIT_MB )); then
+            printf '%d' "$(( _fw_rss / 1024 ))" > "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null || true
+            /bin/kill -TERM "$_fw_pid" 2>/dev/null || true
+            exit 0
+          fi
+        done ) &
+      _fw_watchdog=$!
+    fi
+    script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f pathname 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
     # The leading .* MUST NOT swallow the user prefix. With `.*(/.*Library/…)` the
     # greedy prefix pushed the capture as late as possible, so
     # /Users/gilles/Library/Preferences/x.plist came out as /Library/Preferences/x.plist —
@@ -5236,8 +5289,14 @@ start_watch_all() {
     # only symptom was changes arriving a second or two later than they should —
     # indistinguishable from a busy machine. Report it, with whatever fs_usage
     # said on its way out (now that its stderr is actually captured).
+    [ -n "$_fw_watchdog" ] && { /bin/kill "$_fw_watchdog" 2>/dev/null || true; }
     local _why=""
     [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
+    if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
+      local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
+      log_line "Cmd: # NOTE: real-time detection stopped by PrefWatch — fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB): the machine's file activity outran it. Polling continues, at the same latency."
+      return 0
+    fi
     case "$_why" in
       *"Resource busy"*)
         # Do not repeat the two-line explanation the pre-check already gave: one
