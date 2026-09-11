@@ -10,7 +10,7 @@
 - Bluetooth on/off → a `python3` line, under a NOTE saying which way it went and that the target needs `python3`. No plist, no CLI.
 - Shared folders → `sharing -a`/`-e`/`-r`.
 - Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name.
-- Network location → `scselect`; the raw `:CurrentSet` UUID write is filtered.
+- Network location → `scselect`; the raw `CurrentSet` UUID write is filtered, whether it comes as PlistBuddy or as a top-level `defaults write`.
 - Wi-Fi on/off → `networksetup -setairportpower`; the raw `PowerEnabled` write is filtered.
 - Time Machine "Back up automatically" and exclusions → `tmutil`; the raw writes are filtered, `AutoBackupInterval` too when it just follows the toggle.
 - Startup sound → `sudo nvram StartupMute=…` (NVRAM, not a plist).
@@ -36,6 +36,7 @@
 - An unreadable plist emitted a `defaults delete` for every key. Guarded.
 - Exclusion-list parsing died on an invalid byte (`printf | sed` under `pipefail`). Trimmed in zsh.
 - A system-level `defaults write` was emitted without `sudo`.
+- A system plist in a subdirectory (`SystemConfiguration/`) was emitted as `/Library/Preferences/<name>`, a file that does not exist. The real path now.
 - A wallpaper change emitted desktoppr's own record or a placeholder path. The real path now.
 - `--mdm` left `utiluti`, `desktoppr` and `dockutil` unwrapped; they carry `runAsUser`.
 - Gatekeeper on → `spctl --global-enable` (`--master-enable` is undocumented since 26); the disable side keeps its verb under a NOTE.

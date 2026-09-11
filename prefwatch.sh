@@ -885,8 +885,10 @@ get_plist_path() {
   if [[ "$domain" =~ ^/ ]]; then
     printf '%s' "$domain"
   elif [ "${_EMIT_SYS:-false}" = "true" ]; then
-    # System-level pref: root-owned file under /Library/Preferences
-    printf '%s' "/Library/Preferences/${domain}.plist"
+    # System-level pref: root-owned file under /Library/Preferences, at its real
+    # path when show_plist_diff recorded one (subdirectories exist there).
+    printf '%s' "${_EMIT_SYS_DOM:+${_EMIT_SYS_DOM}.plist}"
+    [ -n "${_EMIT_SYS_DOM:-}" ] || printf '%s' "/Library/Preferences/${domain}.plist"
   else
     # $TARGET_HOME: console user's home when root (Jamf), $HOME otherwise
     printf '%s' "$TARGET_HOME/Library/Preferences/${domain}.plist"
@@ -1843,6 +1845,17 @@ is_noisy_key() {
       esac
       ;;
 
+    # SystemConfiguration/preferences.plist. CurrentSet is a TOP-LEVEL string,
+    # so a location change reaches the scalar path as `defaults write … CurrentSet
+    # "/Sets/<UUID>"`, not only the PlistBuddy path the is_noisy_pbcmd filter
+    # covers. Seen on 27.0 with a bogus /Library/Preferences/preferences path.
+    # show_plist_diff emits `scselect "<name>"` in its place.
+    preferences)
+      case "$keyname" in
+        CurrentSet) return 0 ;;
+      esac
+      ;;
+
     # Wi-Fi on/off. airportd owns this file, so writing PowerEnabled back only
     # forges the record. `networksetup -setairportpower` is what actually moves
     # the radio, and _note_wifi_power emits it in place of the misleading write.
@@ -2389,7 +2402,7 @@ _build_defaults_write_cmd() {
   # System-level pref: emit (and type-probe) the root-owned /Library/Preferences
   # file by full path. `defaults` accepts a path in place of a bare domain and
   # appends .plist. A bare domain would replay into the console user's ~ copy.
-  [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="/Library/Preferences/${dom}"
+  [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="${_EMIT_SYS_DOM:-/Library/Preferences/${dom}}"
 
   # The DOMAIN needs the same treatment as the key, and for two reasons that are
   # easy to miss because it "looks structured". It is not: it is a plist FILENAME,
@@ -4438,8 +4451,12 @@ show_plist_diff() {
   # emitted defaults/PlistBuddy commands must target the system file and run as
   # root. Flag it so get_plist_path + _build_defaults_write_cmd emit the full
   # /Library/Preferences path instead of the console user's ~/Library copy.
-  typeset -g _EMIT_SYS=false
-  [[ "$path" == /Library/Preferences/* && "$path" != */ByHost/* ]] && _EMIT_SYS=true
+  typeset -g _EMIT_SYS=false _EMIT_SYS_DOM=""
+  # Keep the REAL path (minus .plist) for the emitted command: a system plist
+  # can sit in a subdirectory, and "/Library/Preferences/<basename>" then names a
+  # file that does not exist. Seen: SystemConfiguration/preferences.plist came
+  # out as `defaults write "/Library/Preferences/preferences"`.
+  [[ "$path" == /Library/Preferences/* && "$path" != */ByHost/* ]] && { _EMIT_SYS=true; _EMIT_SYS_DOM="${path%.plist}"; }
 
   init_cache
   local key prev curr prev_json curr_json
@@ -4580,6 +4597,12 @@ show_plist_diff() {
     if [ "$_dom" = "com.scriptingosx.desktoppr" ]; then
       _note_desktoppr "$kind" "$prev" "$curr"
     fi
+    # Network location: CurrentSet changed at the top level. The raw write is
+    # filtered (is_noisy_key); say what reproduces it.
+    if [ "$_dom" = preferences ] && [[ "$path" == */SystemConfiguration/preferences.plist ]] \
+       && [ "$(/usr/bin/sed -n 's/^[[:space:]]*"CurrentSet" => //p' "$prev" 2>/dev/null)" != "$(/usr/bin/sed -n 's/^[[:space:]]*"CurrentSet" => //p' "$curr" 2>/dev/null)" ]; then
+      _note_network_location "$kind" "$path" || _log_kind "$kind" "Cmd: # NOTE: network location changed. Its name could not be resolved, so no scselect command is emitted."
+    fi
     # Time Machine: AutoBackupInterval follows AutoBackup (see _tm_autobackup_moved).
     if [ "$_dom" = "com.apple.TimeMachine" ] && _tm_autobackup_moved "$prev" "$curr"; then
       _SKIP_KEYS[AutoBackupInterval]=1
@@ -4613,7 +4636,7 @@ show_domain_diff() {
 
   # Domain mode uses user-domain semantics; clear any system flag left set by a
   # prior show_plist_diff so emitted commands don't get /Library/Preferences.
-  typeset -g _EMIT_SYS=false
+  typeset -g _EMIT_SYS=false _EMIT_SYS_DOM=""
 
   # In ALL mode, skip excluded domains. In domain mode, user explicitly requested it.
   if [ "${ALL_MODE:-false}" = "true" ] && is_excluded_domain "$dom"; then
