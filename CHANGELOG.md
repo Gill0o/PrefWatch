@@ -59,7 +59,7 @@
 ### Noise
 - Un-excluded, filtered per key: `com.apple.Music`/`TV`, `AddressBook`, `sharingd` (AirDrop discoverability).
 - `WindowLeft`/`WindowTop` join the window-geometry filter.
-- Excluded: `com.apple.SafariBookmarksSyncAgent` (daemon state only).
+- Excluded: `com.apple.SafariBookmarksSyncAgent` and `com.apple.voicetrigger.notbackedup` (daemon state only; the Siri toggles stay in `com.apple.voicetrigger`).
 - `com.apple.MenuBarAgent` telemetry (`MenuBarAnalytics.*`, macOS 27) is filtered; it flipped all day on an idle Mac.
 
 ### Note

@@ -564,6 +564,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.imagent"
   "com.apple.madrid"
   "com.apple.SafariCloudHistoryPushAgent"
+  "com.apple.voicetrigger.notbackedup"      # Siri voice-profile enrollment id + its date, power-logging asset version and language. State only; the toggles live in com.apple.voicetrigger (checked on 27.0)
   "com.apple.SafariBookmarksSyncAgent"      # sync tokens, account hash, migration blobs, last-launched versions. Daemon state only, no key a user sets (checked on 27.0)
 
   # Books data store (migration state, cache tasks)
