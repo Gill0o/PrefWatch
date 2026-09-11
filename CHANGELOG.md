@@ -3,8 +3,9 @@
 ## 1.5.0 — unreleased
 
 ### Feature
+- Privacy permissions (Settings > Privacy & Security) are watched — a database, not a plist. The permission is named where the database is readable, and the NOTE points at a PPPC profile: `tccutil` only resets, it cannot grant. macOS 27 keeps the per-user database in a container that refuses the read even with Full Disk Access — reported there, not named.
 - The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand — the tools PrefWatch itself emits. Their read verbs are dropped, only writes surface.
-- Bluetooth on/off → the `python3` line that reproduces it, under a `# NOTE:` saying which way it went. The state is in no plist, and nothing needs installing.
+- Bluetooth on/off → the `python3` line that reproduces it, under a `# NOTE:` saying which way it went and that the target needs `python3`. The state is in no plist, and macOS offers no CLI.
 - Shared folders → `sharing -a`/`-e`/`-r`, for add, edit and remove alike. The share point lives in OpenDirectory, not in a plist.
 - Network service order, DNS, search domains, proxies, the TCP/IP method and a service's on/off → their `networksetup` command, addressed by service name.
 - Network location → `scselect "<location>"`. The raw `:CurrentSet` write named a UUID that means nothing elsewhere, and is filtered now.
@@ -14,10 +15,13 @@
 - Default printer → `lpoptions -d`. Read from `~/.cups/lpoptions`, not `lpstat -d`: that line is localised and `LC_ALL=C` does not neutralise it, so its last word is a translated one.
 - Spotlight indexing is now read on EVERY volume, not just `/`. Turning it off on `/System/Volumes/Data` — the one holding the user's files — was invisible. Mounting a disk emits nothing.
 - Touch ID → `bioutil`, for both scopes. The user-scope line says it asks for a password on stdin: measured, it prompts even writing back the value in place, so it cannot be deployed unattended.
+- The colour behind the wallpaper → `desktoppr color <hex>`. A solid system colour is not reproduced: the Store keeps its name, not its shade.
 
 ### Fix
 - Startup walked `~/Library/Group Containers` recursively to find a plist that can only be at one depth — 35s on a Mac with a large sync, during which nothing was watched. A bounded glob, 0.007s.
 - A `kill -9` on the main process left the whole watcher tree running — 20 of 21, reparented to launchd, including the `fs_usage` that holds the machine's only ktrace slot. It now notices and stops.
+- Any other exit that was not Console-close or a trapped signal — an abort under `set -e`, in the main process or in the watcher root — removed the tmpdir and left the tree running, reparented to launchd. Both arm `EXIT` now.
+- A bare `wait` in the diff also waited on the cfprefsd flush `fs_watch` deliberately backgrounds, so every diff blocked on that read while holding the plist lock. It waits on its own dumps now.
 - A print preset dropped the colour model, resolution, binding edge, colour profile, paper size and its own name as noise. Its key filter is a reject list now, shared with the diff worker.
 - Its `# NOTE:` was keyed on a key no machine has, so it never fired. It now says a logout is needed, and that neither the queue name in the domain nor a built-in preset name travels.
 - Removing one array element emitted a `python3` line. It now rewrites the list with `defaults write … -array`, which needs nothing installed — kept only where faithful, `-array` stringifies.
@@ -27,35 +31,26 @@
 - Parsing the exclusion list trimmed each pattern through `printf | sed` — a captured pipe that kills the script under `set -e -o pipefail` when sed rejects an invalid byte. Trimmed in zsh now.
 - A system-level `defaults write` was emitted bare, under a `# NOTE:` saying to replay it as root — a line nobody can paste. It carries `sudo` now, like every other privileged command here.
 - A wallpaper change emitted a `defaults write` of desktoppr's own record — which sets nothing — or a `/path/to/image.jpg` placeholder. It now emits the real path, whatever set the wallpaper.
-- Changing the colour behind the wallpaper emitted nothing. `desktoppr color <hex>` reproduces it, and is emitted now. A solid system colour is not: the Store keeps its name, not its shade.
 - `--mdm` left `utiluti` unwrapped, so a root Jamf replay set ROOT's default app. `utiluti`, `desktoppr` and the `# dockutil` line now carry `runAsUser`.
-- Any exit that was not Console-close or a trapped signal — an abort under `set -e` — removed the tmpdir and left the watcher tree running, reparented to launchd. `EXIT` now tears it down too.
-- Same hole one level down, and worse: the watcher root aborting left all 16 sub-watchers reparented to launchd, where the main teardown can no longer find them. Its subshell arms `EXIT` too.
-- A bare `wait` in the diff also waited on the cfprefsd flush `fs_watch` deliberately backgrounds, so every diff blocked on that read while holding the plist lock. It waits on its own dumps now.
 - Gatekeeper on → `spctl --master-enable`, gone from `--help` and the man page since macOS 26. It emits the documented `--global-enable`; the disable side keeps its verb, under a `# NOTE:`.
 - A `pmset -g custom` display label (`Sleep On Power Button`) was emitted as a setting name. `pmset` rejects it — no multi-word name exists. Such a key now prints where to set it.
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
-- macOS 27 keeps the per-user `TCC.db` in a container, not under `~/Library`, and the privacy watcher skipped that scope in silence — camera, microphone, Accessibility per user went unwatched. It now finds the file through the user's `tccd`; a change there is still reported, though not named: that container refuses the read even with Full Disk Access.
 
 ### Security
-- That same walk read the name of every file under Group Containers — 40,245 of 43,353 here are the user's synced documents, not preferences. It now looks only where a plist can be.
+- Startup read the name of every file under Group Containers — 40,245 of 43,353 here are the user's synced documents, not preferences. It now looks only where a plist can be.
 - The exec watcher matched a tool by BASENAME alone: any user could run their own file named `sharing` and have PrefWatch write `sudo <their path>` into a root-replayed log. The path is checked now.
 - Per-app firewall and printer commands put a path or a queue name into a `sudo` line unescaped, where `$(…)` runs before the tool does. Escaped, like every other emitted value.
 - An argument carrying a newline was re-emitted as two lines, the second one reading as a command of its own. Rejected now.
-- The log is created `0600` — it carries the whole TCC table, which apps hold microphone, camera and Full Disk Access, and was world-readable. Under `sudo` it is handed to the console user, so Console.app can still show it.
+- The log is created `0600` and owned by the console user — it carries the whole TCC table, which apps hold microphone, camera and Full Disk Access, and was world-readable.
 - The `/tmp` log fallback truncated whatever sat at a predictable path, symlink included. It refuses anything that is not a plain file it owns.
 
 ### Noise
 - Un-excluded domains holding real prefs, now filtered per key: `com.apple.Music`/`TV` (crossfade, EQ, import encoder), `AddressBook` (text size), `sharingd` (AirDrop discoverability).
 
-### Refactor
-- Four `case` branches could never be reached: the global key filter runs first and already catches their patterns. Removed, with no behavior change — the global filter now names what it covers.
-
 ### Note
 - A domain that exists only inside a group container is now explained instead of watched: `defaults` cannot address one by name (0 of 23 answer), so nothing could ever be emitted for it.
 - Media Sharing is reported but not reproducible: its keys mirror state the daemon never reads back. Measured — restarting the daemon and the Settings pane changes nothing.
 - AirDrop discoverability says to run `killall sharingd`: measured, the write alone is inert and Control Center keeps the previous value until the daemon restarts.
-- A privacy permission change names the permission and points at a PPPC profile — `tccutil` only resets, it cannot grant. Without Full Disk Access the change is reported but not named.
 - System Integrity Protection is now read alongside FileVault, Gatekeeper and the firewall, and says only Recovery can change it.
 - The new-domain `# NOTE:` said "did not exist at startup". It now says the domain is new and the commands below are its full configuration.
 - Spotlight category changes say the Settings pane must be reopened to take effect, and that `EnabledPreferenceRules` lists the DISABLED categories.

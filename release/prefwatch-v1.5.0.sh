@@ -926,6 +926,15 @@ prepare_logfile() {
   # created 0644, readable by every local user, with no umask anywhere in the
   # script. Owner-only, and never fatal if the chmod cannot apply.
   /bin/chmod 600 "$path" 2>/dev/null || true
+  # Owner-only cut Console.app off: under sudo the file is root's, and Console
+  # runs as the console user — it opened on "Impossible de lire le fichier" and
+  # the whole live view, which the watcher's lifecycle hangs on, showed nothing
+  # (observed on the first sudo run after the chmod landed). Hand the file to
+  # the console user: 0600 still keeps every OTHER local user out, and the
+  # console user is the one PrefWatch shows the log to by design.
+  if [ "$(id -u)" -eq 0 ] && [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ]; then
+    /usr/sbin/chown "$CONSOLE_USER" "$path" 2>/dev/null || true
+  fi
   echo "$path"
 }
 
@@ -6384,6 +6393,40 @@ WP
     [ -x /usr/bin/sqlite3 ] || return 0
     local _tcc_sys="/Library/Application Support/com.apple.TCC/TCC.db"
     local _tcc_usr="$TARGET_HOME/Library/Application Support/com.apple.TCC/TCC.db"
+    # macOS 27 moved the per-user database out of ~/Library, into a
+    # ProtectedSystem container: /private/var/containers/Data/ProtectedSystem/
+    # <UUID>/Data/Library/Application Support/com.apple.TCC/TCC.db. The old path
+    # is gone (no symlink), so the `-f` test below skipped the user scope in
+    # silence and every per-user permission — camera, microphone, Accessibility —
+    # went unwatched. The container's parent cannot be listed and its UUID is
+    # written nowhere readable, but the user's own tccd holds the file open:
+    # `lsof -p` on that one pid names it in 0.09s (measured; `lsof -c tccd`
+    # across all processes takes minutes — never that). The file itself answers
+    # `stat`, so the metadata fallback in _read_tcc still works; the SQL read is
+    # refused there even with Full Disk Access (measured on 27.0), so on 27 the
+    # user scope reports "changed", never which permission.
+    if [ ! -f "$_tcc_usr" ]; then
+      local _tcc_uid="" _tcc_pids="" _tcc_pid="" _tcc_found=""
+      _tcc_uid=$(/usr/bin/id -u "${CONSOLE_USER:-$(/usr/bin/id -un)}" 2>/dev/null) || _tcc_uid=""
+      if [ -n "$_tcc_uid" ]; then
+        _tcc_pids=$(/usr/bin/pgrep -u "$_tcc_uid" -x tccd 2>/dev/null) || _tcc_pids=""
+        for _tcc_pid in ${=_tcc_pids}; do
+          # The NAME column is last and contains spaces ("Application Support"),
+          # so anchor on the path's end, not on a field number.
+          _tcc_found=$(/usr/sbin/lsof -p "$_tcc_pid" 2>/dev/null \
+            | /usr/bin/sed -nE 's#^.* (/.*/com\.apple\.TCC/TCC\.db)$#\1#p' \
+            | /usr/bin/head -1) || _tcc_found=""
+          [ -n "$_tcc_found" ] && break
+        done
+      fi
+      if [ -n "$_tcc_found" ] && [ -f "$_tcc_found" ]; then
+        _tcc_usr="$_tcc_found"
+      else
+        # Say so rather than watch half the surface quietly: the summary line
+        # above already lists "tcc" as active.
+        log_line "Cmd: # NOTE: per-user TCC database not found (neither ~/Library nor the tccd container) — only SYSTEM privacy permissions are watched"
+      fi
+    fi
     _read_tcc() {
       local _scope _db
       for _scope in system user; do
@@ -6420,7 +6463,15 @@ WP
       log_line "Cmd: #       reproducible by command: tccutil only RESETS a grant, it cannot create one."
       log_line "Cmd: #       Deploy it as a PPPC (Privacy Preferences Policy Control) configuration profile."
       if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q 'UNREADABLE'; then
-        log_line "Cmd: #       Which permission moved is not visible here — reading TCC.db needs Full Disk Access."
+        # On 27 the per-user database sits in a ProtectedSystem container that
+        # refuses the read even WITH Full Disk Access (measured) — telling the
+        # reader to grant FDA would send them to a setting that changes nothing.
+        if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q '^user.UNREADABLE' \
+           && [ -n "${_tcc_usr:-}" ] && [ "${_tcc_usr#/private/var/containers/}" != "$_tcc_usr" ]; then
+          log_line "Cmd: #       Which permission moved is not visible here — this macOS keeps the per-user TCC.db in a container no process may read."
+        else
+          log_line "Cmd: #       Which permission moved is not visible here — reading TCC.db needs Full Disk Access."
+        fi
         return 0
       fi
 
