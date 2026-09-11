@@ -41,6 +41,7 @@
 - A new domain whose every key is filtered — one data blob, say — printed "the commands below are its full configuration" over nothing. The NOTE now waits for the first line it introduces, and stays unsaid otherwise.
 
 ### Performance
+- `fs_usage` is opt-in (`--fs-usage`, Jamf `$12`); ALL mode as root polls, like it does without root. Measured three times — 43 minutes passive, a stopwatch, a controlled workload run with and without it — the real-time detector emitted nothing polling did not, at the same latency, while it takes the machine's single ktrace slot. 1.5.1 decides whether it goes.
 - `fs_usage` ran in `filesys` mode — every filesystem syscall of every process — and on a loaded Mac could not push that to its reader: 8 GB resident five minutes into a root run, still climbing. It runs in `pathname` mode now, the only events the detector reads (measured side by side: 6× less memory, 8× fewer lines, the same writes seen), and PrefWatch kills its own `fs_usage` past 1 GB resident (`PREFWATCH_FS_USAGE_RSS_LIMIT_MB`) and says so; polling carries on at the same latency.
 
 ### Security

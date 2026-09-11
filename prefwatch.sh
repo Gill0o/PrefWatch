@@ -39,6 +39,11 @@
 #     $11 = DEBUG (true/false) — log '# FILTERED: <dom> <key> (reason)' when a
 #          detected change is suppressed (noise key / excluded domain). Equivalent
 #          of the CLI --debug flag. Default: false.
+#     $12 = FS_USAGE (true/false) — ALL mode as root: also run the fs_usage
+#          real-time detector next to polling. Off by default: measured three
+#          times, it detected nothing polling did not, at the same latency,
+#          and it costs the machine's single ktrace slot and, under load,
+#          gigabytes. Equivalent of the CLI --fs-usage flag. Default: false.
 # ============================================================================
 
 # ============================================================================
@@ -97,6 +102,10 @@ Options:
                         ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
+  --fs-usage            ALL mode as root: also run the fs_usage real-time
+                        detector next to polling. Off by default — measured, it
+                        added nothing polling did not, and it takes the machine's
+                        single ktrace slot
 
 Examples:
   # Monitor all domains (default behavior)
@@ -117,7 +126,7 @@ Examples:
 Jamf Pro Mode:
   Parameters are read from $4 onward ($1-$3 are Jamf-reserved):
     $4 domain · $5 log path · $6 include-system · $7 only-cmds · $8 exclusions
-    $9 MDM output · $10 hot domains · $11 debug
+    $9 MDM output · $10 hot domains · $11 debug · $12 fs_usage
   Each is documented in full in the "Jamf Parameters" block at the top of this
   script — that header is the single source for them.
 
@@ -209,6 +218,15 @@ parse_cli_args() {
         NO_CONSOLE_RAW="true"
         shift
         ;;
+      --fs-usage)
+        # Opt-in since 1.5.0. Polling is the detector; fs_usage was measured
+        # three times (43 min passive, a stopwatch, a controlled workload) to
+        # add nothing polling did not, at the same latency — and it holds the
+        # one ktrace slot, ran to 8 GB under load, and died on one non-UTF-8
+        # byte. Kept for the tests that will decide whether 1.5.1 removes it.
+        FS_USAGE_RAW="true"
+        shift
+        ;;
       -h|--help)
         show_help
         ;;
@@ -243,6 +261,7 @@ if [ "$JAMF_MODE" = "true" ]; then
   # so the default HOT_DOMAINS array is preserved when $10 is omitted.
   [ -n "${10:-}" ] && HOT_DOMAINS_RAW="${10}"
   DEBUG_FILTER_RAW="${11:-false}"
+  FS_USAGE_RAW="${12:-false}"
 else
   # CLI mode: use flag-based parsing
   parse_cli_args "$@"
@@ -259,6 +278,7 @@ INCLUDE_SYSTEM=$(to_bool "$INCLUDE_SYSTEM_RAW")
 MDM_OUTPUT=$(to_bool "$MDM_OUTPUT_RAW")
 DEBUG_FILTER=$(to_bool "${DEBUG_FILTER_RAW:-false}")
 NO_CONSOLE=$(to_bool "${NO_CONSOLE_RAW:-false}")
+FS_USAGE=$(to_bool "${FS_USAGE_RAW:-false}")
 
 # Make an emitted PlistBuddy path deployable fleet-wide (MDM mode only):
 #  - user home       -> /Users/$loggedInUser/...
@@ -4817,7 +4837,7 @@ _watchers_teardown() {
 # launch time with the live values. Each watcher keeps its own internal
 # `|| return 0` guard as harmless defense-in-depth.
 typeset -ga _WATCHERS=(
-  'fs|[ "$(id -u)" -eq 0 ]|fs_watch|'
+  'fs|[ "$(id -u)" -eq 0 ] && [ "$FS_USAGE" = true ]|fs_watch|'
   'poll|true|poll_watch|'
   'cups|true|cups_watch|'
   'pmset|true|pmset_watch|'
@@ -4977,8 +4997,10 @@ start_watch() {
 start_watch_all() {
   if [ "$(id -u)" -ne 0 ]; then
     log_line "Mode: monitoring ALL preferences (polling only — no root)"
-  else
+  elif [ "$FS_USAGE" = true ]; then
     log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
+  else
+    log_line "Mode: monitoring ALL preferences (polling — --fs-usage adds the real-time detector)"
   fi
 
   local prefs_user prefs_system
@@ -7196,7 +7218,7 @@ fi
 if [ "$ALL_MODE" = "true" ] && [ "$(id -u)" -ne 0 ]; then
   local _ts; _ts="$(get_timestamp)"
   local _w1="[$_ts] NOTE: running without sudo — user preferences are fully covered"
-  local _w2="[$_ts]   Not covered: /Library/Preferences (system), sharing commands, launchd state, fs_usage"
+  local _w2="[$_ts]   Not covered: /Library/Preferences (system), sharing commands, launchd state"
   local _w3="[$_ts]   For those, re-run with: sudo $0 ALL"
   printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3"
   printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3" >> "$LOGFILE" 2>/dev/null || true

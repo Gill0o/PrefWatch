@@ -42,10 +42,11 @@ sudo pkill -f 'prefwatch\.sh'
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes — run until Ctrl+C (interactive/VM testing) | Off |
+| `--fs-usage` | -- | ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`). Measured to add nothing polling does not; it takes the machine's single ktrace slot | Off |
 
 ## Jamf Pro Integration
 
-Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug. Launches Console.app for live viewing; logs to stdout + file + syslog.
+Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug, `$12`=fs_usage. Launches Console.app for live viewing; logs to stdout + file + syslog.
 
 ## Scope
 
@@ -67,8 +68,8 @@ For settings with no built-in command, a `# NOTE:` names the tool — and for de
 
 ## Detection
 
-- ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands, launchd state and `fs_usage`.
-- Real-time detection needs the machine's single ktrace slot; when another process holds it the log names which one. Polling covers the same ground at the same latency, so nothing is lost. A stale `fs_usage` left by a crashed run is the usual culprit — `sudo pkill -x fs_usage`. Otherwise a daemon holds it for good and reclaims it at every boot — a licensing one (FlexNet), or one of Apple's own such as `tailspind`; there is nothing to do about those.
+- ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state.
+- Detection is by polling. `--fs-usage` adds the `fs_usage` real-time detector, off by default: measured three times, it detected nothing polling did not, at the same latency, and it needs the machine's single ktrace slot — when another process holds it the log names which one (a stale `fs_usage` from a crashed run: `sudo pkill -x fs_usage`; a licensing daemon such as FlexNet holds it for good). Under load it is also killed by PrefWatch past 1 GB resident, and the log says so.
 - Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change — pass it via `--hot-domains` upfront if that matters.
 
 ## Security
