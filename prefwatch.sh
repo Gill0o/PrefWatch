@@ -3507,7 +3507,8 @@ _note_should_show() {
 # installing. Burst-deduped so a multi-app change shows it once.
 _note_dockutil_alt() {
   _note_should_show __dockutil_alt__ || return 0
-  _log_kind "$1" "Cmd: # NOTE: 'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here — run ONE or the other, not both (needs dockutil installed: github.com/kcrawford/dockutil)"
+  _log_kind "$1" "Cmd: # NOTE: 'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here — run ONE or the other,"
+  _log_kind "$1" "Cmd: #       not both (needs dockutil installed: github.com/kcrawford/dockutil)"
 }
 
 # Emit contextual notes for domains that need extra steps
@@ -4227,7 +4228,8 @@ for key in ("persistent-apps", "persistent-others"):
 PY
 )
   if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
-    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil (github.com/kcrawford/dockutil), e.g. $(_mdm_wrap "dockutil --move <app> --position <N>")"
+    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil"
+    _log_kind "$kind" "Cmd: #       (github.com/kcrawford/dockutil), e.g. $(_mdm_wrap "dockutil --move <app> --position <N>")"
   fi
 }
 
@@ -5326,7 +5328,8 @@ start_watch_all() {
     [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
     if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
       local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
-      log_line "Cmd: # NOTE: real-time detection stopped by PrefWatch — fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB): the machine's file activity outran it. Polling continues, at the same latency."
+      log_line "Cmd: # NOTE: real-time detection stopped by PrefWatch — fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB):"
+      log_line "Cmd: #       the machine's file activity outran it. Polling continues, at the same latency."
       return 0
     fi
     case "$_why" in
@@ -5879,7 +5882,8 @@ PY
         # separate sharing change still carries its explanation. The actionable
         # bootstrap/bootout command below is emitted every time regardless.
         if _note_should_show __launchd_bootstrap__; then
-          log_line "Cmd: # NOTE: enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing) won't start/stop — and its UI toggle won't move — until launchd (re)loads it via bootstrap/bootout, or a reboot"
+          log_line "Cmd: # NOTE: enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing)"
+          log_line "Cmd: #       won't start/stop — and its UI toggle won't move — until launchd (re)loads it via bootstrap/bootout, or a reboot"
         fi
         [ -n "$_companion" ] && log_line "Cmd: $_companion"
       fi
@@ -6265,7 +6269,8 @@ for row in sorted(rows):
       local _snap="$1" _curr="$2" u
       while IFS= read -r u; do
         [ -n "$u" ] || continue
-        log_line "Cmd: # NOTE: user account '$u' added — the account itself (UID/home/password) is NOT reproducible via defaults; use sysadminctl/dscl or a config profile"
+        log_line "Cmd: # NOTE: user account '$u' added — the account itself (UID/home/password) is NOT reproducible via defaults;"
+        log_line "Cmd: #       use sysadminctl/dscl or a config profile"
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       while IFS= read -r u; do
         [ -n "$u" ] || continue
@@ -6759,7 +6764,8 @@ WP
             # "Set time zone automatically" (location-based) can overwrite a
             # manual set — flag it so the deploy sticks.
             [ "$(defaults read /Library/Preferences/com.apple.timezone.auto Active 2>/dev/null)" = "1" ] \
-              && log_line "Cmd: # NOTE: 'Set time zone automatically' is ON (com.apple.timezone.auto) — it can override a manual set; turn it off first (Settings > Date & Time)"
+              && { log_line "Cmd: # NOTE: 'Set time zone automatically' is ON (com.apple.timezone.auto) — it can override a manual set;"
+                   log_line "Cmd: #       turn it off first (Settings > Date & Time)"; }
             log_line "Cmd: sudo /usr/sbin/systemsetup -settimezone \"$_v\"" ;;
           ntp)
             log_line "Cmd: sudo /usr/sbin/systemsetup -setnetworktimeserver \"$_v\"" ;;
@@ -6817,7 +6823,8 @@ WP
               log_line "Cmd: #       so no command reproduces it. On a managed fleet, disabled SIP is a finding." ;;
             filevault)
               # Enabling needs a recovery key (interactive/MDM) — not a single command.
-              log_line "Cmd: # NOTE: FileVault is now ${_v#is } — not reproducible by one command; enable needs a recovery key (sudo fdesetup enable) or an MDM/config profile" ;;
+              log_line "Cmd: # NOTE: FileVault is now ${_v#is } — not reproducible by one command;"
+              log_line "Cmd: #       enable needs a recovery key (sudo fdesetup enable) or an MDM/config profile" ;;
             # `--master-enable`/`--master-disable` are GONE from both `spctl --help`
             # and `man spctl` on 26.6.2 — the man mentions "master" zero times. They
             # still parse (`--master-enable` answers "Operation not permitted", while
@@ -6846,9 +6853,11 @@ WP
               # App Store-only (developer id disabled) vs +identified-developers.
               # No single spctl command reproduces it — it's a GUI/MDM setting.
               if [ "$_v" = disabled ]; then
-                log_line "Cmd: # NOTE: Gatekeeper set to 'App Store' only (identified developers disabled) — no single spctl command reproduces this; set it in System Settings > Privacy & Security, or via an MDM Gatekeeper config profile"
+                log_line "Cmd: # NOTE: Gatekeeper set to 'App Store' only (identified developers disabled) — no single spctl command"
+                log_line "Cmd: #       reproduces this; set it in System Settings > Privacy & Security, or via an MDM Gatekeeper config profile"
               else
-                log_line "Cmd: # NOTE: Gatekeeper now allows 'App Store and identified developers' — set in System Settings > Privacy & Security or an MDM config profile (no single spctl command)"
+                log_line "Cmd: # NOTE: Gatekeeper now allows 'App Store and identified developers' — set in System Settings > Privacy & Security"
+                log_line "Cmd: #       or an MDM config profile (no single spctl command)"
               fi ;;
             firewall)
               case "$_v" in
