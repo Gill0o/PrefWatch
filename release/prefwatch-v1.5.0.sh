@@ -933,7 +933,11 @@ prepare_logfile() {
   # (observed on the first sudo run after the chmod landed). Hand the file to
   # the console user: 0600 still keeps every OTHER local user out, and the
   # console user is the one PrefWatch shows the log to by design.
-  if [ "$(id -u)" -eq 0 ] && [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ]; then
+  # /usr/bin/id, never bare `id`: this function's `local path` is zsh's $path —
+  # the array tied to PATH — so inside it PATH is the log file's name and a bare
+  # command is "not found". Every other call here was already absolute, which is
+  # why it was never noticed; the bare `id` made this branch a silent no-op.
+  if [ "$(/usr/bin/id -u)" -eq 0 ] && [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ]; then
     /usr/sbin/chown "$CONSOLE_USER" "$path" 2>/dev/null || true
   fi
   echo "$path"
