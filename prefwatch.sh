@@ -2443,6 +2443,13 @@ _build_defaults_delete_cmd() {
 
 # Internal: route a log line through the right wrapper by kind.
 _log_kind() {
+  # A deferred "new domain" NOTE (see _process_diff_lines) goes out just before
+  # the first line this domain actually produces, and never on its own.
+  if [ -n "${_PENDING_NEWDOM_NOTE:-}" ] && [[ "$2" == "Cmd: "* ]]; then
+    local _ndn="$_PENDING_NEWDOM_NOTE"
+    typeset -g _PENDING_NEWDOM_NOTE=""
+    _log_kind "$1" "$_ndn"
+  fi
   case "$1" in
     USER)   log_user   "$2" ;;
     SYSTEM) log_system "$2" ;;
@@ -3090,8 +3097,14 @@ _process_diff_lines() {
     # nothing. Lifting the guard alone therefore emitted the note and no commands at
     # all. Materialise an empty baseline so every key shows up as an addition.
     : > "$prev" 2>/dev/null || return 0
-    _note_should_show "__newdom__:${dom}" \
-      && _log_kind "$kind" "Cmd: # NOTE: '$dom' is a new domain — the commands below are its full configuration, not a single change"
+    # DEFERRED, not logged here: "the commands below" must be followed by at
+    # least one line. A domain whose every key is filtered — calaccessd and
+    # sharePlayAppPolicies hold one data blob each — printed the NOTE alone,
+    # announcing a configuration that never came. _log_kind flushes it in front
+    # of the first line this domain emits; cleared at the end of this pass.
+    if _note_should_show "__newdom__:${dom}"; then
+      typeset -g _PENDING_NEWDOM_NOTE="Cmd: # NOTE: '$dom' is a new domain — the commands below are its full configuration, not a single change"
+    fi
   fi
 
   typeset -A _added_keys
@@ -3164,6 +3177,9 @@ _process_diff_lines() {
         ;;
     esac
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
+  # Nothing came out for this new domain: the NOTE stays unsaid, and must not
+  # ride in front of the next domain's first line.
+  typeset -g _PENDING_NEWDOM_NOTE=""
 }
 
 # ---------------------------------------
