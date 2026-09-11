@@ -35,6 +35,7 @@
 - Gatekeeper on → `spctl --master-enable`, gone from `--help` and the man page since macOS 26. It emits the documented `--global-enable`; the disable side keeps its verb, under a `# NOTE:`.
 - A `pmset -g custom` display label (`Sleep On Power Button`) was emitted as a setting name. `pmset` rejects it — no multi-word name exists. Such a key now prints where to set it.
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
+- macOS 27 keeps the per-user `TCC.db` in a container, not under `~/Library`, and the privacy watcher skipped that scope in silence — camera, microphone, Accessibility per user went unwatched. It now finds the file through the user's `tccd`; a change there is still reported, though not named: that container refuses the read even with Full Disk Access.
 
 ### Security
 - That same walk read the name of every file under Group Containers — 40,245 of 43,353 here are the user's synced documents, not preferences. It now looks only where a plist can be.
