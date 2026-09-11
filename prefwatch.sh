@@ -5156,7 +5156,16 @@ start_watch_all() {
     #      preference. The first expression accepts any `.plist` under a
     #      container, and Safari's `Caches/WebKit/HSTS/HSTS.plist` came through
     #      as a domain named 'HSTS' whose "configuration" was a cookie's expiry.
-    /usr/bin/sed -l -nE -e 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@' -e 's@^/System/Volumes/Data/@/@' -e '\@/Library/Preferences/(ByHost/)?[^/]+\.plist$@p' |
+    #
+    # LC_ALL=C is load-bearing. This sed sees EVERY path the kernel touches, and
+    # one file name holding a byte that is not UTF-8 — a Latin-1 é on an old
+    # volume, in a stream mds reindexes after an OS upgrade — is enough for BSD
+    # sed to stop with "RE error: illegal byte sequence" and exit. fs_usage then
+    # dies of SIGPIPE with an empty stderr, and the log reads "exited without a
+    # message" (measured on 27.0, one minute after start, and reproduced with a
+    # single \xe9 in a fixture). Under C the regexes — all ASCII — match bytes,
+    # the odd name passes through untouched, and nothing ends.
+    LC_ALL=C /usr/bin/sed -l -nE -e 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@' -e 's@^/System/Volumes/Data/@/@' -e '\@/Library/Preferences/(ByHost/)?[^/]+\.plist$@p' |
     while IFS= read -r plist; do
       [ -z "$plist" ] && continue
       cat_type=$(_fs_classify "$plist")
