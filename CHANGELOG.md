@@ -35,6 +35,7 @@
 - Gatekeeper on → `spctl --master-enable`, gone from `--help` and the man page since macOS 26. It emits the documented `--global-enable`; the disable side keeps its verb, under a `# NOTE:`.
 - A `pmset -g custom` display label (`Sleep On Power Button`) was emitted as a setting name. `pmset` rejects it — no multi-word name exists. Such a key now prints where to set it.
 - Re-enabling a Spotlight category emitted a positional `Delete`. Replayed where the list differs it removed whatever sat at that index, silently; such a removal now targets the value.
+- On macOS 27 `fs_usage` reports `/System/Volumes/Data/Users/…`, the baseline is keyed on `/Users/…`, so every plist an app rewrote came out as "a new domain — its full configuration" (seven in one log, `com.apple.Console` among them). The prefix is dropped. A plist under a container, or in any tree the snapshot never saw, is no longer diffed either — that could only ever produce the same false dump — and says so under `--debug`; a Safari cache file had passed as a domain named `HSTS`.
 
 ### Security
 - Startup read the name of every file under Group Containers — 40,245 of 43,353 here are the user's synced documents, not preferences. It now looks only where a plist can be.
@@ -46,6 +47,7 @@
 
 ### Noise
 - Un-excluded domains holding real prefs, now filtered per key: `com.apple.Music`/`TV` (crossfade, EQ, import encoder), `AddressBook` (text size), `sharingd` (AirDrop discoverability).
+- Exclude `com.apple.SafariBookmarksSyncAgent`: sync tokens, an account hash, migration blobs and last-launched versions — no key a user sets.
 
 ### Note
 - A domain that exists only inside a group container is now explained instead of watched: `defaults` cannot address one by name (0 of 23 answer), so nothing could ever be emitted for it.

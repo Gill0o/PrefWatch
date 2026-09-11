@@ -533,6 +533,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.imagent"
   "com.apple.madrid"
   "com.apple.SafariCloudHistoryPushAgent"
+  "com.apple.SafariBookmarksSyncAgent"      # sync tokens, account hash, migration blobs, last-launched versions — daemon state only, no key a user sets (checked on 27.0)
 
   # Books data store (migration state, cache tasks)
   "com.apple.bookdatastored"
@@ -5037,6 +5038,20 @@ start_watch_all() {
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
   fi
 
+  # Where a plist path belongs, for fs_watch: USER and SYSTEM are the two prefs
+  # trees the snapshot baselined; CONTAINER is a sandboxed app's or group's own
+  # Preferences directory, which it did not; OTHER is anything else the
+  # extraction let through. Its own function so the harness can drive it.
+  _fs_classify() {
+    local _p="$1"
+    case "$_p" in
+      "$prefs_user"/*)   print -r -- USER ;;
+      "$prefs_system"/*) print -r -- SYSTEM ;;
+      */Library/Containers/*|*"/Library/Group Containers/"*) print -r -- CONTAINER ;;
+      *)                 print -r -- OTHER ;;
+    esac
+  }
+
   # Primary detector — real-time plist writes captured live via fs_usage.
   fs_watch() {
     # Debounce: cfprefsd fires several fs_usage events per logical write.
@@ -5107,17 +5122,45 @@ start_watch_all() {
     # silently dropped. Anchoring the capture on a space + a leading '/' fixes it;
     # the inner (…/)? keeps /Library/… (no prefix) matching, and requiring the '/'
     # stops the space inside 'Group Containers' from becoming the anchor.
-    /usr/bin/sed -l -nE 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@p' |
-    /usr/bin/awk -v pu="${prefs_user}" -v ps="${prefs_system}" -v incsys="${INCLUDE_SYSTEM}" '{
-      path=$0;
-      if (index(path, pu)==1)      { print "USER " path }
-      else if (index(path, ps)==1) { print "SYSTEM " path }
-      else                         { print "OTHER " path }
-      fflush()
-    }' | while IFS= read -r line; do
-      cat_type="${line%% *}"; plist="${line#* }"
+    #
+    # Three expressions, one sed, ON ONE LINE (the fs-path-extract case reads it
+    # back by that shape):
+    #   1. the extraction above;
+    #   2. `/System/Volumes/Data/Users/…` → `/Users/…`. fs_usage on macOS 27
+    #      reports the firmlink-resolved path (seen on the first root run there),
+    #      and it is the path that keys the baseline: every plist the snapshot
+    #      saw under $TARGET_HOME/Library/Preferences then had NO baseline at its
+    #      resolved spelling, so an ordinary rewrite of com.apple.Console came out
+    #      as "a new domain — its full configuration". Seven such in one log;
+    #   3. only a file that sits IN a Preferences directory (flat or ByHost) is a
+    #      preference. The first expression accepts any `.plist` under a
+    #      container, and Safari's `Caches/WebKit/HSTS/HSTS.plist` came through
+    #      as a domain named 'HSTS' whose "configuration" was a cookie's expiry.
+    /usr/bin/sed -l -nE -e 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@' -e 's@^/System/Volumes/Data/@/@' -e '\@/Library/Preferences/(ByHost/)?[^/]+\.plist$@p' |
+    while IFS= read -r plist; do
       [ -z "$plist" ] && continue
+      cat_type=$(_fs_classify "$plist")
       if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
+        continue
+      fi
+      # A container plist has no baseline (the snapshot never enters
+      # ~/Library/Containers, by decision — see the README: sandboxed app prefs
+      # are out of scope, and polling never sees them either), so diffing it
+      # could only announce "a new domain" and dump it whole, under a `defaults`
+      # line addressed to a name the file does not answer to. Yoink's and Screen
+      # Sharing's containers did exactly that on the first root run on macOS 27.
+      # Dropped here, and said under --debug so "why didn't it appear" has an
+      # answer. Real-time and polling now cover the SAME ground, which the NOTE
+      # below already claims.
+      if [ "$cat_type" = "CONTAINER" ]; then
+        _dbg_filtered "$(domain_from_plist_path "$plist") (container prefs — out of scope, see README)"
+        continue
+      fi
+      # Same reasoning for any other tree — root's own ~/Library/Preferences
+      # under sudo, another user's, a mounted volume's: no baseline, so nothing
+      # true can be said about it. It used to fall into the SYSTEM branch.
+      if [ "$cat_type" = "OTHER" ]; then
+        _dbg_filtered "$(domain_from_plist_path "$plist") (outside the watched preference trees: $plist)"
         continue
       fi
       # Debounce per-plist using EPOCHREALTIME (float seconds, fork-free via zsh/datetime)
