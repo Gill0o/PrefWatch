@@ -926,6 +926,15 @@ prepare_logfile() {
   # created 0644, readable by every local user, with no umask anywhere in the
   # script. Owner-only, and never fatal if the chmod cannot apply.
   /bin/chmod 600 "$path" 2>/dev/null || true
+  # Owner-only cut Console.app off: under sudo the file is root's, and Console
+  # runs as the console user — it opened on "Impossible de lire le fichier" and
+  # the whole live view, which the watcher's lifecycle hangs on, showed nothing
+  # (observed on the first sudo run after the chmod landed). Hand the file to
+  # the console user: 0600 still keeps every OTHER local user out, and the
+  # console user is the one PrefWatch shows the log to by design.
+  if [ "$(id -u)" -eq 0 ] && [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ]; then
+    /usr/sbin/chown "$CONSOLE_USER" "$path" 2>/dev/null || true
+  fi
   echo "$path"
 }
 

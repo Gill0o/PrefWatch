@@ -42,7 +42,7 @@
 - The exec watcher matched a tool by BASENAME alone: any user could run their own file named `sharing` and have PrefWatch write `sudo <their path>` into a root-replayed log. The path is checked now.
 - Per-app firewall and printer commands put a path or a queue name into a `sudo` line unescaped, where `$(…)` runs before the tool does. Escaped, like every other emitted value.
 - An argument carrying a newline was re-emitted as two lines, the second one reading as a command of its own. Rejected now.
-- The log is created `0600` — it carries the whole TCC table, which apps hold microphone, camera and Full Disk Access, and was world-readable.
+- The log is created `0600` — it carries the whole TCC table, which apps hold microphone, camera and Full Disk Access, and was world-readable. Under `sudo` it is handed to the console user, so Console.app can still show it.
 - The `/tmp` log fallback truncated whatever sat at a predictable path, symlink included. It refuses anything that is not a plain file it owns.
 
 ### Noise
