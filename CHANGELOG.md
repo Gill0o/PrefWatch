@@ -3,8 +3,9 @@
 ## 1.5.0 — unreleased
 
 ### Feature
-- Privacy permissions (Settings > Privacy & Security) are watched. The permission is named where the database is readable; the NOTE points at a PPPC profile, since `tccutil` can only reset. On macOS 27 the per-user database is unreadable even with Full Disk Access — reported, not named.
-- `--fs-usage` (Jamf `$12`): the `fs_usage` real-time detector is opt-in. Measured three times, it emitted nothing polling did not, at the same latency, and it holds the machine's single ktrace slot. ALL mode as root now polls by default.
+- Privacy permissions are watched, named where the TCC database is readable; the NOTE points at a PPPC profile (`tccutil` can only reset).
+- On macOS 27 the per-user TCC database is unreadable even with Full Disk Access: a change there is reported, not named.
+- `--fs-usage` (Jamf `$12`): the real-time detector is opt-in. Measured three times, it added nothing polling did not, at the same latency, and it holds the single ktrace slot.
 - The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand; read verbs are dropped.
 - Bluetooth on/off → a `python3` line, under a NOTE saying which way it went and that the target needs `python3`. No plist, no CLI.
 - Shared folders → `sharing -a`/`-e`/`-r`.
@@ -23,7 +24,8 @@
 - `kill -9` on the main process left the watcher tree running, `fs_usage` included. It notices and stops.
 - An abort under `set -e`, in main or in the watcher root, left the tree reparented to launchd. Both arm `EXIT`.
 - The diff blocked on the cfprefsd flush `fs_watch` backgrounds, holding the plist lock. It waits on its own dumps.
-- macOS 27 `fs_usage` reports `/System/Volumes/Data/…`; the baseline is keyed on `/Users/…`, so every rewritten plist came out as a "new domain". Prefix dropped. Container plists and unknown trees are no longer diffed (no baseline → always a false dump); `--debug` says so.
+- macOS 27 `fs_usage` reports `/System/Volumes/Data/…`, the baseline is keyed on `/Users/…`: every rewritten plist came out as a "new domain". Prefix dropped.
+- Container plists and unknown trees are no longer diffed by `fs_watch` — no baseline, so always a false full dump. `--debug` says so.
 - A non-UTF-8 byte in any file name ended real-time detection (`sed` exited). `LC_ALL=C` now.
 - A "new domain" NOTE, or a positional-array NOTE, printed over nothing when every key was filtered. Both wait for the first line they introduce.
 - A print preset dropped colour model, resolution, paper size and its own name as noise. Reject list now, shared with the diff worker.
@@ -49,7 +51,8 @@
 - The `/tmp` log fallback truncated whatever sat at a predictable path, symlink included. Plain owned files only.
 
 ### Performance
-- `fs_usage` runs in `pathname` mode (6× less memory, 8× fewer lines, same writes seen — `filesys` reached 8 GB under load) and is killed by PrefWatch past 1 GB resident (`PREFWATCH_FS_USAGE_RSS_LIMIT_MB`), with a NOTE.
+- `fs_usage` runs in `pathname` mode: 6× less memory, 8× fewer lines, same writes seen. `filesys` reached 8 GB under load.
+- PrefWatch kills its own `fs_usage` past 1 GB resident (`PREFWATCH_FS_USAGE_RSS_LIMIT_MB`) and says so; polling continues.
 
 ### Noise
 - Un-excluded, filtered per key: `com.apple.Music`/`TV`, `AddressBook`, `sharingd` (AirDrop discoverability).
