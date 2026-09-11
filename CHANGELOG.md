@@ -58,6 +58,7 @@
 - Un-excluded, filtered per key: `com.apple.Music`/`TV`, `AddressBook`, `sharingd` (AirDrop discoverability).
 - `WindowLeft`/`WindowTop` join the window-geometry filter.
 - Excluded: `com.apple.SafariBookmarksSyncAgent` (daemon state only).
+- `com.apple.MenuBarAgent` telemetry (`MenuBarAnalytics.*`, macOS 27) is filtered; it flipped all day on an idle Mac.
 
 ### Note
 - A domain living only in a group container is explained, not watched: `defaults` cannot address it.

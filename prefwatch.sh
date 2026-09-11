@@ -1385,6 +1385,16 @@ is_noisy_key() {
       esac
       ;;
 
+    # Menu bar agent (macOS 27): telemetry counters the agent rewrites whenever an
+    # item appears or leaves — the trailing item count flipped 27↔28 all day on
+    # an idle Mac. Reject list: the positions dict is caught by the global filter,
+    # and a real setting appearing here must still surface.
+    com.apple.MenuBarAgent)
+      case "$keyname" in
+        MenuBarAnalytics.*) return 0 ;;
+      esac
+      ;;
+
     # GlobalPreferences: Filter Keyboard panel first-open artifacts
     .GlobalPreferences)
       case "$keyname" in
