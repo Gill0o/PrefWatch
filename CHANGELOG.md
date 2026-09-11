@@ -30,7 +30,7 @@
 - A "new domain" NOTE, or a positional-array NOTE, printed over nothing when every key was filtered. Both wait for the first line they introduce.
 - A print preset dropped colour model, resolution, paper size and its own name as noise. Reject list now, shared with the diff worker.
 - Its NOTE never fired (keyed on a key no machine has). It now says a logout is needed and what does not travel.
-- Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful.
+- Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful; emptying the list gives a bare `-array`.
 - The two commands that need `python3` on the target say so.
 - `cups_watch` died on the first failed `lpstat -v` (captured pipe under `set -e`).
 - An unreadable plist emitted a `defaults delete` for every key. Guarded.
@@ -42,7 +42,7 @@
 - Gatekeeper on → `spctl --global-enable` (`--master-enable` is undocumented since 26); the disable side keeps its verb under a NOTE.
 - A `pmset` display label (`Sleep On Power Button`) was emitted as a setting name.
 - Re-enabling a Spotlight category emitted a positional `Delete`; it targets the value now.
-- Nine long NOTEs wrapped in Console with no `#` on the second line, which reads as a command. Split at ~120 characters.
+- Long NOTEs wrapped in Console with no `#` on the second line, which reads as a command. Folded at 110 characters, every line prefixed.
 
 ### Security
 - Startup read every file name under Group Containers. The user's synced documents. It looks only where a plist can be.

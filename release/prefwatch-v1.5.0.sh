@@ -2501,6 +2501,20 @@ _build_defaults_delete_cmd() {
 }
 
 # Internal: route a log line through the right wrapper by kind.
+# A NOTE folded for Console: "# NOTE: " on the first line, "#       " on the
+# continuations, cut on a space at 110 characters. Console wraps a long line
+# at the window edge and the wrapped part shows no "#", which reads as a
+# command. $1 kind (USER/SYSTEM/"" for log_line), $2 the text.
+_log_note_wrapped() {
+  local _kind="$1" _first=true _l
+  while IFS= read -r _l; do
+    _l="${_l%% }"
+    [ -n "$_l" ] || continue
+    if [ "$_first" = true ]; then _log_kind "$_kind" "Cmd: # NOTE: $_l"; _first=false
+    else _log_kind "$_kind" "Cmd: #       $_l"; fi
+  done < <(printf '%s\n' "$2" | /usr/bin/fold -s -w 110)
+}
+
 _log_kind() {
   # A deferred "new domain" NOTE (see _process_diff_lines) goes out just before
   # the first line this domain actually produces, and never on its own.
@@ -2901,7 +2915,7 @@ _note_byhost_uuid() {
     # anywhere else. Say so, and point at the flag that makes it deployable.
     */ByHost/*)
       _note_should_show __byhost_uuid__ || return 0
-      _log_kind "$kind" "Cmd: # NOTE: this ByHost filename holds THIS Mac's hardware UUID. The path is valid on this Mac only; re-run with --mdm for a deployable form"
+      _log_note_wrapped "$kind" "this ByHost filename holds THIS Mac's hardware UUID. The path is valid on this Mac only; re-run with --mdm for a deployable form"
       ;;
   esac
 }
@@ -3617,7 +3631,7 @@ _emit_contextual_note() {
 
   # Dedup per burst (sliding window): show once, re-show only after quiet
   _note_should_show "${dom}:${_note}" || return 0
-  log_line "Cmd: # NOTE: $_note"
+  _log_note_wrapped "" "$_note"
 }
 
 # Raw Python runner for array deletions. Prints py_output to stdout so the
@@ -3756,12 +3770,19 @@ for path_tuple, index, item in results:
     #     top of the shell's. Not worth the ambiguity: those fall back.
     # $ and ` are escaped rather than excluded -- they are ordinary in a path and
     # would otherwise run when the line is pasted into a root shell.
+    # Removing the LAST element is the common Spotlight case (re-enabling the
+    # one disabled category empties EnabledPreferenceRules, which macOS itself
+    # writes as []). `defaults write d k -array` with no values writes exactly
+    # that empty array (measured on 27.0), so it is offered too, as the marker
+    # %EMPTY% the shell side turns into a bare `-array`.
     rewrite = ""
     if value:
         elements = prev[array_name]
         if all(isinstance(e, str) for e in elements):
             remaining = [e for e in elements if e != item]
-            if remaining and not any(any(c in e for c in '"\\\n\t') for e in remaining):
+            if not remaining:
+                rewrite = "%EMPTY%"
+            elif not any(any(c in e for c in '"\\\n\t') for e in remaining):
                 rewrite = ' '.join(
                     '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
     # \x1f (unit separator), NOT tab: tab is an IFS *whitespace* character, so zsh
@@ -3839,7 +3860,9 @@ emit_array_deletions() {
     local _val_cmd="" _rw_cmd=""
     # Prefer the python3-FREE form when the worker judged it faithful: it runs on
     # any Mac, where the python3 one needs the Command Line Tools on the target.
-    if [ -n "${elem_rewrite:-}" ]; then
+    if [ "${elem_rewrite:-}" = "%EMPTY%" ]; then
+      _rw_cmd="defaults write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$base")\" -array"
+    elif [ -n "${elem_rewrite:-}" ]; then
       _rw_cmd="defaults write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$base")\" -array ${elem_rewrite}"
     fi
     if [ -z "$_rw_cmd" ] && [ -n "${elem_value:-}" ]; then _val_cmd=$(_build_array_value_delete "$dom" "$base" "$elem_value") || _val_cmd=""; fi
@@ -4392,7 +4415,7 @@ _note_wifi_power() {
 _note_charge_limit() {
   local kind="$1"
   _note_should_show __charge_limit__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: battery charge limit changed. Managed by the power daemon (SMC), not reproducible via defaults; set it in System Settings > Battery"
+  _log_note_wrapped "$kind" "battery charge limit changed. Managed by the power daemon (SMC), not reproducible via defaults; set it in System Settings > Battery"
 }
 
 # desktoppr (scriptingosx) records the image it last applied in its own domain.
