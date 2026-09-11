@@ -12,7 +12,7 @@
 #   ./prefwatch.sh [domain] [OPTIONS]        [domain] defaults to ALL
 #
 #   Options and examples: run `./prefwatch.sh --help` (see show_help() below).
-#   That is the single source for the CLI surface — this header used to repeat it
+#   That is the single source for the CLI surface. This header used to repeat it
 #   and the two drifted (--hot-domains was documented in only one of them).
 #
 # Jamf Pro Mode (automatic detection):
@@ -24,22 +24,22 @@
 #     $5 = Log path (optional). Default:
 #          - ALL: /var/log/prefwatch-v<version>.log
 #          - Domain: /var/log/prefwatch-v<version>-<domain>.log
-#     $6 = INCLUDE_SYSTEM (true/false) — include system preferences (default: true)
-#     $7 = ONLY_CMDS (true/false) — show only commands without debug (default: true)
-#     $8 = EXCLUDE_DOMAINS — comma-separated glob patterns to exclude
+#     $6 = INCLUDE_SYSTEM (true/false). Include system preferences (default: true)
+#     $7 = ONLY_CMDS (true/false). Show only commands without debug (default: true)
+#     $8 = EXCLUDE_DOMAINS. Comma-separated glob patterns to exclude
 #          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
-#     $9 = MDM_OUTPUT (true/false) — MDM deployment: wrap user-domain commands in
+#     $9 = MDM_OUTPUT (true/false). MDM deployment: wrap user-domain commands in
 #          a runAsUser helper (root Jamf policy applies them as the logged-in
 #          user) + templatize PlistBuddy paths ($loggedInUser, $UUID) (default: false)
-#     $10 = HOT_DOMAINS — comma-separated list of domains kept permanently
+#     $10 = HOT_DOMAINS. Comma-separated list of domains kept permanently
 #          "active" so their first change is detected without fs_usage→poll
 #          round-trip. Defaults: the common System Settings panels (Finder,
 #          Dock, Control Center, keyboard/trackpad/mouse, Accessibility,
-#          Spotlight, etc. — see HOT_DOMAINS array). Pass "NONE" to disable.
-#     $11 = DEBUG (true/false) — log '# FILTERED: <dom> <key> (reason)' when a
+#          Spotlight, etc.. See HOT_DOMAINS array). Pass "NONE" to disable.
+#     $11 = DEBUG (true/false). Log '# FILTERED: <dom> <key> (reason)' when a
 #          detected change is suppressed (noise key / excluded domain). Equivalent
 #          of the CLI --debug flag. Default: false.
-#     $12 = FS_USAGE (true/false) — ALL mode as root: also run the fs_usage
+#     $12 = FS_USAGE (true/false). ALL mode as root: also run the fs_usage
 #          real-time detector next to polling. Off by default: measured three
 #          times, it detected nothing polling did not, at the same latency,
 #          and it costs the machine's single ktrace slot and, under load,
@@ -57,12 +57,12 @@ set -o pipefail
 
 # Self-diagnostic: on a `set -e` abort, record WHERE before the shell dies. The
 # /var/log file runs in ONLY_CMDS and captures neither the abort nor stderr, and
-# a managed VM's Terminal may not be watched — so a crash otherwise leaves no
+# a managed VM's Terminal may not be watched. So a crash otherwise leaves no
 # trace. TRAPZERR fires ONLY when a non-zero command would trigger ERR_EXIT
 # (commands guarded by ||/&&/if/while don't fire it), so it's silent in normal
 # operation and pinpoints a real crash to file:line + function. It does NOT
-# prevent the exit — it just annotates it. (A SIGKILL — e.g. an EDR killing the
-# process — can't be trapped, so if nothing is logged and it still dies, suspect
+# prevent the exit. It just annotates it. (A SIGKILL, e.g. an EDR killing the
+# process. Can't be trapped, so if nothing is logged and it still dies, suspect
 # a signal, not a set -e abort.)
 TRAPZERR() {
   local _loc="${funcfiletrace[1]:-?}" _fn="${funcstack[2]:-main}"
@@ -87,7 +87,7 @@ Options:
   -v, --verbose         Show detailed debug output with timestamps
   -q, --only-cmds       Show only executable commands (default)
   --debug               Log '# FILTERED: <dom> <key> (reason)' when a detected
-                        change is suppressed (noise key / excluded domain) —
+                        change is suppressed (noise key / excluded domain).
                         answers "why didn't my change appear?"
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   --hot-domains <list>  Comma-separated list of domains kept permanently active
@@ -103,7 +103,7 @@ Options:
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
   --fs-usage            ALL mode as root: also run the fs_usage real-time
-                        detector next to polling. Off by default — measured, it
+                        detector next to polling. Off by default. Measured, it
                         added nothing polling did not, and it takes the machine's
                         single ktrace slot
 
@@ -128,7 +128,7 @@ Jamf Pro Mode:
     $4 domain · $5 log path · $6 include-system · $7 only-cmds · $8 exclusions
     $9 MDM output · $10 hot domains · $11 debug · $12 fs_usage
   Each is documented in full in the "Jamf Parameters" block at the top of this
-  script — that header is the single source for them.
+  script. That header is the single source for them.
 
 EOF
   exit 0
@@ -185,7 +185,7 @@ parse_cli_args() {
         ;;
       --debug)
         # Diagnostic: log `# FILTERED: <dom> <key> (reason)` when a DETECTED
-        # change is suppressed (noise key / excluded domain) — answers "why
+        # change is suppressed (noise key / excluded domain). Answers "why
         # didn't my change appear?". Not on by default. (General --debug flag;
         # more debug categories can hang off DEBUG_FILTER/new vars later.)
         DEBUG_FILTER_RAW="true"
@@ -212,7 +212,7 @@ parse_cli_args() {
         shift
         ;;
       --no-console)
-        # Don't open Console.app and don't tie the watcher lifecycle to it —
+        # Don't open Console.app and don't tie the watcher lifecycle to it.
         # run until Ctrl+C / SIGTERM. Useful for interactive/VM testing in a
         # Terminal, where closing Console would otherwise stop monitoring.
         NO_CONSOLE_RAW="true"
@@ -221,7 +221,7 @@ parse_cli_args() {
       --fs-usage)
         # Opt-in since 1.5.0. Polling is the detector; fs_usage was measured
         # three times (43 min passive, a stopwatch, a controlled workload) to
-        # add nothing polling did not, at the same latency — and it holds the
+        # add nothing polling did not, at the same latency. And it holds the
         # one ktrace slot, ran to 8 GB under load, and died on one non-UTF-8
         # byte. Kept for the tests that will decide whether 1.5.1 removes it.
         FS_USAGE_RAW="true"
@@ -285,7 +285,7 @@ FS_USAGE=$(to_bool "${FS_USAGE_RAW:-false}")
 #  - ByHost filename -> ...<domain>.$UUID.plist
 # A ByHost file is named after THIS Mac's hardware UUID, so a literal path is
 # valid nowhere else. The caller emits a NOTE with the one-liner resolving $UUID.
-# (`defaults -currentHost write` needs none of this — the flag resolves the UUID.)
+# (`defaults -currentHost write` needs none of this. The flag resolves the UUID.)
 mdm_plist_path() {
   local _p="$1"
   if [ "$MDM_OUTPUT" = "true" ]; then
@@ -312,24 +312,24 @@ typeset -g _MDM_LIU_QB="'${_MDM_LIU}'"
 unsetopt xtrace verbose 2>/dev/null || true
 
 # ---------------------------------------
-# CONFIGURATION — Real-time detector ceiling
+# CONFIGURATION. Real-time detector ceiling
 # ---------------------------------------
 
 # fs_usage keeps every event it has not yet written out. On a Mac whose file
-# activity outruns it — measured: 8 GB and climbing, five minutes into a run
-# during a post-upgrade Spotlight reindex — that is memory with no ceiling. Past
+# activity outruns it. Measured: 8 GB and climbing, five minutes into a run
+# during a post-upgrade Spotlight reindex. That is memory with no ceiling. Past
 # this resident size fs_watch kills it and says so; polling carries on, at the
 # same latency (measured). Override via PREFWATCH_FS_USAGE_RSS_LIMIT_MB.
 typeset -gi FS_USAGE_RSS_LIMIT_MB="${PREFWATCH_FS_USAGE_RSS_LIMIT_MB:-1024}"
 
 # ---------------------------------------
-# CONFIGURATION — Hot domains
+# CONFIGURATION. Hot domains
 # ---------------------------------------
 
 # "Hot" domains stay marked active so their first change is caught without the
 # fs_usage→poll round-trip (cfprefsd can buffer writes for seconds; hot ones are
 # flushed every cycle → ~1-2s). Override via --hot-domains / Jamf $10; "NONE" disables.
-# Note: this is the OPPOSITE of an exclusion — hot domains are kept permanently
+# Note: this is the OPPOSITE of an exclusion. Hot domains are kept permanently
 # active, not filtered out. Real exclusions live in DEFAULT_EXCLUSIONS below.
 typeset -a HOT_DOMAINS=(
   # Shell / appearance
@@ -340,7 +340,7 @@ typeset -a HOT_DOMAINS=(
   com.apple.WindowManager
   com.apple.systemuiserver                             # legacy menu-bar extras
   com.apple.menuextra.clock                            # menu-bar clock format (ShowAMPM/Date/DayOfWeek)
-  # Input — keyboard / shortcuts / trackpad / mouse (all standard plists here, not ByHost)
+  # Input. Keyboard / shortcuts / trackpad / mouse (all standard plists here, not ByHost)
   com.apple.HIToolbox
   com.apple.symbolichotkeys                            # keyboard shortcuts
   com.apple.AppleMultitouchTrackpad
@@ -369,7 +369,7 @@ if [ -n "${HOT_DOMAINS_RAW:-}" ]; then
 fi
 
 # ---------------------------------------
-# CONFIGURATION — Exclusions
+# CONFIGURATION. Exclusions
 # ---------------------------------------
 
 # Default exclusion patterns for noisy/irrelevant domains
@@ -386,7 +386,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.powerlogd"
   "ContextStoreAgent*"
 
-  # Clock/Timer daemon: live timer *instances*, not preferences — fresh UUIDs
+  # Clock/Timer daemon: live timer *instances*, not preferences. Fresh UUIDs
   # (MTTimerID), timestamps and a decrementing MTTimerTimeInterval. Creating a
   # timer is a runtime action; nothing here is a reproducible setting.
   "com.apple.mobiletimerd"
@@ -416,11 +416,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Security & crash reporting
   "com.apple.CrashReporter"
-  # Note: com.apple.security* narrowed — catch only known noisy sub-domains,
+  # Note: com.apple.security* narrowed. Catch only known noisy sub-domains,
   # not "com.apple.security.authorization" or similar which may have real prefs
   "com.apple.security.cloudkeychainproxy3*"  # glob: also covers .keysToRegister sidecar (sync queue)
-  "com.apple.security.sosaccount"            # iCloud Keychain sync-circle state (SOSEnabled/ghostbustdate) — securityd-managed, not a defaults-settable pref
-  "com.apple.filevault"                      # FileVault ByHost state ONLY (lastAnalyticsEvent dict, recoveryKeyCreatorUID/Invalid, lastEnabledProductVersion) — daemon-written after enabling; no reproducible pref. Real control is fdesetup → security_watch emits the FileVault NOTE
+  "com.apple.security.sosaccount"            # iCloud Keychain sync-circle state (SOSEnabled/ghostbustdate). Securityd-managed, not a defaults-settable pref
+  "com.apple.filevault"                      # FileVault ByHost state ONLY (lastAnalyticsEvent dict, recoveryKeyCreatorUID/Invalid, lastEnabledProductVersion). Daemon-written after enabling; no reproducible pref. Real control is fdesetup → security_watch emits the FileVault NOTE
   "com.apple.security.smartcard"
   "com.apple.securityagent"
   "com.apple.securityd"
@@ -440,7 +440,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.apsd"
 
   # Backup internals (constant state updates)
-  # Note: com.apple.TimeMachine removed — contains real prefs (AutoBackup, ExcludedPaths)
+  # Note: com.apple.TimeMachine removed. Contains real prefs (AutoBackup, ExcludedPaths)
   "com.apple.timemachine.helper"
   "com.apple.timemachine.agent"
 
@@ -459,12 +459,12 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Input analytics / telemetry
   "com.apple.inputAnalytics*"
   "com.apple.appleintelligencereporting"
-  # Apple's analytics agent — sync timestamps / usage counters only (AppUsageSyncTime)
+  # Apple's analytics agent. Sync timestamps / usage counters only (AppUsageSyncTime)
   "com.apple.analyticsagent"
   "com.apple.GenerativeFunctions*"
 
   # MetricKit daemon (per-app diagnostic bookkeeping, MX* keys touched on every
-  # MetricKit query — Outlook, Teams, Edge, etc. trigger writes)
+  # MetricKit query. Outlook, Teams, Edge, etc. trigger writes)
   "com.apple.metrickitd"
 
   # ML rate limiter (token bucket counters/timestamps for embedding processing)
@@ -476,7 +476,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Calculator currency cache (auto-updated exchange rates)
   "com.apple.calculateframework"
 
-  # Note: com.apple.SoftwareUpdate removed from exclusions — contains real prefs
+  # Note: com.apple.SoftwareUpdate removed from exclusions. Contains real prefs
   # (AutomaticDownload, AutomaticallyInstallMacOSUpdates, AutomaticCheckEnabled)
   # Cache noise should be filtered at key level instead
 
@@ -492,7 +492,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.coreservices.useractivityd*"
 
   # System internals
-  # loginwindow NOT excluded — system file holds real policies (GuestEnabled,
+  # loginwindow NOT excluded. System file holds real policies (GuestEnabled,
   # LoginwindowText, autoLoginUser, …); churn filtered in is_noisy_key.
   "com.apple.spaces"
   "com.apple.BezelServices"
@@ -507,7 +507,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.ServicesMenu.Services"
 
 
-  # Directory Utility app UI state (toolbar layout, last-browsed perHost node) —
+  # Directory Utility app UI state (toolbar layout, last-browsed perHost node).
   # real directory bindings (AD/LDAP) live in OpenDirectory / config profiles,
   # NOT this user plist, so nothing here is deployable.
   "com.apple.DirectoryUtility"
@@ -527,7 +527,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # iCloud account services (MobileMeAccounts): the Services array is positional,
   # so an emitted `Set :Accounts:0:Services:N:Enabled` targets a different service
   # on another machine/OS (indices shift once e.g. ImagePlayground appears in
-  # Sequoia 15.2). PlistBuddy addresses arrays by index only, not by ServiceID —
+  # Sequoia 15.2). PlistBuddy addresses arrays by index only, not by ServiceID.
   # so no portable command exists for these toggles.
   "MobileMeAccounts"
 
@@ -540,11 +540,11 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.itunescloud"
   "com.apple.itunescloudd"
   # Media library daemon: only migration flags, persistent IDs, daemon-written
-  # store capability flags and an update counter — no user prefs. (Capital AMP;
+  # store capability flags and an update counter. No user prefs. (Capital AMP;
   # the com.apple.amp* glob is case-sensitive and misses it.)
   "com.apple.AMPLibraryAgent"
 
-  # ShazamKit: CloudKit account cache, boot tasks and an access token only — no
+  # ShazamKit: CloudKit account cache, boot tasks and an access token only. No
   # user preferences (the SHLibrary…UserID churn is internal iCloud identity state)
   "com.apple.ShazamKit"
 
@@ -564,7 +564,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.imagent"
   "com.apple.madrid"
   "com.apple.SafariCloudHistoryPushAgent"
-  "com.apple.SafariBookmarksSyncAgent"      # sync tokens, account hash, migration blobs, last-launched versions — daemon state only, no key a user sets (checked on 27.0)
+  "com.apple.SafariBookmarksSyncAgent"      # sync tokens, account hash, migration blobs, last-launched versions. Daemon state only, no key a user sets (checked on 27.0)
 
   # Books data store (migration state, cache tasks)
   "com.apple.bookdatastored"
@@ -583,7 +583,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.siri.DialogEngine"
   "com.apple.siri.sirisuggestions"
   "com.apple.siriknowledged"
-  # Siri/Spotlight suggestions backend daemon — server-driven resource-download
+  # Siri/Spotlight suggestions backend daemon. Server-driven resource-download
   # URL cache (version-stamped CDN links), upload headers, internal version; no
   # user prefs (the actual toggles live in com.apple.suggestions/sirisuggestions)
   "com.apple.parsecd"
@@ -634,7 +634,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # VirtualBuddy (VM app window state, UI settings)
   "codes.rambo.VirtualBuddy"
 
-  # Adobe Genuine Service (licensing/consent daemon — consent strings contain
+  # Adobe Genuine Service (licensing/consent daemon. Consent strings contain
   # French apostrophes that break PlistBuddy single-quote escaping anyway)
   "com.adobe.AdobeGenuineService"
 
@@ -652,7 +652,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Squirrel updater helpers (`<bundle-id>.ShipIt`). Squirrel is the auto-update
   # framework behind most Electron apps; SQRL* keys are its installer bookkeeping
-  # — `SQRLShipItInstallationAttempts`, `SQRLInstallerOwnedBundle` — written when
+  # - `SQRLShipItInstallationAttempts`, `SQRLInstallerOwnedBundle`, written when
   # an install starts and deleted when it finishes, so each update surfaces as a
   # write plus two spurious deletes. Ten such domains on one machine (VS Code,
   # Slack, GitHub, Postman, drawio…), every one of them EMPTY at rest: there is
@@ -682,7 +682,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # Background event counters & sync telemetry
   "com.apple.cseventlistener"
   "com.apple.spotlightknowledge"
-  "com.apple.SpotlightKnowledge"   # zsh globs are case-sensitive — the real domain is CamelCase (hdbCutover.*.evaluationCount counters)
+  "com.apple.SpotlightKnowledge"   # zsh globs are case-sensitive. The real domain is CamelCase (hdbCutover.*.evaluationCount counters)
   "com.apple.amsengagementd"
   "com.apple.StatusKitAgent"
   "com.apple.Accessibility.Assets"
@@ -693,7 +693,7 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Siri assistant daemon/backup churn (experiment IDs, trial configs, sync
   # counters, check dates, CloudKit cache). NOTE: com.apple.assistant.support is
-  # deliberately NOT excluded — real Siri prefs live there (Assistant Enabled,
+  # deliberately NOT excluded. Real Siri prefs live there (Assistant Enabled,
   # dictation settings, data-sharing opt-ins); a narrow list keeps .support visible.
   "com.apple.assistant"
   "com.apple.assistant.backedup"
@@ -714,8 +714,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.textunderstanding*"
 
   # Filtered per-key in is_noisy_key (not excluded) so real prefs survive:
-  # dock, finder, Safari, systemsettings, Mail, Messages, and — un-excluded
-  # 2026-09-08 — Music, TV, AddressBook, sharingd (AirDrop discoverability) and
+  # dock, finder, Safari, systemsettings, Mail, Messages, and. Un-excluded
+  # 2026-09-08. Music, TV, AddressBook, sharingd (AirDrop discoverability) and
   # amp.mediasharingd (detected, but every key filtered: they mirror state the
   # daemon never reads back, so _note_mediasharing speaks for the domain).
 )
@@ -736,7 +736,7 @@ EXCLUDE_PATTERNS=()
 for p in "${_raw_excl[@]}"; do
   # Trim in zsh, not through `printf | sed`. That form was a CAPTURED PIPE under
   # `set -e -o pipefail`: any failing link kills the script before LOGFILE even
-  # exists, so the only trace is /tmp/prefwatch-abort.log. And it does fail —
+  # exists, so the only trace is /tmp/prefwatch-abort.log. And it does fail.
   # `sed` exits 1 with "illegal byte sequence" on an invalid UTF-8 byte, which a
   # --exclude value is free to contain. Reproduced before removing it.
   # It also cost 322 forks and ~310 ms at every launch, against 0.5 ms here.
@@ -811,14 +811,14 @@ fi
 if [ "$_clt_installed" = "true" ] && [ -x /usr/bin/python3 ] && _python3_validate /usr/bin/python3; then
   : # validated via CLT python3
 elif command -v python3 >/dev/null 2>&1; then
-  # Try non-system python3 (Homebrew, pyenv, etc.) — safe to run without CLT
+  # Try non-system python3 (Homebrew, pyenv, etc.). Safe to run without CLT
   _candidate="$(command -v python3)"
   if [ "$_candidate" != "/usr/bin/python3" ] && _python3_validate "$_candidate"; then
     : # validated via alternative python3
   fi
 fi
 
-# Temp directory + EXIT trap — covers every MAIN exit path (sub-shells
+# Temp directory + EXIT trap. Covers every MAIN exit path (sub-shells
 # still arm their own TERM/INT traps to kill workers before EXIT fires).
 PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
 /bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
@@ -894,8 +894,8 @@ get_plist_path() {
 }
 
 # Derive a "defaults" domain from a .plist path.
-# Fork-free: this is the most-multiplied helper in the file — once per plist during
-# the ALL-mode snapshot (hundreds) and again on every fs_usage/poll event — so the
+# Fork-free: this is the most-multiplied helper in the file. Once per plist during
+# the ALL-mode snapshot (hundreds) and again on every fs_usage/poll event. So the
 # former `basename` + `sed` pair (2 forks per call) is done with zsh builtins.
 # `${p:t}` is basename; the ByHost UUID suffix is stripped by `${dom%.*}` because a
 # trailing 8+ hex/dash segment never itself contains a '.', making it exactly the
@@ -941,7 +941,7 @@ prepare_logfile() {
     fname="$(/usr/bin/basename "$path")"
     path="/tmp/${fname}"
     # The /tmp fallback is a PREDICTABLE name in a world-writable directory, so
-    # another user can pre-create it — as a symlink to a file of theirs, which
+    # another user can pre-create it. As a symlink to a file of theirs, which
     # this truncate would then destroy. `>|` still follows one; refusing to run
     # on anything that is not a plain file we can own is the only safe answer.
     # -L FIRST and on its own: `[ -e ]` FOLLOWS the link, so a symlink aimed at a
@@ -953,19 +953,19 @@ prepare_logfile() {
     fi
     : > "$path" 2>/dev/null || true
   fi
-  # The log carries the whole TCC table — which apps hold microphone, camera,
-  # Full Disk Access — plus network config, share paths and account names. It was
+  # The log carries the whole TCC table. Which apps hold microphone, camera,
+  # Full Disk Access. Plus network config, share paths and account names. It was
   # created 0644, readable by every local user, with no umask anywhere in the
   # script. Owner-only, and never fatal if the chmod cannot apply.
   /bin/chmod 600 "$path" 2>/dev/null || true
   # Owner-only cut Console.app off: under sudo the file is root's, and Console
-  # runs as the console user — it opened on "Impossible de lire le fichier" and
+  # runs as the console user. It opened on "Impossible de lire le fichier" and
   # the whole live view, which the watcher's lifecycle hangs on, showed nothing
   # (observed on the first sudo run after the chmod landed). Hand the file to
   # the console user: 0600 still keeps every OTHER local user out, and the
   # console user is the one PrefWatch shows the log to by design.
-  # /usr/bin/id, never bare `id`: this function's `local path` is zsh's $path —
-  # the array tied to PATH — so inside it PATH is the log file's name and a bare
+  # /usr/bin/id, never bare `id`: this function's `local path` is zsh's $path.
+  # the array tied to PATH. So inside it PATH is the log file's name and a bare
   # command is "not found". Every other call here was already absolute, which is
   # why it was never noticed; the bare `id` made this branch a silent no-op.
   if [ "$(/usr/bin/id -u)" -eq 0 ] && [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ]; then
@@ -975,7 +975,7 @@ prepare_logfile() {
 }
 
 # Interactive y/n prompt. Exit: 0 = yes, 1 = no, 2 = no channel / dialog timed out.
-# Tries in order: stdin (TTY), /dev/tty (probed — a bare open can set -e-exit under
+# Tries in order: stdin (TTY), /dev/tty (probed. A bare open can set -e-exit under
 # Jamf Self Service), then an osascript dialog as the console user via launchctl
 # asuser (5-min timeout → 2, so Jamf policies never hang).
 prompt_yn() {
@@ -994,7 +994,7 @@ prompt_yn() {
     fi
   fi
 
-  # GUI fallback — only when a real console user is logged in.
+  # GUI fallback. Only when a real console user is logged in.
   # `on run argv` passes $prompt as a native argument, so embedded newlines
   # render correctly and no shell/AppleScript escaping is needed.
   if [ -n "${CONSOLE_USER:-}" ] && [ "$CONSOLE_USER" != "root" ] \
@@ -1031,7 +1031,7 @@ end run'
 # Filtering
 #
 # To exclude a noisy domain:  add its name to DEFAULT_EXCLUSIONS (glob patterns supported)
-# To filter a noisy key:      add a pattern to is_noisy_key() — automatically applies
+# To filter a noisy key:      add a pattern to is_noisy_key(). Automatically applies
 #                              to both 'defaults' and PlistBuddy output
 # ---------------------------------------
 
@@ -1068,13 +1068,13 @@ is_noisy_key() {
 
   case "$keyname" in
     # Keep: NSTableViewDefaultSizeMode is the sidebar icon size (real pref),
-    # NOT table-view UI state — must precede the NSTableView* noise glob below
+    # NOT table-view UI state. Must precede the NSTableView* noise glob below
     NSTableViewDefaultSizeMode) return 1 ;;
     # Window positions & UI state (changes on every resize/move).
     # NSStatusItem* here is GLOBAL, so it already covers com.apple.controlcenter,
     # com.apple.Spotlight and every third-party menu-bar app: those domains used
     # to repeat the pattern in their own case block, where it could never be
-    # reached. (It also swallows `NSStatusItem VisibleCC <Module>` — a known,
+    # reached. (It also swallows `NSStatusItem VisibleCC <Module>`. A known,
     # deliberate trade-off; do not narrow it without measuring what a System
     # Settings toggle really writes.)
     NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|WindowLeft|WindowTop|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
@@ -1084,16 +1084,16 @@ is_noisy_key() {
     NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
       return 0 ;;
 
-    # NSToolbar Configuration <UUID> — a per-instance toolbar layout an app dumps
+    # NSToolbar Configuration <UUID>. A per-instance toolbar layout an app dumps
     # on first window open (e.g. Console). The UUID is regenerated per instance,
     # so the command isn't portable. NAMED configs (NSToolbar Configuration
-    # Browser) ARE reproducible and are kept — the pattern requires a UUID
+    # Browser) ARE reproducible and are kept. The pattern requires a UUID
     # (8-4-4-4-12 hex) right after the name, which "Browser" etc. never match.
     NSToolbar\ Configuration\ [0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f]*)
       return 0 ;;
 
     # Sparkle updater internals (auto-update framework state)
-    # Note: SUSendProfileInfo kept — it's a user-toggleable opt-in for stats
+    # Note: SUSendProfileInfo kept. It's a user-toggleable opt-in for stats
     SUUpdateGroupIdentifier|SULastCheckTime|SUHasLaunchedBefore|SUSkippedVersion|SUUpdateRelaunchingMarker)
       return 0 ;;
 
@@ -1103,7 +1103,7 @@ is_noisy_key() {
       return 0 ;;
 
     # bare *Date is too broad (masks ExpirationDate/StartDate); anchored *last*Date
-    # above is safe — "last…Date" is always a timestamp (e.g. lastCoolOffDate).
+    # above is safe. "last…Date" is always a timestamp (e.g. lastCoolOffDate).
 
     # HockeyApp / App Center SDK session lifecycle timestamps (BIT* prefix,
     # epoch floats rewritten on every foreground/background transition)
@@ -1133,7 +1133,7 @@ is_noisy_key() {
 
     # UUIDs (transient notification/state identifiers)
     # Matches: uuid, UUID, *UUID, *uuid (e.g., sessionUUID, updatedSinceBootUUID)
-    # Note: removed exact `flags` — too generic, apps can use it as a real pref
+    # Note: removed exact `flags`. Too generic, apps can use it as a real pref
     uuid|UUID|*UUID|*uuid)
       return 0 ;;
 
@@ -1160,7 +1160,7 @@ is_noisy_key() {
     parent-mod-date|file-mod-date|mod-count|file-type)
       return 0 ;;
 
-    # Note: `last-selection` is NOT global (too generic) — filtered domain-specific
+    # Note: `last-selection` is NOT global (too generic). Filtered domain-specific
     # for com.apple.screencapture below.
 
     # Recent items & history
@@ -1181,7 +1181,7 @@ is_noisy_key() {
       return 0 ;;
 
     # App launch counters & donation reminders (internal state)
-    # Note: removed `uses` exact and `*donate*` — too generic, could mask real prefs
+    # Note: removed `uses` exact and `*donate*`. Too generic, could mask real prefs
     launchCount|*reminder.date|*donateDialogShown*|*lastDonateDate*)
       return 0 ;;
 
@@ -1202,7 +1202,7 @@ is_noisy_key() {
       return 0 ;;
 
     # Declarative Device Management persisted state (DDMPersistedErrorKey,
-    # DDMPersistedStateKey, etc. — daemon-managed across many domains)
+    # DDMPersistedStateKey, etc.. Daemon-managed across many domains)
     DDMPersisted*)
       return 0 ;;
 
@@ -1216,16 +1216,16 @@ is_noisy_key() {
       return 0 ;;
 
     # View state (scroll positions, selected items, etc.)
-    # Note: *ViewOptionsFrame/Window only — keeps Finder StandardViewOptions etc.
+    # Note: *ViewOptionsFrame/Window only. Keeps Finder StandardViewOptions etc.
     *ScrollPosition*|*scrollPosition*|*SelectedItem*|*ViewOptionsFrame*|*ViewOptionsWindow*)
       return 0 ;;
 
     # Playback & connection state (transient states across all apps)
-    # Note: removed *ConnectionState* — too broad, could mask real connection prefs
+    # Note: removed *ConnectionState*. Too broad, could mask real connection prefs
     *PlaybackStatus*|*Playback*Status*|*lastNowPlayedTime*|*LastConnected*)
       return 0 ;;
 
-    # Note: removed state|status|State|Status — too generic, apps may use these as real prefs
+    # Note: removed state|status|State|Status. Too generic, apps may use these as real prefs
   esac
 
   # Hash keys (session IDs, cache keys) - long hex strings (zsh built-in regex, no fork)
@@ -1240,7 +1240,7 @@ is_noisy_key() {
     return 0
   fi
 
-  # Note: removed ALL_CAPS regex — too broad, could mask real prefs like SHOW_HIDDEN_FILES, ENABLE_DEBUG
+  # Note: removed ALL_CAPS regex. Too broad, could mask real prefs like SHOW_HIDDEN_FILES, ENABLE_DEBUG
   # Known noisy ALL_CAPS keys should be filtered per-domain instead
 
   # ========================================================================
@@ -1281,7 +1281,7 @@ is_noisy_key() {
         PreviewOptionsWindow.Location)
           return 0 ;;
         # Preview-pane geometry: the Finder writes the default width (240) as a
-        # side-effect of showing the pane — switching to Gallery view emits it
+        # side-effect of showing the pane. Switching to Gallery view emits it
         # alongside the real FXPreferredViewStyle change. Same class as the
         # already-filtered *SidebarWidth* / *.column.*.width. Scoped to the two
         # width keys so ShowPreviewPane (⌘⇧P, a real toggle) and
@@ -1379,14 +1379,14 @@ is_noisy_key() {
     # Universal Access: Filter internal change history
     com.apple.universalaccess)
       case "$keyname" in
-        # hudNotifiedConstrast (sic): internal contrast-HUD state, not a setting —
+        # hudNotifiedConstrast (sic): internal contrast-HUD state, not a setting.
         # value type even varies by machine (float here, bool elsewhere)
         History|com.apple.custommenu.apps|displaysLastCursorLocation|hudNotifiedConstrast) return 0 ;;
       esac
       ;;
 
     # Menu bar agent (macOS 27): telemetry counters the agent rewrites whenever an
-    # item appears or leaves — the trailing item count flipped 27↔28 all day on
+    # item appears or leaves. The trailing item count flipped 27↔28 all day on
     # an idle Mac. Reject list: the positions dict is caught by the global filter,
     # and a real setting appearing here must still surface.
     com.apple.MenuBarAgent)
@@ -1401,7 +1401,7 @@ is_noisy_key() {
         KB_SpellingLanguage|KB_SpellingLanguageIsAutomatic) return 0 ;;
         # Time-zone picker breadcrumbs (Date & Time pane): the last-clicked city's
         # coords/name/country, its AppleMapID, the derived country code. NONE of
-        # these SET the time zone — timezone_watch emits `systemsetup -settimezone`
+        # these SET the time zone. Timezone_watch emits `systemsetup -settimezone`
         # (the reproducer); these are UI state, and AppleMapID/lat-long aren't portable.
         com.apple.TimeZonePref.*|com.apple.preferences.timezone.*|com.apple.AppleModemSettingTool.LastCountryCode) return 0 ;;
         # Keep: KB_DoubleQuoteOption, KB_SingleQuoteOption, NSUserQuotesArray (quote style)
@@ -1410,7 +1410,7 @@ is_noisy_key() {
 
     # Spotlight: Filter UI state and counters
     # Siri: internal stash of the menu-bar icon visibility, set on disable and
-    # deleted on enable — state preservation, not a pref (StatusMenuVisible is the
+    # deleted on enable. State preservation, not a pref (StatusMenuVisible is the
     # real one; VoiceTriggerUserEnabled stays too).
     com.apple.Siri)
       case "$keyname" in
@@ -1420,7 +1420,7 @@ is_noisy_key() {
 
     # Siri setup wizard (macOS 27): which onboarding panes were last shown and at
     # what version (`lastShownCoordinatorVersion:Data Sharing`, `:Voice Selection`)
-    # — bookkeeping the wizard writes as it runs, not a setting. The real opt-ins
+    # - bookkeeping the wizard writes as it runs, not a setting. The real opt-ins
     # it produces live in com.apple.assistant.support and are kept.
     com.apple.siri.setup)
       case "$keyname" in
@@ -1429,7 +1429,7 @@ is_noisy_key() {
       ;;
 
     # Assistant support: 'Offline Dictation Status' is per-locale model-download
-    # status — Installed/High Quality/Continuous Listening/Emoji Recognition/…
+    # status. Installed/High Quality/Continuous Listening/Emoji Recognition/…
     # flags the daemon writes when an offline dictation model downloads, keyed by
     # EVERY locale (en-US, fr-FR, zh-TW, …). NOT settings: `defaults write
     # …Installed true` fakes the flag, it doesn't install the model. The real
@@ -1478,7 +1478,7 @@ is_noisy_key() {
       ;;
 
     # Campo: per-target engagement counters (telemetry), e.g.
-    # engagementCountForDate-com.apple.Spotlight — a usage tally, not a setting.
+    # engagementCountForDate-com.apple.Spotlight. A usage tally, not a setting.
     com.apple.campo)
       case "$keyname" in
         engagementCount*|engagementDate*) return 0 ;;
@@ -1666,7 +1666,7 @@ is_noisy_key() {
     # Audio MIDI Setup: Filter machine-specific device selection
     com.apple.audio.AudioMIDISetup)
       case "$keyname" in
-        # Hardware UUID / USB engine path / virtual-device name — won't transplant
+        # Hardware UUID / USB engine path / virtual-device name. Won't transplant
         audioDevice.selected) return 0 ;;
       esac
       ;;
@@ -1702,12 +1702,12 @@ is_noisy_key() {
       ;;
 
     com.trendmicro.ztnasase)
-      # Trend Micro ZTNA/SASE agent — mixes real config with agent state. Filter
+      # Trend Micro ZTNA/SASE agent. Mixes real config with agent state. Filter
       # the STATE: version numbers (all "0"), the per-device DeviceId (not
       # portable), transient/empty state and runtime validity flags. KEEP the
       # reproducible prefs (dontShowSignInPopupAgain, requireAuth*, separateAuth,
       # LoginURL/SwgServer/pacUrl, CompanyId, *IsEnable).
-      # UserName is the signed-in account's e-mail — per-user PII, never
+      # UserName is the signed-in account's e-mail. Per-user PII, never
       # deployable. swgConnectStatus is the live connection state (the global
       # *Status patterns were deliberately dropped as too broad, so it needs a
       # per-domain rule). NOT filtered pending confirmation: swgUnprotectFlag,
@@ -1718,13 +1718,13 @@ is_noisy_key() {
       esac
       ;;
 
-    # Extensis Suitcase Fusion / Connect Fonts — last_sent_* are telemetry
+    # Extensis Suitcase Fusion / Connect Fonts. Last_sent_* are telemetry
     # bookkeeping: the ISO-8601 instant at which the app last shipped diagnostics
     # or metrics, rewritten on every send. "last sent" describes an event that
     # already happened, never a setting. They escape the global timestamp patterns
     # because those target CamelCase (*Date, *Time, *Timestamp) while these are
     # snake_case with no time word in the name.
-    # Per-KEY, never the domain: it also holds real prefs — SUAutomaticallyUpdate
+    # Per-KEY, never the domain: it also holds real prefs. SUAutomaticallyUpdate
     # (Sparkle auto-update) and vault.path (the font vault location).
     com.extensis.*)
       case "$keyname" in
@@ -1732,13 +1732,13 @@ is_noisy_key() {
       esac
       ;;
 
-    # Setapp desktop client — writes short-lived work markers that it deletes as
+    # Setapp desktop client. Writes short-lived work markers that it deletes as
     # soon as the job ends, so each one surfaces as a spurious Delete. Observed
     # seven in a single session. *ActiveRefreshSession* carries a fresh UUID per
     # scheduled refresh (the global UUID rule misses it: the UUID is glued to the
     # end of the key, it is not the whole key), and UpdatingSearchIndexItem-<id>
     # marks an in-flight index update. Per-KEY, never the domain: this plist also
-    # holds ~89 keys of real settings — SUAutomaticallyUpdate, soundEffects,
+    # holds ~89 keys of real settings. SUAutomaticallyUpdate, soundEffects,
     # searchHistoryEnabled, assistantButtonPosition, <id>-favorites.
     com.setapp.*)
       case "$keyname" in
@@ -1756,7 +1756,7 @@ is_noisy_key() {
       esac
       ;;
 
-    # Monotype Fonts agent — MFEPProcessId is the helper's live PID (stored as a
+    # Monotype Fonts agent. MFEPProcessId is the helper's live PID (stored as a
     # string, new on every launch) and MFEPExecutablePath is the install location
     # the agent writes for itself. Both are daemon state, not admin-settable.
     # Named explicitly rather than an MFEP* glob so a real MFEP setting survives.
@@ -1767,7 +1767,7 @@ is_noisy_key() {
       ;;
 
     # Battery charge limit: the only key here (`…prior.limit`) is UI state, not
-    # the control — the real limit is SMC/powerd-managed and a `defaults write`
+    # the control. The real limit is SMC/powerd-managed and a `defaults write`
     # doesn't apply it. Filter the misleading command; _note_charge_limit emits
     # an explanatory NOTE instead.
     com.apple.batteryui.charging.mac)
@@ -1778,7 +1778,7 @@ is_noisy_key() {
 
     # AirDrop discoverability (System Settings > General > AirDrop & Handoff).
     # The domain was excluded WHOLE for its Auto Unlock bookkeeping and AirDrop
-    # hashes — 29 of its 30 keys — which also dropped the one real setting.
+    # hashes (29 of its 30 keys), which also dropped the one real setting.
     # A drop-list, not a keep-list: a future setting must still surface.
     com.apple.sharingd)
       case "$keyname" in
@@ -1792,7 +1792,7 @@ is_noisy_key() {
     #
     # EVERY key is filtered, and the domain is still watched: the change is worth
     # reporting, no command here reproduces it. Measured on 26.6.2 with
-    # `public-sharing-enabled` — the write survives, the daemon does not revert
+    # `public-sharing-enabled`. The write survives, the daemon does not revert
     # it, it survives a `launchctl kickstart` of mediasharingd, and the Sharing
     # pane never follows, reopened or not. These keys are a mirror the daemon
     # writes and does not read. _note_mediasharing says so in their place; same
@@ -1803,7 +1803,7 @@ is_noisy_key() {
       ;;
 
     # Music, TV and Contacts were excluded WHOLE, for their window geometry and
-    # column state — and that dropped the real settings sitting next to it. The
+    # column state. And that dropped the real settings sitting next to it. The
     # split measured on one Mac: Music 49 keys → 8, TV 38 → 1, Contacts 12 → 3,
     # and every survivor is reachable in the app's own settings (crossfade, EQ
     # presets, import encoder, lyrics, concurrent downloads, Contacts text size
@@ -1833,7 +1833,7 @@ is_noisy_key() {
     # Time Machine. backupd owns this file and `tmutil` is the documented way in:
     # AutoBackup is `tmutil enable`/`disable`, and SkipPaths is
     # `tmutil addexclusion`/`removeexclusion`. Whether a raw write to this
-    # root-owned plist reaches backupd was NOT measured — which is reason enough
+    # root-owned plist reaches backupd was NOT measured. Which is reason enough
     # to emit the documented command instead. _note_timemachine does.
     # The rest of the domain (AutoBackupInterval, QuotaGB, the destination
     # record) has no tmutil verb and is left exactly as it was.
@@ -1844,7 +1844,7 @@ is_noisy_key() {
       ;;
 
     # Wi-Fi on/off. airportd owns this file, so writing PowerEnabled back only
-    # forges the record — `networksetup -setairportpower` is what actually moves
+    # forges the record. `networksetup -setairportpower` is what actually moves
     # the radio, and _note_wifi_power emits it in place of the misleading write.
     com.apple.airport.preferences)
       case "$keyname" in
@@ -1853,7 +1853,7 @@ is_noisy_key() {
       ;;
 
     # desktoppr's own record of the image it last applied. Writing the key back
-    # sets no wallpaper — it only forges that record on the target. Filter the
+    # sets no wallpaper. It only forges that record on the target. Filter the
     # misleading command; _note_desktoppr emits the command that DOES apply it.
     com.scriptingosx.desktoppr)
       case "$keyname" in
@@ -1884,7 +1884,7 @@ is_noisy_command() {
   esac
 
   # ARD Computer Info fields (Text1-4) initialised EMPTY when Remote Management
-  # is enabled — side-effect of the toggle. Keep them when they carry a value.
+  # is enabled. Side-effect of the toggle. Keep them when they carry a value.
   case "$cmd" in
     *com.apple.RemoteDesktop*'"Text'[1-4]'" -string ""')
       return 0
@@ -1897,27 +1897,27 @@ is_noisy_command() {
 # Array ELEMENTS that are pure churn, identified by a marker value appearing
 # anywhere in the element's dict. is_noisy_pbcmd below can only judge ONE emitted
 # line at a time, so it drops the single line carrying the marker and leaves its
-# siblings — a half-built dict plus its Delete, repeating on every open/close.
+# siblings. A half-built dict plus its Delete, repeating on every open/close.
 # Deletions are worse: the shell is only told the element's key NAMES, never the
 # values, so it cannot recognise the element at all. The Python workers do have
 # the whole element, so the LIST lives here (single source of truth) and is passed
-# to them as data — no second copy of the rule to drift out of sync.
+# to them as data. No second copy of the rule to drift out of sync.
 #
-# Format: domain|array|marker — scoped to ONE array on purpose. CharacterPaletteIM
+# Format: domain|array|marker. Scoped to ONE array on purpose. CharacterPaletteIM
 # appears in BOTH HIToolbox arrays and they mean opposite things:
 #   AppleSelectedInputSources = the ACTIVE source; the Character Viewer adds itself
 #     when opened and removes itself when closed → churn.
 #   AppleEnabledInputSources  = the list in Settings > Keyboard; enabling the viewer
 #     there is a deliberate, deployable setting → must survive.
-# A bare marker would silence both. Also NOT matching "Non Keyboard Input Method" —
+# A bare marker would silence both. Also NOT matching "Non Keyboard Input Method".
 # com.apple.PressAndHold is one too and does not behave this way.
 # Print presets: the ONE noise list for com.apple.print.custompresets*, held here
-# and handed to the Python worker as data — the pattern _ELEMENT_NOISE_MARKERS
+# and handed to the Python worker as data. The pattern _ELEMENT_NOISE_MARKERS
 # below already uses for the same reason. Two copies had drifted: the shell kept a
 # glob whitelist, the worker held the SAME STRINGS used as `startswith()` prefixes,
 # where a leading `*` means "begins with a literal asterisk" instead of "ends
 # with". Measured: 0 of 149 keys start with `*`, so nine of the worker's fourteen
-# entries were dead — including the whole "useful Fiery settings" block — and the
+# entries were dead, including the whole "useful Fiery settings" block, and the
 # two filters returned OPPOSITE verdicts on 9 of 104 real keys.
 #
 # And it is a REJECT list now, not a whitelist. This domain was the only whitelist
@@ -1925,17 +1925,17 @@ is_noisy_command() {
 # named `PresetName` and `PresetBehavior`, which exist nowhere on a real machine,
 # while dropping `com.apple.print.preset.displayName` (the preset's own NAME),
 # `ColorModel`, `Resolution`, `DuplexBindingEdge`, `APCustomColorMatchingProfile`
-# and the custom paper size — every one of them a setting someone chose.
+# and the custom paper size. Every one of them a setting someone chose.
 #
 # Matched as globs on BOTH sides (zsh `case` / Python fnmatchcase), so one string
 # cannot mean two things again.
 typeset -ga _PRINT_PRESET_NOISE=(
   'EPIJ*'                                  # Epson driver internals: opaque codes ('116', '35')
-  'EPSON.PrintModule.Setting.*'            # machine identity — HostName, PrinterName
+  'EPSON.PrintModule.Setting.*'            # machine identity. HostName, PrinterName
   'com.apple.print.ticket.*'               # ticket structure (APIVersion, type)
-  'com.apple.print.DialogDismissedBy'      # which BUTTON was clicked — and localised
-  'com.apple.print.PDEsUsed'               # which pane was open — localised
-  'com.apple.print.pageRange'              # range of the last job — localised ("Toutes les pages (2)")
+  'com.apple.print.DialogDismissedBy'      # which BUTTON was clicked. And localised
+  'com.apple.print.PDEsUsed'               # which pane was open. Localised
+  'com.apple.print.pageRange'              # range of the last job. Localised ("Toutes les pages (2)")
   'com.apple.print.totalPages'             # last job
   'com.apple.print.lastPresetUsedPrefType' # state
   'PaperInfoIsSuggested'                   # state
@@ -1996,7 +1996,7 @@ is_noisy_pbcmd() {
         *":columns:"*":width "*)
           return 0 ;;
         # axTextSize (ax-prefixed) is the accessibility-derived per-view text
-        # size — the Finder recomputes it in every view dict from the chosen
+        # size. The Finder recomputes it in every view dict from the chosen
         # `universalaccess FontSizeCategory`. It is never set from the Finder UI
         # (Cmd+J uses textSize/iconSize/FontSize, which stay real), so one
         # Accessibility text-size change would otherwise flood ~18 Set lines.
@@ -2016,7 +2016,7 @@ is_noisy_pbcmd() {
       esac
       ;;
     com.apple.preferences.accounts)
-      # 'deletedUsers' is a bookkeeping record of removed accounts — replaying
+      # 'deletedUsers' is a bookkeeping record of removed accounts. Replaying
       # the Add commands just creates a phantom entry, it does NOT delete a
       # user. useracct_watch reports the real add/remove via a NOTE instead.
       case "$pb_cmd" in
@@ -2029,7 +2029,7 @@ is_noisy_pbcmd() {
       # ComputerNameEncoding (:System:System:ComputerName*). A raw PlistBuddy Set
       # is unreliable; hostname_watch emits the documented `scutil --set` instead.
       #
-      # Same for the whole network tree — :NetworkServices:<UUID>:… and the
+      # Same for the whole network tree. :NetworkServices:<UUID>:… and the
       # :Sets:<UUID>:Network:… links/ServiceOrder that reference it. The service
       # UUID is minted on THIS Mac, so the path transplants nowhere; and a VPN
       # client that tears its service down and re-adds it on wake mints a fresh
@@ -2041,7 +2041,7 @@ is_noisy_pbcmd() {
       #
       # :CurrentSet (the active location) joins them: it holds a /Sets/<UUID>
       # path, so a raw Set writes an identifier that names nothing on another
-      # Mac — _note_network_location emits `scselect <name>` in its place.
+      # Mac. _note_network_location emits `scselect <name>` in its place.
       case "$pb_cmd" in
         *":System:Network:HostNames:"*|*":System:System:ComputerName"*|\
         *":NetworkServices:"*|*":Sets:"*":Network:"*|*":CurrentSet"*) return 0 ;;
@@ -2068,7 +2068,7 @@ is_noisy_pbcmd() {
       esac
       ;;
     com.apple.HIToolbox)
-      # Character Palette (Emoji viewer) add/remove on open/close — but ONLY in
+      # Character Palette (Emoji viewer) add/remove on open/close. But ONLY in
       # AppleSelectedInputSources (the active source). The same bundle id also sits
       # in AppleEnabledInputSources, which is the Settings > Keyboard list: enabling
       # the viewer there is a deliberate, deployable setting and must survive.
@@ -2086,7 +2086,7 @@ is_noisy_pbcmd() {
       esac
       ;;
     com.apple.iPod)
-      # Per-device sync bookkeeping nested under Devices:<hex-id>: — the Connected
+      # Per-device sync bookkeeping nested under Devices:<hex-id>:. The Connected
       # timestamp and Use Count counter, rewritten on every connect. is_noisy_key
       # filters the TOP-LEVEL Connected/Use Count, but these arrive nested so they
       # only match here as sub-paths.
@@ -2104,7 +2104,7 @@ is_noisy_pbcmd() {
 # Logging
 # ---------------------------------------
 
-# Core log function — all log_* wrappers delegate here
+# Core log function. All log_* wrappers delegate here
 # Usage: _log <syslog_tag> <message>
 _log() {
   local tag="$1" msg="$2"
@@ -2126,7 +2126,7 @@ _log() {
     if [[ "$out" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
       local _cmd_dom="${match[2]}"
       # Only ALL mode may drop an excluded domain. When the user names the domain
-      # explicitly, the exclusion list must not apply — show_domain_diff already
+      # explicitly, the exclusion list must not apply. Show_domain_diff already
       # guards this way; without the same guard here the run printed a NOTE
       # promising to monitor, then swallowed every `defaults write`.
       if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
@@ -2159,7 +2159,7 @@ log_line()   { _log "$DOMAIN_TAG" "$1"; }
 log_user()   { _log "user" "$1"; }
 log_system() { _log "system" "$1"; }
 
-# Snapshot log — verbose: all lines, ONLY_CMDS: start/complete only
+# Snapshot log. Verbose: all lines, ONLY_CMDS: start/complete only
 snapshot_notice() {
   local msg="$1" verbose_only="${2:-false}"
   local ts
@@ -2198,12 +2198,12 @@ dump_plist_json() {
   # plistlib FIRST, plutil only as a fallback. `plutil -convert json` cannot
   # represent a float whose value is integral: <real>2</real> becomes `2`, which
   # json.load reads back as an int, so pb_type_value emits `integer 2` for what is
-  # really a real — a command that looks right and writes the wrong type (caught by
+  # really a real. A command that looks right and writes the wrong type (caught by
   # the array-float case). Python's json.dump writes 2.0 and round-trips as float.
   # This is not a new representation: plutil already FAILS on any plist holding
   # <data> or <date> (JSON has no such types), so the plistlib output below is
   # already what the diff engine sees for those. Cost is ~38ms vs ~5ms per plist,
-  # paid only when a plist actually changes — never during the startup snapshot,
+  # paid only when a plist actually changes. Never during the startup snapshot,
   # which passes skip_arrays=true and dumps no JSON at all.
   if [ -n "$PYTHON3_BIN" ]; then
     "$PYTHON3_BIN" - "$src" "$out" <<'PYJSON' 2>/dev/null && return
@@ -2274,7 +2274,7 @@ extract_type_value_with_plutil() {
 #
 # $2 exists because the command's `-currentHost` flag cannot survive this
 # conversion: the regex below captures the flag group and discards it, and
-# get_plist_path has no ByHost branch — so a ByHost deletion was emitted against
+# get_plist_path has no ByHost branch. So a ByHost deletion was emitted against
 # ~/Library/Preferences/<dom>.plist instead of ByHost/<dom>.<UUID>.plist (a file
 # that may not even exist, or whose same-named key is unrelated). Callers that
 # know the file they diffed pass it here; without it the old behaviour stands.
@@ -2284,7 +2284,7 @@ convert_delete_to_plistbuddy() {
   # construction, and it broke the moment the domain gained its (necessary)
   # quotes: the pattern captured `"com.foo"` WITH them, and get_plist_path then
   # produced a path containing literal quote characters. Callers know the domain
-  # — hand it over instead of parsing it back out. The regex stays as a fallback
+  # - hand it over instead of parsing it back out. The regex stays as a fallback
   # so an outside caller passing only a command string still works.
   local cmd="$1" path_override="${2:-}" domain_override="${3:-}"
 
@@ -2294,7 +2294,7 @@ convert_delete_to_plistbuddy() {
   else
     domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+"?([^"[:space:]]+)"?.*/\2/p')
   fi
-  # The target is the LAST quoted field — anchoring on the end survives a domain
+  # The target is the LAST quoted field. Anchoring on the end survives a domain
   # that itself contains a space (15 such domains on one ordinary Mac).
   target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*"([^"]*)"[[:space:]]*$/\1/p')
   [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*[[:space:]]([^"[:space:]]+)[[:space:]]*$/\1/p')
@@ -2315,19 +2315,19 @@ convert_delete_to_plistbuddy() {
   fi
 
   if [ "$is_array_deletion" = "true" ]; then
-    # WARNING is deduped by the caller (parent scope) — this function runs in a
+    # WARNING is deduped by the caller (parent scope). This function runs in a
     # $() subshell so setting the flag here would be lost.
     # The "# WARNING: array deletes" prefix is a DEDUP KEY: _emit_cmd and
     # emit_array_deletions match on it to show this once per burst. Changing the
     # wording without updating both `case` patterns silently re-enables the spam.
-    printf '# WARNING: array deletes shift indexes — run these in the order shown\n'
+    printf '# WARNING: array deletes shift indexes. Run these in the order shown\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
   # Escape single quotes in the key path so a key containing ' doesn't break the
   # single-quoted PlistBuddy -c 'Delete …' expression (each ' → '\'').
   local _target_esc
   _target_esc=$(printf '%s' "$target" | /usr/bin/sed "s/'/'\\\\''/g")
-  # The path sits inside double quotes but was never escaped — and it carries the
+  # The path sits inside double quotes but was never escaped. And it carries the
   # same attacker-chosen filename as the domain. Escape AFTER templatizing so the
   # deliberate $loggedInUser / $UUID tokens keep working (see mdm_plist_path).
   printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$(_escape_pb_path "$_mdm_path")"
@@ -2338,7 +2338,7 @@ convert_delete_to_plistbuddy() {
 # Command Emission
 # ---------------------------------------
 # Builds the `defaults`/PlistBuddy commands and routes them through the
-# filters/logging — the bridge between the diff engine and the log output.
+# filters/logging. The bridge between the diff engine and the log output.
 
 # Single quote and its shell-escaped form ('\''), assembled character by character:
 # spelling that sequence inline inside a ${var//…/…} replacement is a
@@ -2348,11 +2348,11 @@ typeset -g _SQ="'"
 typeset -g _SQ_ESC="${_SQ}\\${_SQ}${_SQ}"
 
 # Escape a value for safe embedding inside a double-quoted shell string in an
-# emitted command: backslash, double-quote, $ and backtick — else a pref value
+# emitted command: backslash, double-quote, $ and backtick. Else a pref value
 # containing `$(…)`, `$VAR` or backticks would execute/expand when the logged
 # command is copy-pasted and run.
 # Escape a plist PATH for a double-quoted shell string, while PRESERVING the two
-# tokens mdm_plist_path deliberately injects ($loggedInUser, $UUID) — those must
+# tokens mdm_plist_path deliberately injects ($loggedInUser, $UUID). Those must
 # stay expandable at replay time, everything else must not.
 _escape_pb_path() {
   local _p _liu_esc _uid_esc _uid_tok
@@ -2360,7 +2360,7 @@ _escape_pb_path() {
   # Re-expose the two tokens mdm_plist_path injects on purpose. Derive their
   # escaped forms by running the SAME escaper over them rather than spelling
   # `\$loggedInUser` inline: written literally, zsh expands it in THIS shell,
-  # where it is unset — and `set -u` then aborts the run.
+  # where it is unset. And `set -u` then aborts the run.
   _uid_tok='$UUID'
   _liu_esc=$(_escape_dq "$_MDM_LIU")
   _uid_esc=$(_escape_dq "$_uid_tok")
@@ -2381,24 +2381,24 @@ _build_defaults_write_cmd() {
 
   # Harden the KEY the same way values are (_escape_dq): it is embedded in a
   # double-quoted shell string in the emitted command, so a key containing " or $
-  # or a backtick would otherwise break the command — or, worse, run a command
+  # or a backtick would otherwise break the command. Or, worse, run a command
   # substitution when the logged line is pasted back into a shell. The probe below
   # keeps the RAW "$keyname": it passes it as a real argv word, not as shell text.
   local _kn; _kn=$(_escape_dq "$keyname")
 
   # System-level pref: emit (and type-probe) the root-owned /Library/Preferences
-  # file by full path — `defaults` accepts a path in place of a bare domain and
+  # file by full path. `defaults` accepts a path in place of a bare domain and
   # appends .plist. A bare domain would replay into the console user's ~ copy.
   [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="/Library/Preferences/${dom}"
 
   # The DOMAIN needs the same treatment as the key, and for two reasons that are
   # easy to miss because it "looks structured". It is not: it is a plist FILENAME,
   # and a filename is free text.
-  #   · Correctness — 15 domains on one ordinary Mac contain a space
+  #   · Correctness. 15 domains on one ordinary Mac contain a space
   #     ("com.native-instruments.Kontakt 8", "com.topazlabs.Topaz Photo AI",
   #     "unity.Klei.Oxygen Not Included"). Unquoted, `defaults write <dom> "k" 1`
   #     word-splits and writes the WRONG key into the WRONG domain. Silently.
-  #   · Security — anything running as the user can create
+  #   · Security. Anything running as the user can create
   #     ~/Library/Preferences/com.x$(curl…|sh).plist. The name reaches this line
   #     and the emitted command is replayed BY AN ADMIN IN A ROOT SHELL, which is
   #     this tool's whole purpose. Verified end to end before the fix.
@@ -2406,7 +2406,7 @@ _build_defaults_write_cmd() {
 
   # Probe the type as the CONSOLE USER for user domains. In ALL mode prefwatch runs
   # as root, where a bare `defaults read-type com.apple.dock …` reads ROOT's domain
-  # and fails ("Domain not found") — the empty probe then fell through to the 0/1
+  # and fails ("Domain not found"). The empty probe then fell through to the 0/1
   # heuristic below and emitted `-bool FALSE` for what is really `-int 0` (proven on
   # wvous-tr-modifier). System prefs are a /Library/Preferences PATH: keep them root-read.
   #
@@ -2414,7 +2414,7 @@ _build_defaults_write_cmd() {
   # word-split in zsh (the space is part of the substitution), so `defaults` got the single
   # argument "-currentHost read-type", rejected it (exit 255 → pipefail → the `|| …=""`
   # guard blanked the probe) and EVERY ByHost scalar fell through to the value-shape
-  # heuristic — the same class of bug 1.4.0 fixed for non-ByHost keys. With the space
+  # heuristic. The same class of bug 1.4.0 fixed for non-ByHost keys. With the space
   # outside, an empty $hostflag still collapses to nothing, so both forms stay correct.
   if [ "${_EMIT_SYS:-false}" = "true" ]; then
     actual_type=$(/usr/bin/defaults ${hostflag:+$hostflag} read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
@@ -2504,12 +2504,12 @@ _log_kind() {
 
 
 # One-per-burst NOTE when an emitted path was templatized to $UUID (MDM mode,
-# ByHost file — see mdm_plist_path). Without the resolver $UUID is undefined and
+# ByHost file. See mdm_plist_path). Without the resolver $UUID is undefined and
 # the command would target a broken path, so this NOTE is not optional.
 # One-per-burst NOTE for a ColorSync command that targets a monitor by its CoreGraphics
 # UUID (`Device.mntr.<UUID>`). That UUID differs per display AND per Mac (proven: two
 # identical monitors → different UUIDs); it's the TARGET's display and unknown when
-# authoring, so mdm_plist_path can't templatize it — the NOTE points at the runtime
+# authoring, so mdm_plist_path can't templatize it. The NOTE points at the runtime
 # `defaults -currentHost read` lookup instead. SCOPED to `Device.mntr.` on purpose: a bare "any UUID in the key" match
 # also fired on `NSToolbar Configuration <UUID>` (a toolbar-config id, already covered by
 # its own NOTE) and on account UUIDs, where the display-resolution advice is just wrong.
@@ -2517,7 +2517,7 @@ _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID — per-monitor, and different on every Mac."
+  _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID. Per-monitor, and different on every Mac."
   # The "--mdm can't templatize it" half is only meaningful to someone who asked
   # for deployable output. Outside --mdm it answered a question nobody had put,
   # and buried the one fact that matters here: this command names one monitor.
@@ -2532,10 +2532,10 @@ _note_device_uuid() {
 # The one part of the filtered network tree that IS reproducible: the service
 # order (System Settings > Network > ⋯ > Set Service Order). ServiceOrder lists
 # service UUIDs minted on this Mac, but every service also carries a
-# UserDefinedName, and `networksetup -ordernetworkservices` takes those NAMES —
+# UserDefinedName, and `networksetup -ordernetworkservices` takes those NAMES.
 # so the priority transplants to another Mac that has the same services.
 #
-# Returns 1 — caller falls back to the generic NOTE — when the order can't be
+# Returns 1 (caller falls back to the generic NOTE) when the order can't be
 # turned into a command anyone can replay:
 #   · the path names a set that is not CurrentSet (networksetup only ever
 #     reorders the current location, so the command would move the wrong one),
@@ -2543,14 +2543,14 @@ _note_device_uuid() {
 #     names, so a duplicate is ambiguous and would reorder the wrong service).
 #
 # A service name is free text the user types, and this line is meant to be pasted
-# into a ROOT shell — so it gets the same escaping as a key or a value
+# into a ROOT shell. So it gets the same escaping as a key or a value
 # (_escape_dq's set: \ " $ `), applied in Python where the names are read.
 _note_network_order() {
   local kind="$1" cmd="$2" path="${3:-}" set_uuid names
   [ -n "$PYTHON3_BIN" ] || return 1
   # The diffed file itself when we were handed it; the canonical path otherwise
   # (show_domain_diff resolves domain `preferences` to a ~/Library path that does
-  # not exist — reading it would silently produce no command).
+  # not exist. Reading it would silently produce no command).
   [ -r "$path" ] || path="/Library/Preferences/SystemConfiguration/preferences.plist"
   [ -r "$path" ] || return 1
   set_uuid="${cmd#*:Sets:}"; set_uuid="${set_uuid%%:*}"
@@ -2594,11 +2594,11 @@ PY
 # Switching network location (Apple menu > Location, System Settings > Network)
 # rewrites one key: :CurrentSet, a path to /Sets/<UUID>. That key was NOT filtered,
 # so PrefWatch emitted a raw `PlistBuddy Set :CurrentSet …` on the configd-owned
-# file — the very write this file's own filter block calls unreliable, pointing at
+# file. The very write this file's own filter block calls unreliable, pointing at
 # a UUID that means nothing on another Mac. `scselect` takes the location NAME and
 # reconfigures the system immediately (scselect(8)), so emit that instead.
 #
-# Returns 1 — caller falls back to the generic NOTE — when the current set has no
+# Returns 1 (caller falls back to the generic NOTE) when the current set has no
 # name, or two locations share one (scselect matches on the name).
 _note_network_location() {
   local kind="$1" path="${2:-}" name
@@ -2630,7 +2630,7 @@ LOC
 ) || return 1
   [ -n "$name" ] || return 1
   _note_should_show "__network_location__:$name" || return 0
-  _log_kind "$kind" "Cmd: # NOTE: network location changed — it must already exist on the target Mac."
+  _log_kind "$kind" "Cmd: # NOTE: network location changed. It must already exist on the target Mac."
   _log_kind "$kind" "Cmd: sudo /usr/sbin/scselect \"$name\""
 }
 
@@ -2639,18 +2639,18 @@ LOC
 # Same key as the service order: the subtree is keyed by a UUID minted on this
 # Mac, but the service carries a UserDefinedName and every `networksetup` proxy
 # and DNS verb addresses a service BY THAT NAME. Only the group of keys that
-# actually changed is emitted — a burst rewrites a dozen paths, and one toggle
+# actually changed is emitted. A burst rewrites a dozen paths, and one toggle
 # should not print the service's whole configuration.
 #
 # The verbs are the ones this macOS actually has. Checked against
 # `networksetup -help` on 26.6.2, which has NO -setftpproxy, -setgopherproxy,
-# -setstreamingproxy or -setpassiveftp — those keys still exist in the plist, so
+# -setstreamingproxy or -setpassiveftp. Those keys still exist in the plist, so
 # they fall through to the generic NOTE rather than to an invented command.
 #
 # Also covered: the TCP/IP configuration method (System Settings > Network >
 # Details > TCP/IP) and enabling or disabling a service.
 #
-# Returns 1 — caller falls back to that NOTE — for an unmapped key, an unnamed
+# Returns 1 (caller falls back to that NOTE) for an unmapped key, an unnamed
 # service, two services sharing a name, or an enabled proxy with no host.
 _note_network_svc_setting() {
   local kind="$1" cmd="$2" path="${3:-}" uuid group out line
@@ -2705,7 +2705,7 @@ try:
     # networksetup only ever addresses the services of the CURRENT location, and
     # that is also the population its names must be unique within: a real Mac
     # carries stale services from other locations, and this one had TWO named
-    # \"Wi-Fi\" — a uniqueness test over every service refused every command.
+    # \"Wi-Fi\". A uniqueness test over every service refused every command.
     current = str(doc.get('CurrentSet', '')).rsplit('/', 1)[-1]
     try:
         order = doc['Sets'][current]['Network']['Global']['IPv4']['ServiceOrder']
@@ -2746,7 +2746,7 @@ try:
         # each one refuses unless the values it needs are actually there. The
         # manual shapes could not be verified on the machine this was written on
         # (every service was DHCP), so a shape that does not match must produce
-        # the generic NOTE — never a command built on a guess. INFORM and PPP
+        # the generic NOTE. Never a command built on a guess. INFORM and PPP
         # fall through here on purpose: they have no clean verb.
         block = service.get('IPv4' if group == 'ipv4' else 'IPv6') or {}
         method = str(block.get('ConfigMethod') or '')
@@ -2807,7 +2807,7 @@ try:
                                              port_of(proxies.get(prefix + 'Port'))))
             user = proxies.get(prefix + 'User')
             if user:
-                lines.append('#       authenticated proxy, user %s — the password is in the keychain,'
+                lines.append('#       authenticated proxy, user %s. The password is in the keychain,'
                              % quoted(user))
                 lines.append('#       not in this file. Append: on <user> <password>')
         else:
@@ -2834,7 +2834,7 @@ NS
 # One-per-burst NOTE standing in for the rest of the filtered SystemConfiguration
 # network tree (see the `preferences` block in is_noisy_pbcmd). A network service
 # is identified by a UUID minted on THIS Mac when the service is created, so an
-# emitted `:NetworkServices:<UUID>:…` path addresses nothing anywhere else — and
+# emitted `:NetworkServices:<UUID>:…` path addresses nothing anywhere else. And
 # nothing here either once the service is recreated (a VPN agent tearing its
 # service down and re-adding it on wake mints a fresh UUID, re-emitting the whole
 # ~65-line subtree for an identical config). Say what changed and point at the
@@ -2852,7 +2852,7 @@ _note_network_service() {
       if _note_network_order "$kind" "$cmd" "$path"; then return 0; fi
       ;;
     # DNS, proxies, the TCP/IP method and the service's own on/off switch are
-    # reproducible too — same fall-through rule as the order.
+    # reproducible too. Same fall-through rule as the order.
     *":NetworkServices:"*":DNS:"*|*":NetworkServices:"*":Proxies:"*|\
     *":NetworkServices:"*":IPv4:"*|*":NetworkServices:"*":IPv6:"*|\
     *":NetworkServices:"*":__INACTIVE__"*)
@@ -2867,27 +2867,27 @@ _note_network_service() {
   _log_kind "$kind" "Cmd: #       minted on this Mac (a VPN client recreating its service mints a new one)."
   _log_kind "$kind" "Cmd: #       Reproduce with: networksetup where it has a verb for the setting,"
   _log_kind "$kind" "Cmd: #       or a configuration profile for a VPN (a 'com.apple.payload' subtree means"
-  _log_kind "$kind" "Cmd: #       the service is already profile-managed — deploy the profile, not this file)."
+  _log_kind "$kind" "Cmd: #       the service is already profile-managed. Deploy the profile, not this file)."
 }
 
 _note_byhost_uuid() {
   local kind="$1" path="$2" key="${3:-}"
   # A Device.mntr.<UUID> key carries the DISPLAY's own UUID that --mdm can't
-  # templatize — _note_device_uuid says exactly that, and this note's "re-run with
+  # templatize. _note_device_uuid says exactly that, and this note's "re-run with
   # --mdm for a deployable form" would contradict it. Let the device note own it.
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] && return 0
   case "$path" in
     # MDM mode: the path is templatized to $UUID + $loggedInUser, whose resolvers are
-    # emitted ONCE at startup (see MAIN) — so a templatized ByHost path adds nothing here.
+    # emitted ONCE at startup (see MAIN). So a templatized ByHost path adds nothing here.
     # (Return early so it doesn't fall through to the non-mdm */ByHost/* note below.)
     *'$UUID'*)
       return 0
       ;;
     # Normal mode: the literal UUID is correct for replay HERE, and useless
-    # anywhere else — say so, and point at the flag that makes it deployable.
+    # anywhere else. Say so, and point at the flag that makes it deployable.
     */ByHost/*)
       _note_should_show __byhost_uuid__ || return 0
-      _log_kind "$kind" "Cmd: # NOTE: this ByHost filename holds THIS Mac's hardware UUID — the path is valid on this Mac only; re-run with --mdm for a deployable form"
+      _log_kind "$kind" "Cmd: # NOTE: this ByHost filename holds THIS Mac's hardware UUID. The path is valid on this Mac only; re-run with --mdm for a deployable form"
       ;;
   esac
 }
@@ -2899,7 +2899,7 @@ _dbg_filtered() { [ "${DEBUG_FILTER:-false}" = "true" ] && log_line "Cmd: # FILT
 # --mdm: prefix a USER-domain command with `runAsUser` (defined in the --mdm
 # header). A `defaults`/PlistBuddy command for a user domain, replayed by a root
 # Jamf policy, would write ROOT's prefs (or reparent the user's plist to root:wheel
-# and bypass the user's cfprefsd) — so it must run in the logged-in user's context.
+# and bypass the user's cfprefsd). So it must run in the logged-in user's context.
 # Gated on _EMIT_SYS: system-level commands (/Library/Preferences) stay plain root.
 # No-op outside --mdm, and on comment lines (only real command lines are passed in).
 _mdm_wrap() {
@@ -2907,7 +2907,7 @@ _mdm_wrap() {
     # System-level pref: the command writes a root-owned file under
     # /Library/Preferences, so it carries `sudo` the same way every tool command
     # here does. It used to be emitted bare, under a NOTE saying "replay these
-    # as root" — a line nobody can paste, in a log whose whole purpose is lines
+    # as root". A line nobody can paste, in a log whose whole purpose is lines
     # you paste. The NOTE is gone with it. Under --mdm the policy already runs
     # as root and `sudo` is a no-op there, so one form serves both.
     printf 'sudo %s' "$1"
@@ -2920,7 +2920,7 @@ _mdm_wrap() {
 
 # A `# dockutil …` info comment is not prose: it is a command an admin copies out.
 # dockutil edits the LOGGED-IN USER's Dock, so under --mdm it needs the same
-# runAsUser as the PlistBuddy lines it stands in for — the `#` stays leading, so
+# runAsUser as the PlistBuddy lines it stands in for. The `#` stays leading, so
 # the line still reads as the alternative it is. `# Dock: <label>` is left alone.
 _mdm_wrap_comment() {
   case "$1" in
@@ -2950,7 +2950,7 @@ _emit_cmd() {
 
   # In ALL mode the DOMAIN pass is redundant: every change it sees has already
   # been emitted by the per-plist diff. The condition used to require ONLY_CMDS
-  # too, so `--verbose` printed every command TWICE — which made the debugging
+  # too, so `--verbose` printed every command TWICE. Which made the debugging
   # mode disagree with the mode everyone actually runs. Production output is the
   # reference: verbose should add diagnostics, never different commands. The
   # `Diff …` lines it exists for are logged elsewhere and stay.
@@ -2970,7 +2970,7 @@ _emit_cmd() {
             _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
           "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
           *)    _note_byhost_uuid "$kind" "$pb_line" "${${pb_line#*-c \'}%%\'*}"
-                # Key expression only — strip the trailing file path, whose ByHost
+                # Key expression only. Strip the trailing file path, whose ByHost
                 # UUID is the Mac's and is a different concern.
                 _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
                 _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
@@ -3014,10 +3014,10 @@ _process_py_meta() {
       fi
       [ -n "$plist_path" ] || continue
       if is_noisy_pbcmd "$dom" "$_pb_cmd"; then
-        # A filtered SystemConfiguration network path still deserves an answer —
+        # A filtered SystemConfiguration network path still deserves an answer.
         # emit the NOTE naming the real reproducer in place of the dropped command.
         _note_network_service "$kind" "$dom" "$_pb_cmd" "$plist_path"
-        _dbg_filtered "$dom — $_pb_cmd (noise-key)"; continue
+        _dbg_filtered "$dom. $_pb_cmd (noise-key)"; continue
       fi
       if [ "$_domain_note_emitted" = "false" ]; then
         _emit_contextual_note "$dom" "$_last_array_base"
@@ -3047,7 +3047,7 @@ _process_py_meta() {
       # Escape single quotes in the PBCMD so a value/key containing ' doesn't
       # break the single-quoted PlistBuddy -c '…' wrapper (each ' → '\'').
       # Builtin (one fork saved per emitted PBCMD line). The replacement is built
-      # character by character — writing '\'' inline in a substitution is a
+      # character by character. Writing '\'' inline in a substitution is a
       # backslash-escaping trap that silently produces the wrong string.
       _pb_esc="${_pb_cmd//$_SQ/$_SQ_ESC}"
       # …then break out of those single quotes around the templatized $loggedInUser
@@ -3057,7 +3057,7 @@ _process_py_meta() {
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_full")"
       continue
     fi
-    # Metadata line — populate _SKIP_KEYS at every level the Python
+    # Metadata line. Populate _SKIP_KEYS at every level the Python
     # workers may have produced (top key, top:sub, base:idx:sub, etc.)
     _last_array_base="$_array_base"
     _SKIP_KEYS["$_array_base"]=1
@@ -3081,12 +3081,12 @@ _process_py_meta() {
     fi
   done <<< "$meta_raw"
   # Comments are buffered until a real command makes it through filtering, but a
-  # NOTE can be the ONLY output — _note_empty_key fires INSTEAD of the commands it
+  # NOTE can be the ONLY output. _note_empty_key fires INSTEAD of the commands it
   # skips. Without this final flush that change vanished entirely: in the default
   # quiet mode the log stayed empty, with no trace that anything was seen.
   # …but only a NOTE that stands for the commands it skipped. The two that
-  # INTRODUCE commands — "array index :N is positional", "new key tree — the
-  # Add commands build it" — are about lines that never came: every PBCMD of
+  # INTRODUCE commands ("array index :N is positional", "new key tree, the
+  # Add commands build it") are about lines that never came: every PBCMD of
   # the batch was filtered as noise (a Finder window open adds a recent folder
   # to FXRecentFolders; the Add is dropped, the positional warning was not).
   # Seen alone in a root log on 27.0, over nothing.
@@ -3111,24 +3111,24 @@ _process_py_meta() {
 _process_diff_lines() {
   # $8 = OPTIONAL real plist path for delete emission. Deliberately NOT type_src:
   # show_plist_diff passes the real file there, but show_domain_diff passes a
-  # CACHE file ($tmpplist) — reusing it would point PlistBuddy at the cache.
+  # CACHE file ($tmpplist). Reusing it would point PlistBuddy at the cache.
   # Domain mode passes empty and keeps the get_plist_path fallback.
   local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7" emit_plist_path="${8:-}"
 
   # No baseline. Until now that meant "emit nothing", which lost the FIRST write
-  # to any domain born after startup — install an app, configure it, and its
+  # to any domain born after startup. Install an app, configure it, and its
   # initial configuration was never reported. Only later changes were.
   #
   # Lifting the guard outright would flood, and the two callers are not
   # equivalent about it:
-  #   · show_plist_diff (USER/SYSTEM) — _snapshot_tree wrote a baseline for every
+  #   · show_plist_diff (USER/SYSTEM). _snapshot_tree wrote a baseline for every
   #     existing plist BEFORE any watcher started, so a missing one now means the
   #     file genuinely did not exist then. Emit it: that is the new configuration.
-  #   · show_domain_diff (DOMAIN) in ALL mode — its baseline is written lazily, on
+  #   · show_domain_diff (DOMAIN) in ALL mode. Its baseline is written lazily, on
   #     the domain's first appearance, so "missing" only means "not seen yet".
   #     Emitting would dump every key of every domain that ever changes. Keep the
   #     guard.
-  #   · show_domain_diff (DOMAIN) in single-domain mode — start_watch establishes
+  #   · show_domain_diff (DOMAIN) in single-domain mode. Start_watch establishes
   #     the baseline itself before the loop, so the ALL-mode ambiguity does not
   #     apply and a watched domain that appears later is reportable.
   if [ ! -s "$prev" ]; then
@@ -3136,8 +3136,8 @@ _process_diff_lines() {
     [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && return 0
     # An EXISTING but empty baseline is a FAILED snapshot, never a new domain.
     # dump_plist redirects into the file before plutil runs, so when plutil AND the
-    # raw-copy fallback both fail — the window where cfprefsd unlinks and recreates
-    # a plist mid-scan — a 0-byte baseline is left behind. plutil on a genuinely
+    # raw-copy fallback both fail. The window where cfprefsd unlinks and recreates
+    # a plist mid-scan. A 0-byte baseline is left behind. plutil on a genuinely
     # empty plist writes "{\n}", so empty really does mean the dump produced
     # nothing. Treating that as novelty announced a brand-new domain and
     # dumped the domain whole (reproduced: a 3-key domain emitted all 4 keys after
@@ -3147,17 +3147,17 @@ _process_diff_lines() {
       /bin/cp -f "$curr" "$prev" 2>/dev/null || :
       return 0
     fi
-    # `prev` does not EXIST — and `diff -u <missing> curr` fails outright, printing
+    # `prev` does not EXIST. And `diff -u <missing> curr` fails outright, printing
     # nothing. Lifting the guard alone therefore emitted the note and no commands at
     # all. Materialise an empty baseline so every key shows up as an addition.
     : > "$prev" 2>/dev/null || return 0
     # DEFERRED, not logged here: "the commands below" must be followed by at
-    # least one line. A domain whose every key is filtered — calaccessd and
-    # sharePlayAppPolicies hold one data blob each — printed the NOTE alone,
+    # least one line. A domain whose every key is filtered. Calaccessd and
+    # sharePlayAppPolicies hold one data blob each. Printed the NOTE alone,
     # announcing a configuration that never came. _log_kind flushes it in front
     # of the first line this domain emits; cleared at the end of this pass.
     if _note_should_show "__newdom__:${dom}"; then
-      typeset -g _PENDING_NEWDOM_NOTE="Cmd: # NOTE: '$dom' is a new domain — the commands below are its full configuration, not a single change"
+      typeset -g _PENDING_NEWDOM_NOTE="Cmd: # NOTE: '$dom' is a new domain. The commands below are its full configuration, not a single change"
     fi
   fi
 
@@ -3165,7 +3165,7 @@ _process_diff_lines() {
   _added_keys=()
   local _aline
   while IFS= read -r _aline; do
-    # Builtin regex — was a sed fork per ADDED diff line. Wrapped in `if` (not
+    # Builtin regex. Was a sed fork per ADDED diff line. Wrapped in `if` (not
     # `[[ … ]] && …`): a non-matching line would make the loop body's last command
     # return 1, which is exactly the shape that can trip ERR_EXIT under `set -e`.
     if [[ "$_aline" =~ '^\+[[:space:]]*"([^"]+)"' ]]; then _added_keys["$match[1]"]=1; fi
@@ -3205,7 +3205,7 @@ _process_diff_lines() {
       pretty_key="$keyname"
     fi
 
-    # Newlines to spaces, truncated to 160 with an ellipsis — builtin (was tr+awk).
+    # Newlines to spaces, truncated to 160 with an ellipsis. Builtin (was tr+awk).
     snippet="${val//$'\n'/ }"
     (( ${#snippet} > 160 )) && snippet="${snippet[1,157]}..."
     _log_kind "$kind" "Key: ${pretty_key} | Item: ${snippet}"
@@ -3272,7 +3272,7 @@ import json, sys, os
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
 # Element-level noise rules from the shell (_ELEMENT_NOISE_MARKERS), as
-# domain|array|marker triplets so the rule has ONE home AND a precise scope — the
+# domain|array|marker triplets so the rule has ONE home AND a precise scope. The
 # same marker can be churn in one array and a real setting in its sibling. An
 # element whose dict carries the marker is skipped WHOLE; filtering it line by
 # line would leave a half-built dict behind.
@@ -3301,7 +3301,7 @@ curr = load(curr_path)
 
 results = []
 
-# SHARED BLOCK — load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
+# SHARED BLOCK. Load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
 # repeated verbatim in the three Python workers (emit_array_additions,
 # _py_deletions_raw, emit_nested_dict_changes). Kept duplicated on purpose: each
 # worker stays a self-contained, readable <<'PY' heredoc. EDIT ALL THREE TOGETHER.
@@ -3381,7 +3381,7 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
             if k == '':
                 # Empty-string key → a bare '::' PlistBuddy can't address; skip the subtree.
                 if not _arr_empty_noted[0]:
-                    cmds.append("PBCMD\t# NOTE: an empty-string key ('') was skipped — PlistBuddy can't address it")
+                    cmds.append("PBCMD\t# NOTE: an empty-string key ('') was skipped. PlistBuddy can't address it")
                     _arr_empty_noted[0] = True
                 continue
             key_path = f"{path_prefix}{pb_escape(k)}"
@@ -3413,7 +3413,7 @@ for prefix, index, item in results:
     arr_name = prefix[0]
     # Whole-element noise (e.g. the Character Viewer re-adding itself): skip before
     # anything is printed, so neither the element's Add lines NOR the positional
-    # NOTE that precedes them are emitted. Needs arr_name — the rule is scoped to
+    # NOTE that precedes them are emitted. Needs arr_name. The rule is scoped to
     # one array, since the same marker is a real setting in the sibling array.
     if is_noise_element(arr_name, item):
         continue
@@ -3423,10 +3423,10 @@ for prefix, index, item in results:
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
     if arr_name not in prev:
         continue
-    # Adding to an EXISTING array: the index is positional. Warn once — a target
+    # Adding to an EXISTING array: the index is positional. Warn once. A target
     # whose array has a different length won't get the element at the same spot.
     if not _array_add_noted:
-        print("PBCMD\t# NOTE: array index :N is positional — may land elsewhere if the target's array differs")
+        print("PBCMD\t# NOTE: array index :N is positional. May land elsewhere if the target's array differs")
         _array_add_noted = True
     if isinstance(item, dict):
         keys = ','.join(sorted(all_keys_recursive(item)))
@@ -3443,7 +3443,7 @@ for prefix, index, item in results:
                     if bid:
                         note += f" ({bid})"
                     print(f"PBCMD\t{note}")
-                # dockutil equivalent (INFO comment only — the PlistBuddy Add
+                # dockutil equivalent (INFO comment only. The PlistBuddy Add
                 # commands below already reproduce it; dockutil is the
                 # deploy-friendly alternative if the admin has it installed).
                 import urllib.parse as _up
@@ -3484,14 +3484,14 @@ PY
 
 # Per-burst notice dedup: _NOTED_DOMAIN[key] holds the LAST-EMIT epoch time for a
 # contextual NOTE / array-deletion WARNING. A notice re-appears only after a quiet
-# gap of _NOTE_BURST_GAP seconds — so a rapid burst of changes shows it once, but a
+# gap of _NOTE_BURST_GAP seconds. So a rapid burst of changes shows it once, but a
 # later change re-shows it (context isn't lost). Not once/session, not every change.
 typeset -gA _NOTED_DOMAIN=()
 typeset -g _NOTE_BURST_GAP=15   # seconds of quiet between bursts; tune to taste
 
 # Sliding-window per-burst dedup: return 0 to SHOW the notice keyed by $1, 1 to
 # suppress. The timestamp updates on EVERY call, so the notice re-shows only after
-# _NOTE_BURST_GAP seconds of QUIET — not that long since it was last shown, which
+# _NOTE_BURST_GAP seconds of QUIET. Not that long since it was last shown, which
 # would let it re-fire mid-burst.
 _note_should_show() {
   local _last=${_NOTED_DOMAIN[$1]:-0}
@@ -3501,13 +3501,13 @@ _note_should_show() {
 }
 
 # One-per-burst NOTE emitted right before a `# dockutil …` info comment (Dock
-# add/remove). The dockutil line and the PlistBuddy commands do the SAME thing —
+# add/remove). The dockutil line and the PlistBuddy commands do the SAME thing.
 # without this, an admin who copies the whole block would run BOTH (double-add,
 # or fail because dockutil isn't installed). Says: pick one, and dockutil needs
 # installing. Burst-deduped so a multi-app change shows it once.
 _note_dockutil_alt() {
   _note_should_show __dockutil_alt__ || return 0
-  _log_kind "$1" "Cmd: # NOTE: 'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here — run ONE or the other,"
+  _log_kind "$1" "Cmd: # NOTE: 'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here. Run ONE or the other,"
   _log_kind "$1" "Cmd: #       not both (needs dockutil installed: github.com/kcrawford/dockutil)"
 }
 
@@ -3534,35 +3534,35 @@ _emit_contextual_note() {
     com.apple.symbolichotkeys)
       _note="Keyboard shortcut changes require logout/login to take effect"
       case "$array_base" in
-        AppleSymbolicHotKeys) _note="macOS rewrites a shortcut's parameters the first time it is enabled or disabled — if a binding you never touched shows up here, that is why" ;;
+        AppleSymbolicHotKeys) _note="macOS rewrites a shortcut's parameters the first time it is enabled or disabled. If a binding you never touched shows up here, that is why" ;;
       esac ;;
     com.apple.finder)
       _note="Finder prefs apply on a new window or after 'killall Finder'; icon/list View Options (Cmd+J) need 'Use as Defaults' to be detectable"
       case "$array_base" in
-        PreviewPaneSettings) _note="opening Finder's Preview pane options writes the full attribute list at once — if the whole list is here, most of it is not your change" ;;
-        StandardViewSettings) _note="'Use as Defaults' on a Finder view writes the entire structure, every column — if all of them are here, most are not your change" ;;
+        PreviewPaneSettings) _note="opening Finder's Preview pane options writes the full attribute list at once. If the whole list is here, most of it is not your change" ;;
+        StandardViewSettings) _note="'Use as Defaults' on a Finder view writes the entire structure, every column. If all of them are here, most are not your change" ;;
       esac ;;
     # Both fire on EVERY emission from their domain, including a single deliberate
-    # toggle — there is no count of how many keys are going out. Worded as a flat
+    # toggle. There is no count of how many keys are going out. Worded as a flat
     # "only subsequent changes are real", that casts doubt on a perfectly correct
     # one-line command. So the condition lives in the sentence, the same way the
     # `new key tree` note handles it: the reader can see whether many keys came at
     # once, and the note only claims something when they did.
     com.apple.WindowManager)
-      _note="opening Desktop & Dock settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
+      _note="opening Desktop & Dock settings writes every default at once. Most of these are not changes you made"; _bulk_only=true ;;
     com.apple.universalaccess)
-      _note="opening Accessibility settings writes every default at once — most of these are not changes you made"; _bulk_only=true ;;
+      _note="opening Accessibility settings writes every default at once. Most of these are not changes you made"; _bulk_only=true ;;
     # AirDrop discoverability: the write is faithful but INERT until sharingd is
-    # restarted. Verified live on 26.6.2 — writing DiscoverableMode alone left
+    # restarted. Verified live on 26.6.2. Writing DiscoverableMode alone left
     # Control Center on the previous value; `killall sharingd` applied it. Same
     # reason for saying so as Spotlight below: without this the admin deploys a
     # correct command, sees nothing move, and concludes the command is wrong.
     # The domain has one reportable key left after filtering, so the note is
     # attached to the domain rather than to a key.
     com.apple.sharingd)
-      _note="Run 'killall sharingd' to apply — the write alone is inert, Control Center keeps the previous value" ;;
+      _note="Run 'killall sharingd' to apply. The write alone is inert, Control Center keeps the previous value" ;;
     com.apple.prodisplaylibrary)
-      _note="'defaults write' alone does not apply display presets — alternative third-party tools exist" ;;
+      _note="'defaults write' alone does not apply display presets. Alternative third-party tools exist" ;;
     # Spotlight categories: the write is faithful but INERT until something
     # re-reads the plist. Verified live: reopening the Settings pane applies it;
     # `killall Spotlight` alone did not. Without this the admin deploys a correct
@@ -3570,7 +3570,7 @@ _emit_contextual_note() {
     com.apple.Spotlight)
       case "$array_base" in
         EnabledPreferenceRules|DisabledUTTypes)
-          _note="Spotlight re-reads this only when its Settings pane is reopened (killall Spotlight is not enough; a logout is the fallback) — and despite its name, EnabledPreferenceRules lists the DISABLED categories" ;;
+          _note="Spotlight re-reads this only when its Settings pane is reopened (killall Spotlight is not enough; a logout is the fallback). And despite its name, EnabledPreferenceRules lists the DISABLED categories" ;;
       esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
@@ -3578,11 +3578,11 @@ _emit_contextual_note() {
     com.apple.ColorSync.Devices)
       _note="Color profile changes require logout/login to take effect" ;;
     # AppKit toolbar config, written by any app: the first window open dumps the
-    # whole item list. NOT filtered — a customized toolbar IS a real preference
-    # (deliberately un-filtered in an earlier version) — so annotate instead.
+    # whole item list. NOT filtered. A customized toolbar IS a real preference
+    # (deliberately un-filtered in an earlier version). So annotate instead.
     # Both spellings: metadata reports the top-level key or the nested array name.
     NSToolbar\ Configuration*|TB\ Item\ Identifiers*)
-      _note="opening this window writes the full toolbar layout at once — if the whole layout is here, most of it is not a customization; 'TB Is Shown' is also rewritten by the app on window open/close" ;;
+      _note="opening this window writes the full toolbar layout at once. If the whole layout is here, most of it is not a customization; 'TB Is Shown' is also rewritten by the app on window open/close" ;;
   esac
   [ -n "$_note" ] || return 0
 
@@ -3590,7 +3590,7 @@ _emit_contextual_note() {
   # once. It used to print on EVERY change to its domain, so a single deliberate
   # toggle carried a paragraph about defaults nobody set. Rewording made it
   # harmless; it did not make it useful. The note is emitted BEFORE the commands,
-  # so the count is not known yet — hence: count them as they go, stay silent
+  # so the count is not known yet. Hence: count them as they go, stay silent
   # until the burst is undeniably a flood, and print once at that point. A lone
   # toggle never reaches the threshold and gets no note at all.
   if [ "${_bulk_only:-false}" = true ]; then
@@ -3606,7 +3606,7 @@ _emit_contextual_note() {
   log_line "Cmd: # NOTE: $_note"
 }
 
-# Raw Python runner for array deletions — prints py_output to stdout so the
+# Raw Python runner for array deletions. Prints py_output to stdout so the
 # caller can prefetch it in parallel before emit_array_deletions consumes it.
 _py_deletions_raw() {
   local dom="$1" prev_json="$2" curr_json="$3"
@@ -3647,7 +3647,7 @@ curr = load(curr_path)
 
 results = []
 
-# SHARED BLOCK — load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
+# SHARED BLOCK. Load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
 # repeated verbatim in the three Python workers (emit_array_additions,
 # _py_deletions_raw, emit_nested_dict_changes). Kept duplicated on purpose: each
 # worker stays a self-contained, readable <<'PY' heredoc. EDIT ALL THREE TOGETHER.
@@ -3699,7 +3699,7 @@ for path_tuple, index, item in results:
     if len(path_tuple) != 1:
         continue
     array_name = path_tuple[-1] if path_tuple else ""
-    # Whole-element noise — the half the shell can never see (it gets key names, not values).
+    # Whole-element noise. The half the shell can never see (it gets key names, not values).
     if is_noise_element(array_name, item):
         continue
     # Skip reorders: if array length is the same, elements just moved (not deleted)
@@ -3718,7 +3718,7 @@ for path_tuple, index, item in results:
         keys = ""
     # A 5th field: the element's VALUE, when targeting it by value is safe.
     # An index-addressed Delete replayed on a target whose array differs removes
-    # WHATEVER sits at that index — silently, with no error (measured: a Spotlight
+    # WHATEVER sits at that index. Silently, with no error (measured: a Spotlight
     # category re-enable removed the target's Siri entry instead). Only for a
     # string that occurs EXACTLY ONCE in the source array: a repeated value
     # (NSToolbarFlexibleSpaceItem) would match several, and a dict element has no
@@ -3752,7 +3752,7 @@ for path_tuple, index, item in results:
                     '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
     # \x1f (unit separator), NOT tab: tab is an IFS *whitespace* character, so zsh
     # collapses a run of them into ONE delimiter. With `keys` and `app_label` both
-    # empty — every scalar array — `\t\t\t` became a single separator and the value
+    # empty (every scalar array): `\t\t\t` became a single separator and the value
     # landed in `keylist`, three variables early. Measured, not guessed: the
     # emitter silently kept using the positional form. A non-whitespace separator
     # yields one empty field per empty column, which is what the reader expects.
@@ -3763,7 +3763,7 @@ PY
 # Detect and emit commands for array deletions
 # Remove ONE element of a top-level array by its VALUE, not by its index.
 # `defaults` cannot do it and PlistBuddy addresses arrays positionally only, so
-# the emitted line goes through python3 — already required, no new dependency.
+# the emitted line goes through python3. Already required, no new dependency.
 # It reads and writes through `defaults export`/`import` rather than touching the
 # plist file: cfprefsd owns that file and would overwrite a direct write.
 # Returns empty when a quote in any field would break the single-quoted shell
@@ -3818,7 +3818,7 @@ emit_array_deletions() {
     fi
 
     # $base is an array key name straight out of the plist, and $dom is the
-    # filename-derived domain — both were interpolated raw here while the very
+    # filename-derived domain. Both were interpolated raw here while the very
     # same construction in _build_defaults_delete_cmd escapes its target.
     local delete_cmd="defaults delete \"$(_escape_dq "$dom")\" \":$(_escape_dq "$base"):${idx}\""
 
@@ -3840,7 +3840,7 @@ emit_array_deletions() {
       # wholesale rather than editing it -- which is the point: it reproduces the
       # configuration, it does not merge with whatever was there.
       _note_should_show "__arrayrw__:$dom:$base" \
-        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$base' list — reproduces it, does not merge)"
+        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$base' list. Reproduces it, does not merge)"
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$_rw_cmd")"
     elif [ -n "$_val_cmd" ]; then
       # Value-targeted: no index to shift, so the "run these in the order shown"
@@ -3848,7 +3848,7 @@ emit_array_deletions() {
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$_val_cmd")"
       # Same caveat as the Bluetooth line: this one runs python3 on the TARGET.
       _note_should_show __arraydel_py__ \
-        && _log_kind "$kind" "Cmd: #       (needs python3 on the TARGET — without the Command Line Tools /usr/bin/python3 only offers to install them)"
+        && _log_kind "$kind" "Cmd: #       (needs python3 on the TARGET. Without the Command Line Tools /usr/bin/python3 only offers to install them)"
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" 2>/dev/null); then
@@ -3901,7 +3901,7 @@ def load(path):
 prev = load(prev_path)
 curr = load(curr_path)
 
-# SHARED BLOCK — load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
+# SHARED BLOCK. Load(), _VOLATILE_KEYS, strip_volatile() and pb_type_value() are
 # repeated verbatim in the three Python workers (emit_array_additions,
 # _py_deletions_raw, emit_nested_dict_changes). Kept duplicated on purpose: each
 # worker stays a self-contained, readable <<'PY' heredoc. EDIT ALL THREE TOGETHER.
@@ -3963,7 +3963,7 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
         # Added elements (array grew)
         for i in range(len(prev_obj), len(curr_obj)):
             additions.append((path_parts + [str(i)], curr_obj[i]))
-        # Removed elements (array shrank) — delete highest index first
+        # Removed elements (array shrank). Delete highest index first
         for i in reversed(range(len(curr_obj), len(prev_obj))):
             deletions.append((path_parts + [str(i)],))
     else:
@@ -3974,12 +3974,12 @@ def find_leaf_changes(prev_obj, curr_obj, path_parts):
     return changes, additions, deletions
 
 # An empty-string key ('') makes the ':'.join path a bare '::', which PlistBuddy
-# collapses — the value lands one level too high (verified by round-trip). No CLI
+# collapses. The value lands one level too high (verified by round-trip). No CLI
 # addresses it, so skip the whole subtree from that key down and note it once.
 _empty_key_noted = [False]
 def _note_empty_key():
     if not _empty_key_noted[0]:
-        print("PBCMD\t# NOTE: a key path has an empty-string key ('') — PlistBuddy can't address it, so that subtree is skipped (not reproducible)")
+        print("PBCMD\t# NOTE: a key path has an empty-string key (''). PlistBuddy can't address it, so that subtree is skipped (not reproducible)")
         _empty_key_noted[0] = True
 
 # Recursively emit PlistBuddy Add commands for an entire dict/value tree
@@ -4035,7 +4035,7 @@ for top_key in sorted(curr.keys()):
             # of them untouched defaults). A per-domain entry would only ever
             # cover the panes someone happened to open; this covers all of them,
             # and the "If" keeps it from over-claiming on a small deliberate tree.
-            print("PBCMD\t# NOTE: new key tree — the Add commands build it top-down; later changes to it emit Set.")
+            print("PBCMD\t# NOTE: new key tree. The Add commands build it top-down; later changes to it emit Set.")
             print("PBCMD\t#       If this came from first opening a settings pane, most of these values are untouched defaults, not your choices.")
             _first_create_noted = True
         changed_top_keys.add(top_key)
@@ -4068,7 +4068,7 @@ for top_key in sorted(curr.keys()):
             changes = []
         elif changes:
             # Same-length array: suppress positional Set diffs for elements that
-            # merely moved (same content, different index) — reordering an
+            # merely moved (same content, different index). Reordering an
             # order-insensitive list (e.g. Spotlight EnabledPreferenceRules) must
             # not emit per-index Sets. strip_volatile ignores metadata that
             # changes on every plist rewrite.
@@ -4132,7 +4132,7 @@ PY
 # Shared by show_plist_diff and show_domain_diff. Canonical emission order:
 # additions/sets (via _process_py_meta) THEN deletions.
 # Args: kind dom prev_json curr_json pb_plist_path key
-# Reads/writes the globals _HAS_ARRAY_ADDITIONS and _SKIP_KEYS — do NOT
+# Reads/writes the globals _HAS_ARRAY_ADDITIONS and _SKIP_KEYS. Do NOT
 # declare those local here.
 _run_py_diff_workers() {
   local kind="$1" dom="$2" prev_json="$3" curr_json="$4" pb_plist_path="$5" key="$6"
@@ -4169,21 +4169,21 @@ _run_py_diff_workers() {
 
 # Menu bar item positions (`NSStatusItem Preferred Position <Item>`) are pixel offsets,
 # each app storing its own in its OWN domain. They are filtered as UI churn, so a
-# Cmd+drag reorder otherwise emits nothing — surface a NOTE.
+# Cmd+drag reorder otherwise emits nothing. Surface a NOTE.
 # Fires only on a VALUE change of an existing key: a key added/removed means an item was
 # shown/hidden, whose real command (the Control Center module value) is already emitted.
 # A display connect/disconnect can recompute the offsets too (seen once), but not
-# reliably — so the NOTE never claims a reorder, only that positions changed.
+# reliably. So the NOTE never claims a reorder, only that positions changed.
 _note_menubar_positions() {
   local kind="$1" prev="$2" curr="$3" dom="${4:-}" _k _pat
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
   # Old form: every app stores its own `NSStatusItem Preferred Position <Item>`.
   # macOS 27 moved them into ONE domain, com.apple.MenuBarAgent, as a flat dict
   # `*ItemPreferredPositions` whose keys are `module:<id>` / `status:<bundleid>::<item>`
-  # and whose values are the offsets — so match those leaf keys in that domain.
+  # and whose values are the offsets. So match those leaf keys in that domain.
   _pat='"NSStatusItem Preferred Position'
   [ "$dom" = "com.apple.MenuBarAgent" ] && _pat='"(module|status):'
-  # `|| true` INSIDE the $() — diff exits 1 when the files differ, and pipefail
+  # `|| true` INSIDE the $(). Diff exits 1 when the files differ, and pipefail
   # propagates that, which an outer `|| _k=""` would use to wipe the captured key
   # (the bug that kept this NOTE from ever firing). Keep the stdout, drop the status.
   _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
@@ -4192,11 +4192,11 @@ _note_menubar_positions() {
         | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1 || true)
   [ -n "$_k" ] || return 0
   _note_should_show __menubar_pos__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed — item positions are pixel offsets, not"
+  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed. Item positions are pixel offsets, not"
   _log_kind "$kind" "Cmd: #       portable, so not emitted. A reorder OR a display connect/disconnect triggers this."
 }
 
-# Detect a pure Dock reorder — persistent-apps/others hold the SAME apps in a
+# Detect a pure Dock reorder. Persistent-apps/others hold the SAME apps in a
 # different order. The positional churn (GUID/book/file-mod-date) is filtered as
 # noise, so a reorder otherwise emits nothing; surface a NOTE. Reproducing the
 # order needs a full persistent-apps rewrite, which the per-key diff doesn't emit.
@@ -4228,18 +4228,18 @@ for key in ("persistent-apps", "persistent-others"):
 PY
 )
   if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
-    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered — no command emitted; reproduce the order for deployment with dockutil"
+    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered. No command emitted; reproduce the order for deployment with dockutil"
     _log_kind "$kind" "Cmd: #       (github.com/kcrawford/dockutil), e.g. $(_mdm_wrap "dockutil --move <app> --position <N>")"
   fi
 }
 
 # Battery charge limit change. Only com.apple.batteryui.charging.mac's
-# `…prior.limit` moves, but that's UI state — the actual limit is SMC/powerd-
+# `…prior.limit` moves, but that's UI state. The actual limit is SMC/powerd-
 # managed and NOT reproducible via `defaults` (that write only sets the UI's
 # remembered value). The key is filtered (is_noisy_key), so surface a NOTE here.
 # Time Machine: the two settings `tmutil` can actually reproduce.
 #
-# "Back up automatically" is AutoBackup, and the exclusion list is SkipPaths —
+# "Back up automatically" is AutoBackup, and the exclusion list is SkipPaths.
 # both filtered above, because backupd owns this file and tmutil is the
 # documented route. The other keys of the domain have no tmutil verb and keep
 # emitting what they always did.
@@ -4248,14 +4248,14 @@ PY
 # a DIFF, and only the paths that actually moved should turn into a command.
 _tm_skippaths() {
   [ -s "$1" ] || return 0
-  # `plutil -p` does NOT escape anything inside a string — measured, after an
+  # `plutil -p` does NOT escape anything inside a string. Measured, after an
   # earlier version of this function un-escaped a `\"` that plutil never writes:
   #
   #     0 => "/Users/x/Mon Dossier "test""
   #
   # So the value simply runs from `=> "` to the end of the line, minus the one
   # closing quote. That is lossy in one case plutil itself cannot express: a path
-  # ENDING in a quote loses it. No format to fix here — just do not pretend the
+  # ENDING in a quote loses it. No format to fix here. Just do not pretend the
   # dump is quoted data.
   /usr/bin/awk '
     /"SkipPaths" => \[/ { inside = 1; next }
@@ -4296,13 +4296,13 @@ _note_timemachine() {
 }
 
 # Media Sharing. Every key of com.apple.amp.mediasharingd is filtered (see
-# is_noisy_key) because they mirror state the daemon never reads back — so the
+# is_noisy_key) because they mirror state the daemon never reads back. So the
 # domain would otherwise report a change with no command at all behind it.
 _note_mediasharing() {
   local kind="$1"
   _note_should_show __mediasharing__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: Media Sharing changed — not reproducible via defaults: these keys mirror state"
-  _log_kind "$kind" "Cmd: #       the daemon writes and never reads back (measured — the write survives a restart of"
+  _log_kind "$kind" "Cmd: # NOTE: Media Sharing changed, not reproducible via defaults: these keys mirror state"
+  _log_kind "$kind" "Cmd: #       the daemon writes and never reads back (measured. The write survives a restart of"
   _log_kind "$kind" "Cmd: #       mediasharingd and the pane never follows). Set it in System Settings > General > Sharing."
 }
 
@@ -4310,7 +4310,7 @@ _note_mediasharing() {
 # PrefWatch said none of them.
 #
 # The "requires logout/login" note DID exist, keyed on the array
-# `com.apple.print.customPresetsInfo` — a key that is present nowhere on a real
+# `com.apple.print.customPresetsInfo`. A key that is present nowhere on a real
 # machine (0 occurrences across the three preset domains here), so it had never
 # once fired. Same whitelist rot as the key list it sat next to.
 #
@@ -4321,7 +4321,7 @@ _note_mediasharing() {
 #    is whatever the printer was added as, so it matches only where the queue was
 #    named the same. Same class as the ColorSync display UUID.
 #  · the top-level KEY is the preset's display name, and the built-in entries are
-#    LOCALISED — this machine holds 'Réglages par défaut' and 'Derniers réglages
+#    LOCALISED. This machine holds 'Réglages par défaut' and 'Derniers réglages
 #    utilisés' next to the untranslated technical key `vendorDefaultSettings`. A
 #    `:Réglages par défaut:` path finds nothing on an English Mac. A preset the
 #    admin names themselves travels fine; those two do not.
@@ -4329,19 +4329,19 @@ _note_print_preset() {
   local kind="$1" dom="$2"
   case "$dom" in com.apple.print.custompresets*) ;; *) return 0 ;; esac
   _note_should_show "__print_preset__:$dom" || return 0
-  _log_kind "$kind" "Cmd: # NOTE: print preset changed — it takes effect after a logout/login."
+  _log_kind "$kind" "Cmd: # NOTE: print preset changed. It takes effect after a logout/login."
   case "$dom" in
     *.forprinter.*)
       _log_kind "$kind" "Cmd: #       This domain names the print queue ('${dom##*.forprinter.}'), which is whatever"
-      _log_kind "$kind" "Cmd: #       the printer was added as — the path matches only where the queue has that name." ;;
+      _log_kind "$kind" "Cmd: #       the printer was added as. The path matches only where the queue has that name." ;;
   esac
   _log_kind "$kind" "Cmd: #       The top-level key is the preset's NAME. macOS's own entries are localised"
   _log_kind "$kind" "Cmd: #       ('Réglages par défaut' here), so their path finds nothing on a Mac in another"
   _log_kind "$kind" "Cmd: #       language. A preset you named yourself carries the name you chose, and travels."
 }
 
-# Wi-Fi radio on/off (System Settings > Wi-Fi). The state IS in a plist —
-# SystemConfiguration/com.apple.airport.preferences, key PowerEnabled — so the
+# Wi-Fi radio on/off (System Settings > Wi-Fi). The state IS in a plist.
+# SystemConfiguration/com.apple.airport.preferences, key PowerEnabled. So the
 # diff has always SEEN it; what it emitted was a raw write to a file airportd
 # owns. `networksetup -setairportpower` takes a BSD device name, so the name is
 # resolved here and the NOTE says it belongs to this Mac.
@@ -4367,45 +4367,45 @@ _note_wifi_power() {
 _note_charge_limit() {
   local kind="$1"
   _note_should_show __charge_limit__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: battery charge limit changed — managed by the power daemon (SMC), not reproducible via defaults; set it in System Settings > Battery"
+  _log_kind "$kind" "Cmd: # NOTE: battery charge limit changed. Managed by the power daemon (SMC), not reproducible via defaults; set it in System Settings > Battery"
 }
 
 # desktoppr (scriptingosx) records the image it last applied in its own domain.
-# `defaults` cannot set a wallpaper, so — like utiluti for default apps — the tool
+# `defaults` cannot set a wallpaper, so, like utiluti for default apps, the tool
 # IS the command, not an alternative to one. `lastPath` is filtered (is_noisy_key)
 # and replaced here by the command that reproduces the wallpaper.
 #
 # In ALL mode this is the SECOND source of that command: wallpaper_watch reads the
 # same path out of the com.apple.wallpaper Store, and covers a wallpaper set in
-# System Settings too — which this domain never sees. The two would print the same
+# System Settings too. Which this domain never sees. The two would print the same
 # two lines twice, and _note_should_show cannot stop it: watchers are separate
 # processes, so each holds its own dedup table. Rather than dedup across processes,
 # defer: wallpaper_watch's registry guard is exactly ALL mode + python3, so under
-# that condition it is emitting, and this stays the only source everywhere else —
+# that condition it is emitting, and this stays the only source everywhere else.
 # single-domain mode, and a Mac with no python3.
 _desktoppr_lastpath() {
   [ -s "$1" ] || return 0
   # No pipe: a capture of `cmd | head` dies under set -e + pipefail (1.4.3).
   /usr/bin/sed -n 's/^[[:space:]]*"lastPath" => "\(.*\)"$/\1/p' "$1" 2>/dev/null
 }
-# The one-line header above any desktoppr command. Two emitters print it —
-# _note_desktoppr here, and wallpaper_watch — so it lives in one place.
+# The one-line header above any desktoppr command. Two emitters print it.
+# _note_desktoppr here, and wallpaper_watch. So it lives in one place.
 _note_desktoppr_head() { _log_kind "${1:-}" "Cmd: # NOTE: needs desktoppr (github.com/scriptingosx/desktoppr)"; }
 _note_desktoppr() {
   local kind="$1" _p _c
   _p="$(_desktoppr_lastpath "$2")" ; _c="$(_desktoppr_lastpath "$3")"
   [ -n "$_c" ] && [ "$_p" != "$_c" ] || return 0
   _note_should_show "__desktoppr__:$_c" || return 0
-  # Every key of this domain is filtered, so the generic "new domain — the commands
+  # Every key of this domain is filtered, so the generic "new domain. The commands
   # below are its full configuration" note would head an empty block. Claim its
   # dedup slot whether or not the pair is printed below: with every key filtered,
   # that note heads an empty block either way.
   _NOTED_DOMAIN[__newdom__:com.scriptingosx.desktoppr]=$EPOCHSECONDS
-  # wallpaper_watch is emitting this in ALL mode — see above.
+  # wallpaper_watch is emitting this in ALL mode. See above.
   [ "${ALL_MODE:-false}" = "true" ] && [ -n "$PYTHON3_BIN" ] && return 0
   _note_desktoppr_head "$kind"
   # Wallpaper is per-user session state, so --mdm wraps it in runAsUser the same
-  # way a user-domain `defaults` is — root setting its own wallpaper changes nothing.
+  # way a user-domain `defaults` is. Root setting its own wallpaper changes nothing.
   local _dp="desktoppr \"$(_escape_dq "$_c")\""
   _log_kind "$kind" "Cmd: $(_mdm_wrap "$_dp")"
 }
@@ -4439,10 +4439,10 @@ show_plist_diff() {
   curr_json="$CACHE_DIR/${key}.curr.json"
 
   # Mutex for fs_watch ↔ poll_watch on the same plist (wait up to 3s).
-  # Reclaim lockdirs > 10s old — owning process was killed before rmdir.
+  # Reclaim lockdirs > 10s old. Owning process was killed before rmdir.
   # The reclaim must NEVER be skipped: without it a lock orphaned by a killed
   # holder is never released, and every later diff of that plist burns its 30
-  # attempts and returns — that plist's changes would then go silently unreported
+  # attempts and returns. That plist's changes would then go silently unreported
   # for the rest of the run. So fall back to `stat -f %m` if zsh/stat is absent.
   local lockdir="$CACHE_DIR/${key}.lock"
   if [ -d "$lockdir" ]; then
@@ -4462,7 +4462,7 @@ show_plist_diff() {
     _wait_attempts=$((_wait_attempts + 1))
     if [ "$_wait_attempts" -gt 30 ]; then
       # Lock held by the other watcher (fs_watch vs poll_watch), already emitting
-      # this plist's diff — skip to avoid a double-emit. Not an error.
+      # this plist's diff. Skip to avoid a double-emit. Not an error.
       return 0
     fi
     /bin/sleep 0.1
@@ -4487,7 +4487,7 @@ show_plist_diff() {
     dump_plist "$path" "$curr"
   fi
 
-  # Retry with increasing delays — cfprefsd writes asynchronously, so the file
+  # Retry with increasing delays. Cfprefsd writes asynchronously, so the file
   # may still contain stale data when fs_usage fires. `defaults read` hints
   # cfprefsd to sync. Only re-dump text (JSON dumped once change is confirmed).
   # Skip expensive dump_plist when file mtime is unchanged (fast-path skip).
@@ -4514,7 +4514,7 @@ show_plist_diff() {
       # Hint cfprefsd to flush pending writes for this domain (read triggers sync)
       "${RUN_AS_USER[@]}" /usr/bin/defaults ${_flush_hostflag:+$_flush_hostflag} read "$_dom" >/dev/null 2>&1 || true
       _cur_mtime=$(_mtime_of "$path")
-      # Last retry: always dump — stat %m has 1-second granularity so
+      # Last retry: always dump. Stat %m has 1-second granularity so
       # same-second cfprefsd flushes are invisible to the mtime check.
       if [ "$_retry_delay" != "0.7" ] && [ -n "$_cur_mtime" ] && [ "$_cur_mtime" = "$_last_mtime" ]; then
         continue
@@ -4526,7 +4526,7 @@ show_plist_diff() {
         break
       fi
     done
-    # Change detected during retry — dump JSON now for diff engine
+    # Change detected during retry. Dump JSON now for diff engine
     if [ "$_retry_changed" = "true" ] && [ "$silent" != "true" ]; then
       dump_plist_json "$path" "$curr_json"
     fi
@@ -4538,8 +4538,8 @@ show_plist_diff() {
   fi
 
   # An EMPTY dump is not "every key was deleted". dump_plist truncates its output
-  # first and falls back to `cat`; if both fail — an app rewriting its plist
-  # non-atomically, which is exactly the write fs_usage fires on — `curr` is 0
+  # first and falls back to `cat`; if both fail. An app rewriting its plist
+  # non-atomically, which is exactly the write fs_usage fires on. `curr` is 0
   # bytes. Without this, _process_diff_lines emits a `defaults delete` for EVERY
   # key of the domain, then `mv curr prev` freezes the baseline empty and the next
   # cycle is a re-add storm. show_domain_diff has guarded this since 1.4.x with
@@ -4570,11 +4570,11 @@ show_plist_diff() {
       _note_desktoppr "$kind" "$prev" "$curr"
     fi
     _process_diff_lines "$kind" "$_emit_dom" "$_emit_hostflag" "$prev" "$curr" "$path" "$path" "$path"
-    # A pure Dock reorder emits nothing above (positional churn is filtered) — flag it.
+    # A pure Dock reorder emits nothing above (positional churn is filtered). Flag it.
     [ "$_dom" = "com.apple.dock" ] && _note_dock_reorder "$kind" "$prev_json" "$curr_json"
-    # Same for menu bar offsets — any domain, so no guard.
+    # Same for menu bar offsets. Any domain, so no guard.
     _note_menubar_positions "$kind" "$prev" "$curr" "$_dom"
-    # Battery charge limit lives in a UI-cache domain; real control is SMC — NOTE only.
+    # Battery charge limit lives in a UI-cache domain; real control is SMC. NOTE only.
     [ "$_dom" = "com.apple.batteryui.charging.mac" ] && _note_charge_limit "$kind"
     [ "$_dom" = "com.apple.airport.preferences" ] && _note_wifi_power "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.TimeMachine" ] && _note_timemachine "$kind" "$prev" "$curr"
@@ -4613,7 +4613,7 @@ show_domain_diff() {
 
   "${RUN_AS_USER[@]}" /usr/bin/defaults export "$dom" - > "$tmpplist" 2>/dev/null || :
   # An empty export means the domain is absent OR the read transiently failed
-  # (cfprefsd busy under load — common on hot domains). Diffing an empty curr
+  # (cfprefsd busy under load. Common on hot domains). Diffing an empty curr
   # against a full prev would emit every key as a spurious delete AND overwrite
   # the baseline empty → full re-add storm next cycle. Skip: keep last good state.
   [ -s "$tmpplist" ] || return 0
@@ -4673,7 +4673,7 @@ _note_group_container_domain() {
   local -a _gc
   _gc=( "$TARGET_HOME/Library/Group Containers"/*/Library/Preferences/"${dom}.plist"(N.) )
   (( ${#_gc[@]} )) || return 1
-  log_line "Cmd: # NOTE: '$dom' has no preference file of its own — it lives in a group container:"
+  log_line "Cmd: # NOTE: '$dom' has no preference file of its own. It lives in a group container:"
   log_line "Cmd: #       ${_gc[1]}"
   log_line "Cmd: #       'defaults' cannot address a group container by domain name (measured: the export"
   log_line "Cmd: #       comes back empty), so no command can be emitted for it and none will be."
@@ -4728,10 +4728,10 @@ launch_console() {
 
 # MDM: emit the deploy helpers ONCE, as executable Cmd: lines, so the commands
 # below are replayable from a Jamf policy (which runs as ROOT). Two distinct needs
-# — and this is why the resolvers alone are NOT enough:
+# - and this is why the resolvers alone are NOT enough:
 #   - PlistBuddy commands carry a $loggedInUser / $UUID FILE PATH; root edits the file.
 #   - `defaults` commands target a bare DOMAIN. For a USER domain, root would write
-#     ROOT's prefs (the app never sees the change) — so those must run in the user's
+#     ROOT's prefs (the app never sees the change). So those must run in the user's
 #     context via the runAsUser wrapper. System-level defaults (/Library/Preferences,
 #     flagged by their own NOTE) run as plain root instead.
 # Called from the watcher startup so it lands with the other setup NOTEs, right
@@ -4756,7 +4756,7 @@ _spawn() { "$@" & _WATCH_PIDS+=($!); }
 
 # Notice being orphaned and tear down. The main process cannot do this for
 # itself: SIGKILL runs no trap, so a force-quit leaves this subtree alive with
-# its watchers, its eslogger and — worst — its fs_usage, which holds the only
+# its watchers, its eslogger and, worst, its fs_usage, which holds the only
 # ktrace slot on the machine and silently disables real-time detection for every
 # later run. Checking from below costs one `kill -0` every 5s, a shell builtin.
 # Recursive, leaves-first, so a watcher's pipeline members die with it. Defined
@@ -4812,8 +4812,8 @@ _watchers_teardown() {
   # Kill each watcher's whole SUBTREE, and never block on `wait`.
   #
   # The old form TERMed the direct pids then waited for them. A watcher whose
-  # body is a pipeline — sharing_exec_watch runs `eslogger | grep | python3`,
-  # fs_watch runs `script | sed | awk` — does not necessarily die when its shell
+  # body is a pipeline. Sharing_exec_watch runs `eslogger | grep | python3`,
+  # fs_watch runs `script | sed | awk`. Does not necessarily die when its shell
   # is signalled, and the `wait` then hung forever. Observed on a root session:
   # the teardown started, the shell stayed alive holding fourteen children, and
   # orphaned eslogger processes accumulated. Unprivileged runs never showed it,
@@ -4838,7 +4838,7 @@ _watchers_teardown() {
   /bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true
 }
 
-# Declarative watcher registry: "name|guard|fn|summary". SINGLE SOURCE — the
+# Declarative watcher registry: "name|guard|fn|summary". SINGLE SOURCE. The
 # guard string (eval'd in an `if`) gates BOTH the spawn AND the "Watchers active:"
 # summary line, so availability is written once, not twice (previously the
 # condition lived in the summary block AND each watcher's own `|| return 0`).
@@ -4915,12 +4915,12 @@ start_watch() {
 
   # Try to find the plist file for optimized mtime monitoring.
   # `|| plist_path=""`: the helper legitimately `return 1`s when the domain has no
-  # plist yet — a domain that has never been written, e.g. an app installed but not
+  # plist yet. A domain that has never been written, e.g. an app installed but not
   # configured. Without the guard that non-zero status trips ERR_EXIT and KILLS the
   # process at startup, so watching such a domain monitored nothing at all and the
   # only trace was two "# ABORT: set -e" lines in a log file /var/log usually keeps
   # out of sight. The `if [ -n "$plist_path" ]` below already handles the empty
-  # case — it falls back to full-domain polling, which is exactly right here.
+  # case. It falls back to full-domain polling, which is exactly right here.
   plist_path=$(get_plist_path_for_domain "$DOMAIN") || plist_path=""
 
   if [ -n "$plist_path" ]; then
@@ -5008,11 +5008,11 @@ start_watch() {
 # Monitor all preferences via fs_usage
 start_watch_all() {
   if [ "$(id -u)" -ne 0 ]; then
-    log_line "Mode: monitoring ALL preferences (polling only — no root)"
+    log_line "Mode: monitoring ALL preferences (polling only. No root)"
   elif [ "$FS_USAGE" = true ]; then
     log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
   else
-    log_line "Mode: monitoring ALL preferences (polling — --fs-usage adds the real-time detector)"
+    log_line "Mode: monitoring ALL preferences (polling. --fs-usage adds the real-time detector)"
   fi
 
   local prefs_user prefs_system
@@ -5042,7 +5042,7 @@ start_watch_all() {
 
   # Snapshot every non-excluded plist under ONE prefs tree, in parallel (16-way
   # throttle), advancing each to its baseline. Shared by the USER and SYSTEM
-  # passes — they differed only in label + path. Sets SNAPSHOT_READY on finish.
+  # passes. They differed only in label + path. Sets SNAPSHOT_READY on finish.
   # Args: $1 label (e.g. "User"/"System" for the progress line; :u form for the
   # per-domain notice) ; $2 root path.
   _snapshot_tree() {
@@ -5065,7 +5065,7 @@ start_watch_all() {
       _snap_pids+=($!)
       if (( ${#_snap_pids[@]} >= _max_parallel )); then
         # zsh is 1-based: [1] is the oldest pid; the [@]:1 slice uses a 0-based
-        # offset (drop one). Don't "normalize" [1]→[0] — [0] is empty, so
+        # offset (drop one). Don't "normalize" [1]→[0]. [0] is empty, so
         # `wait ""` returns instantly and the fork throttle is defeated.
         wait "${_snap_pids[1]}" 2>/dev/null || true
         _snap_pids=("${_snap_pids[@]:1}")
@@ -5076,12 +5076,12 @@ start_watch_all() {
     snapshot_notice "${_label} snapshot: completed ($_snap_count domains)"
     SNAPSHOT_READY="true"
     # Every existing plist now has a baseline, so from here a missing one means
-    # the file did not exist at startup — which _process_diff_lines may report.
+    # the file did not exist at startup. Which _process_diff_lines may report.
     typeset -g _BASELINE_DONE=true
   }
 
   # Initial snapshot
-  snapshot_notice "Taking initial baseline — please wait before making changes"
+  snapshot_notice "Taking initial baseline. Please wait before making changes"
 
   if [ -d "$prefs_user" ]; then
     _snapshot_tree User "$prefs_user"
@@ -5092,8 +5092,8 @@ start_watch_all() {
   fi
 
   if [ "${SNAPSHOT_READY:-false}" = "true" ]; then
-    snapshot_notice "Initial snapshots processed — you can now make your changes"
-    # Consolidated watcher status — derived from the SAME _WATCHERS registry that
+    snapshot_notice "Initial snapshots processed. You can now make your changes"
+    # Consolidated watcher status. Derived from the SAME _WATCHERS registry that
     # drives the launch loop below (summary="y" entries whose guard passes), so
     # this line can't drift from what's actually spawned.
     local -a _watch_active=()
@@ -5109,7 +5109,7 @@ start_watch_all() {
       log_line "Cmd: # Watchers active: ${(j:, :)_watch_active}"
     fi
     _emit_mdm_resolver_header
-    log_line "Cmd: # NOTE: Changes may take a few seconds to appear — wait between actions for reliable capture"
+    log_line "Cmd: # NOTE: Changes may take a few seconds to appear. Wait between actions for reliable capture"
   fi
 
   # Where a plist path belongs, for fs_watch: USER and SYSTEM are the two prefs
@@ -5126,7 +5126,7 @@ start_watch_all() {
     esac
   }
 
-  # Primary detector — real-time plist writes captured live via fs_usage.
+  # Primary detector. Real-time plist writes captured live via fs_usage.
   fs_watch() {
     # Debounce: cfprefsd fires several fs_usage events per logical write.
     # Skip events seen <$FS_DEBOUNCE_S ago; poll_watch catches misses.
@@ -5135,11 +5135,11 @@ start_watch_all() {
     # Force line-buffered I/O so a single fs_usage event isn't stuck in a
     # block buffer waiting for more data (notably for idle domains).
     # script(1) allocates a pty so fs_usage line-buffers; /dev/null is its
-    # typescript sink, NOT an output redirect. macOS has no stdbuf — don't drop it.
+    # typescript sink, NOT an output redirect. macOS has no stdbuf. Don't drop it.
     # fs_usage lives in /usr/bin, NOT /usr/sbin. The hard-coded /usr/sbin path made
     # `script` launch a nonexistent binary: the pipeline produced nothing, the while
     # loop below ended at once, fs_watch returned 0, and 2>/dev/null swallowed the
-    # only clue — so real-time detection was dead and everything ran on poll_watch
+    # only clue. So real-time detection was dead and everything ran on poll_watch
     # alone, with no error anywhere. Resolve the path, and say so when it is missing
     # rather than failing silently a second time.
     local _fsu=""
@@ -5147,17 +5147,17 @@ start_watch_all() {
       [ -x "$_c" ] && { _fsu="$_c"; break; }
     done
     if [ -z "$_fsu" ]; then
-      log_line "Cmd: # NOTE: fs_usage not found — real-time detection off; polling covers the same ground"
+      log_line "Cmd: # NOTE: fs_usage not found. Real-time detection off; polling covers the same ground"
       return 0
     fi
     # fs_usage is a ktrace client and ktrace admits exactly ONE at a time. A second
     # one dies instantly with "ktrace_start: Resource busy". That is not exotic: a
     # prefwatch whose pipeline children were orphaned (the leak fixed in 1.4.2)
     # leaves an fs_usage holding ktrace forever, and EVERY later run then has a
-    # dead fs_watch. Say it up front — the fix is to stop that process, and
+    # dead fs_watch. Say it up front. The fix is to stop that process, and
     # nothing in the log used to hint at it.
     # NO PREEMPTIVE WARNING. Three versions of this check tried to predict that
-    # fs_usage would fail — by process name, by a list of tracing tools, then by
+    # fs_usage would fail. By process name, by a list of tracing tools, then by
     # `ktrace info`. The third was authoritative and still wrong: on a healthy Mac
     # `ktrace info` reports "Owning process is [N]" for 'tailspind', a routine
     # Apple daemon, and fs_usage starts perfectly well anyway (verified: fs_usage
@@ -5166,21 +5166,21 @@ start_watch_all() {
     # warning would have fired wrongly on a large share of Macs, telling admins
     # real-time detection was off while it was running.
     #
-    # So: predict nothing. The post-mortem below fires on EVIDENCE — fs_usage
-    # actually exited — and only then asks ktrace who has it, which is genuinely
+    # So: predict nothing. The post-mortem below fires on EVIDENCE. Fs_usage
+    # actually exited. And only then asks ktrace who has it, which is genuinely
     # useful at that point.
     local _fsu_who=""
     local _fsu_err="${PREFWATCH_TMPDIR}/fs_usage.err"
     # `</dev/null` is NOT cosmetic: script(1) calls tcgetattr on stdin, and under a
-    # Jamf Self Service policy stdin is a SOCKET — it dies with
+    # Jamf Self Service policy stdin is a SOCKET. It dies with
     # "script: tcgetattr/ioctl: Operation not supported on socket", the pipeline
     # produces nothing and real-time detection is silently off. Measured: fails on a
     # socket and on a pipe, works on a tty and on /dev/null. This is the second,
-    # independent reason fs_watch never ran — and the one that only bites in
+    # independent reason fs_watch never ran. And the one that only bites in
     # production, since a Terminal launch gets a pty and works either way.
     #
     # fs_usage runs under `sh -c "exec … 2>>err"`, not directly, because `script`
-    # allocates a pty and the CHILD's stderr goes to that pty — i.e. into script's
+    # allocates a pty and the CHILD's stderr goes to that pty, i.e. into script's
     # stdout, into the sed below, which drops it. The outer `2>>` only ever caught
     # errors from `script` itself, so the file added to diagnose exactly this kind
     # of failure stayed empty while fs_usage was dying of "Resource busy"
@@ -5189,26 +5189,26 @@ start_watch_all() {
     # still finds it.
     #
     # `-f pathname`, not `-f filesys`. filesys is every filesystem syscall of
-    # every process — read, write, lseek, fstat included — and on a loaded Mac
+    # every process (read, write, lseek, fstat included), and on a loaded Mac
     # (mds reindexing after an OS upgrade, load 45) fs_usage could not push that
     # to the sed fast enough: 5.1 million lines in 45s, 3 GB resident in those
     # 45s and 8 GB five minutes in, still climbing. The detector only ever reads
     # the open/rename cfprefsd does on a plist, and those are pathname events.
     # Measured side by side under the same load, 45s each: pathname was 612k
     # lines, 510 MB, and saw every scratch write filesys saw. (Narrowing further
-    # to `cfprefsd configd` saw NOTHING — 0 plist lines — so the writer is not
+    # to `cfprefsd configd` saw NOTHING, 0 plist lines, so the writer is not
     # reliably named that; the mode filter alone is what is safe.)
     #
     # And a ceiling, because pathname still climbs under load: a watchdog kills
     # fs_usage past FS_USAGE_RSS_LIMIT_MB and leaves a marker the shutdown
     # report reads, so the log says WHY real-time detection ended. It kills
     # OURS only: the fs_usage whose grandparent (script's parent) is this very
-    # process — never an admin's own fs_usage that happens to hold ktrace
+    # process. Never an admin's own fs_usage that happens to hold ktrace
     # because ours could not start. Needs the real pid of this subshell
     # (sysparams; $$ is main's), so without zsh/system there is no ceiling
     # rather than a wrong kill. The watchdog exits with fs_usage and is killed
     # after the pipeline besides: left alone it would outlive fs_watch and be
-    # reparented to launchd — the 1.4.3 leak, one more time.
+    # reparented to launchd. The 1.4.3 leak, one more time.
     local _fw_self="" _fw_watchdog=""
     [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _fw_self="${sysparams[pid]}"
     if [ -n "$_fw_self" ]; then
@@ -5232,7 +5232,7 @@ start_watch_all() {
     script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f pathname 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
     # The leading .* MUST NOT swallow the user prefix. With `.*(/.*Library/…)` the
     # greedy prefix pushed the capture as late as possible, so
-    # /Users/gilles/Library/Preferences/x.plist came out as /Library/Preferences/x.plist —
+    # /Users/gilles/Library/Preferences/x.plist came out as /Library/Preferences/x.plist.
     # the awk below then classified it SYSTEM, show_plist_diff looked for a file that
     # does not exist and returned at once. EVERY user preference fs_watch saw was
     # silently dropped. Anchoring the capture on a space + a leading '/' fixes it;
@@ -5247,19 +5247,19 @@ start_watch_all() {
     #      and it is the path that keys the baseline: every plist the snapshot
     #      saw under $TARGET_HOME/Library/Preferences then had NO baseline at its
     #      resolved spelling, so an ordinary rewrite of com.apple.Console came out
-    #      as "a new domain — its full configuration". Seven such in one log;
+    #      as "a new domain. Its full configuration". Seven such in one log;
     #   3. only a file that sits IN a Preferences directory (flat or ByHost) is a
     #      preference. The first expression accepts any `.plist` under a
     #      container, and Safari's `Caches/WebKit/HSTS/HSTS.plist` came through
     #      as a domain named 'HSTS' whose "configuration" was a cookie's expiry.
     #
     # LC_ALL=C is load-bearing. This sed sees EVERY path the kernel touches, and
-    # one file name holding a byte that is not UTF-8 — a Latin-1 é on an old
-    # volume, in a stream mds reindexes after an OS upgrade — is enough for BSD
+    # one file name holding a byte that is not UTF-8. A Latin-1 é on an old
+    # volume, in a stream mds reindexes after an OS upgrade. Is enough for BSD
     # sed to stop with "RE error: illegal byte sequence" and exit. fs_usage then
     # dies of SIGPIPE with an empty stderr, and the log reads "exited without a
     # message" (measured on 27.0, one minute after start, and reproduced with a
-    # single \xe9 in a fixture). Under C the regexes — all ASCII — match bytes,
+    # single \xe9 in a fixture). Under C the regexes, all ASCII, match bytes,
     # the odd name passes through untouched, and nothing ends.
     LC_ALL=C /usr/bin/sed -l -nE -e 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@' -e 's@^/System/Volumes/Data/@/@' -e '\@/Library/Preferences/(ByHost/)?[^/]+\.plist$@p' |
     while IFS= read -r plist; do
@@ -5269,7 +5269,7 @@ start_watch_all() {
         continue
       fi
       # A container plist has no baseline (the snapshot never enters
-      # ~/Library/Containers, by decision — see the README: sandboxed app prefs
+      # ~/Library/Containers, by decision. See the README: sandboxed app prefs
       # are out of scope, and polling never sees them either), so diffing it
       # could only announce "a new domain" and dump it whole, under a `defaults`
       # line addressed to a name the file does not answer to. Yoink's and Screen
@@ -5278,10 +5278,10 @@ start_watch_all() {
       # answer. Real-time and polling now cover the SAME ground, which the NOTE
       # below already claims.
       if [ "$cat_type" = "CONTAINER" ]; then
-        _dbg_filtered "$(domain_from_plist_path "$plist") (container prefs — out of scope, see README)"
+        _dbg_filtered "$(domain_from_plist_path "$plist") (container prefs. Out of scope, see README)"
         continue
       fi
-      # Same reasoning for any other tree — root's own ~/Library/Preferences
+      # Same reasoning for any other tree. Root's own ~/Library/Preferences
       # under sudo, another user's, a mounted volume's: no baseline, so nothing
       # true can be said about it. It used to fall into the SYSTEM branch.
       if [ "$cat_type" = "OTHER" ]; then
@@ -5320,7 +5320,7 @@ start_watch_all() {
     done
     # Reaching here means the pipeline ENDED: fs_usage exited and real-time
     # detection is over for this run. Previously fs_watch just returned 0 and the
-    # only symptom was changes arriving a second or two later than they should —
+    # only symptom was changes arriving a second or two later than they should.
     # indistinguishable from a busy machine. Report it, with whatever fs_usage
     # said on its way out (now that its stderr is actually captured).
     [ -n "$_fw_watchdog" ] && { /bin/kill "$_fw_watchdog" 2>/dev/null || true; }
@@ -5328,7 +5328,7 @@ start_watch_all() {
     [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
     if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
       local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
-      log_line "Cmd: # NOTE: real-time detection stopped by PrefWatch — fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB):"
+      log_line "Cmd: # NOTE: real-time detection stopped by PrefWatch. Fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB):"
       log_line "Cmd: #       the machine's file activity outran it. Polling continues, at the same latency."
       return 0
     fi
@@ -5336,12 +5336,12 @@ start_watch_all() {
       *"Resource busy"*)
         # Do not repeat the two-line explanation the pre-check already gave: one
         # cause, four lines of NOTE, in a log meant to be read. But do NOT drop it
-        # either — the holder may have exited between the check and the start, in
+        # either. The holder may have exited between the check and the start, in
         # which case this is the first anyone hears of it.
         # Now that it HAS failed, naming the holder is worth the lookup.
         # Name the process actually HOLDING the slot, not the last one to configure
         # tracing. `Last configured by` is what this used to report, and on a
-        # healthy Mac it says 'tailspind' — a routine Apple daemon — while fs_usage
+        # healthy Mac it says 'tailspind', a routine Apple daemon, while fs_usage
         # starts perfectly well. Reported at the moment fs_usage fails, that wording
         # accuses whichever process happens to be named there. `Owning process is
         # [N]` is the real holder: proven on a VM where it named FlexNet's licensing
@@ -5352,7 +5352,7 @@ start_watch_all() {
         # Every capture guarded: `ktrace info` needs root and fails otherwise (with
         # a misleading "Too many levels of remote in path"), and under `pipefail` an
         # unguarded assignment would trip ERR_EXIT and kill this watcher mid-report
-        # — the same shape as the Console-by-PID regression fixed in this cycle.
+        # - the same shape as the Console-by-PID regression fixed in this cycle.
         local _kt="" _own_pid=""
         if [ -x /usr/bin/ktrace ]; then
           _kt=$(/usr/bin/ktrace info 2>/dev/null) || _kt=""
@@ -5368,27 +5368,27 @@ start_watch_all() {
         fi
         # Each branch supplies its own full clause, so the sentence reads correctly
         # in all three cases. Appending an attribution to a fixed "it is taken"
-        # gave "taken — held by …" (redundant) and "taken — last configured by …".
-        log_line "Cmd: # NOTE: real-time detection OFF — ktrace allows one client and it is ${_fsu_who:-taken}."
-        # NOT "covers everything, just a little slower" — both halves were
+        # gave "taken, held by …" (redundant) and "taken, last configured by …".
+        log_line "Cmd: # NOTE: real-time detection OFF. Ktrace allows one client and it is ${_fsu_who:-taken}."
+        # NOT "covers everything, just a little slower". Both halves were
         # measured false the same evening they were written. Latency: 0.47s with
         # real-time against 0.49s without, i.e. the 0.5s poll interval in both
         # cases. Coverage: ~/Library/Containers is scanned by neither, so
-        # "everything" was never true of polling — and, measured over 43 minutes,
+        # "everything" was never true of polling. And, measured over 43 minutes,
         # fs_usage reported no container path either. What is honest is that
         # polling loses nothing fs_usage was providing.
         log_line "Cmd: #       Polling covers the same ground at the same latency (measured)." ;;
       "")
-        log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message) — polling continues" ;;
+        log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message). Polling continues" ;;
       *)
-        log_line "Cmd: # NOTE: real-time detection stopped — fs_usage: $_why" ;;
+        log_line "Cmd: # NOTE: real-time detection stopped. Fs_usage: $_why" ;;
     esac
   }
 
-  # Fallback detector — periodic poll (find -newer) for writes fs_usage buffers/misses.
+  # Fallback detector. Periodic poll (find -newer) for writes fs_usage buffers/misses.
   poll_watch() {
     local marker_user marker_sys active_dir
-    # Flush-block locals — declared ONCE here, not inside the while loop.
+    # Flush-block locals. Declared ONCE here, not inside the while loop.
     # zsh has TYPESET_SILENT off by default, so re-running `local foo` on a
     # variable that already holds a value prints `foo=value` to stdout; doing
     # it every iteration spammed the output with `_hd=…`/`_adom=…` lines.
@@ -5416,7 +5416,7 @@ start_watch_all() {
         (( ${#_hotpaths[@]} )) && { /usr/bin/touch "${_hotpaths[@]}" 2>/dev/null || true; }
         _pids=()
         # (DN), not (N): zsh globs skip dot-prefixed names by default, and
-        # `.GlobalPreferences` is a declared HOT domain — its marker was created
+        # `.GlobalPreferences` is a declared HOT domain. Its marker was created
         # here and never seen, so the one domain holding NSGlobalDomain and the
         # ColorSync device map never got the cfprefsd flush meant for it.
         for _af in "$active_dir"/*(DN); do
@@ -5427,13 +5427,13 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          # One bare read per domain. No `-currentHost` here — it doubled the
+          # One bare read per domain. No `-currentHost` here. It doubled the
           # fork/hang surface; ByHost is flushed by show_plist_diff/fs_watch instead.
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
           _pids+=($!)
         done
         # Watchdog: a hung cfprefsd read would freeze the loop on `wait`. Kill
-        # stragglers (TERM 1s / KILL 1.5s) — missing a flush hint is harmless.
+        # stragglers (TERM 1s / KILL 1.5s). Missing a flush hint is harmless.
         if (( ${#_pids[@]} > 0 )); then
           (
             /bin/sleep 1
@@ -5450,7 +5450,7 @@ start_watch_all() {
 
       # Stamp the NEXT marker BEFORE scanning, and apply it after. Advancing the
       # marker to "now" once the loop below has finished loses every plist written
-      # during the scan and its processing — and that processing is not brief: the
+      # during the scan and its processing. And that processing is not brief: the
       # retry loop in show_plist_diff sleeps up to ~1.8s per changed plist. Such a
       # file is never `-newer` on the following cycle, so the change is dropped for
       # good, silently. Proven on a minimal model of this exact pattern: a file
@@ -5485,7 +5485,7 @@ start_watch_all() {
     done
   }
 
-  # Printer Sharing toggle — own sub-shell so the lpstat 5s debounce never blocks
+  # Printer Sharing toggle. Own sub-shell so the lpstat 5s debounce never blocks
   # it. Reads cupsd.conf's Browsing directive directly (written before cupsd reloads).
   cups_sharing_watch() {
     local cupsdconf="/etc/cups/cupsd.conf"
@@ -5516,7 +5516,7 @@ start_watch_all() {
     done
   }
 
-  # Printer add/remove detector — diffs the CUPS printer list (lpstat).
+  # Printer add/remove detector. Diffs the CUPS printer list (lpstat).
   cups_watch() {
     local cups_snapshot cups_current
     cups_snapshot="$PREFWATCH_TMPDIR/cups.snap"
@@ -5538,11 +5538,11 @@ start_watch_all() {
       # Detect added printers
       /usr/bin/comm -13 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
-        log_line "Cmd: # CUPS: printer added — $printer"
+        log_line "Cmd: # CUPS: printer added. $printer"
 
         local uri=""
         # `|| uri=""` is not cosmetic: `lpstat -v <unknown>` exits 1, and a captured
-        # pipe under set -e + pipefail takes the whole watcher with it — reproduced,
+        # pipe under set -e + pipefail takes the whole watcher with it. Reproduced,
         # the loop body dies and cups_watch never runs again for the session, its
         # only trace a `# ABORT` line. Adding a printer RELOADS cupsd, and during
         # the reload lpstat answers "Unable to connect to server": the race is real.
@@ -5565,7 +5565,7 @@ start_watch_all() {
       # Detect removed printers
       /usr/bin/comm -23 "$cups_snapshot" "$cups_current" 2>/dev/null | while IFS= read -r printer; do
         [ -z "$printer" ] && continue
-        log_line "Cmd: # CUPS: printer removed — $printer"
+        log_line "Cmd: # CUPS: printer removed. $printer"
         log_line "Cmd: sudo lpadmin -x \"$(_escape_dq "$printer")\""
       done
 
@@ -5574,7 +5574,7 @@ start_watch_all() {
   }
 
   # Stream eslogger exec events for sharing CLIs (kickstart/systemsetup/sharing/
-  # networksetup) — UI toggles that modify state outside /Library/Preferences.
+  # networksetup). UI toggles that modify state outside /Library/Preferences.
   # Requires root + eslogger (Ventura+) + Python3.
   sharing_exec_watch() {
     if [ ! -x /usr/bin/eslogger ]; then
@@ -5588,23 +5588,23 @@ start_watch_all() {
     /bin/mkdir -p "$PREFWATCH_TMPDIR/sharing_recent" 2>/dev/null || true
 
     # Python reads stdin via readline() in a loop to avoid block-buffering
-    # on the pipe — `for line in sys.stdin` defers to a large internal
+    # on the pipe. `for line in sys.stdin` defers to a large internal
     # buffer and would never fire on sparse event streams (one toggle every
     # few minutes). -u also forces unbuffered stdout.
     # The trailing " in each grep pattern anchors the match to eslogger's JSON
-    # executable-path field (not a typo) — keeps this cheap prefilter tight
+    # executable-path field (not a typo). Keeps this cheap prefilter tight
     # before the Python stage re-validates.
     /usr/bin/eslogger exec 2>/dev/null \
       | /usr/bin/grep --line-buffered -F -e '/kickstart"' -e '/systemsetup"' -e '/sharing"' -e '/networksetup"' -e '/launchctl"' \
                                      -e '/scselect"' -e '/tmutil"' -e '/nvram"' -e '/AssetCacheManagerUtil"' \
       | "$PYTHON3_BIN" -u -c '
 import json, sys, shlex, time
-# Direct sharing-toolkit binaries — any invocation is relevant
+# Direct sharing-toolkit binaries. Any invocation is relevant
 # basename -> the ONE path that basename is allowed to have. The filter used to
 # be `basename in DIRECT_BINS`, on the basename ALONE: any local user could drop
 # a file named `sharing` in their home, run it, and PrefWatch wrote
 # `sudo /Users/eve/bin/sharing …` into a log whose whole purpose is to be pasted
-# into a root shell. No privilege, no metacharacter, and shlex.quote is no help —
+# into a root shell. No privilege, no metacharacter, and shlex.quote is no help.
 # the PATH itself is the payload. Verified by replaying a synthetic exec event
 # through this parser. An exec whose path is not the canonical one is dropped:
 # a copy of the tool somewhere else is not a setting change worth replaying.
@@ -5629,11 +5629,11 @@ LAUNCHCTL_SUBCMDS = {"load", "unload", "enable", "disable", "bootstrap", "bootou
 # Third-party apps (Zoom/MS/Adobe/VM updaters) churn their OWN LaunchAgents via
 # these same verbs, so whitelist Apple sharing labels only and drop the rest.
 # "/ssh.plist" keeps the leading slash so it matches only the real ssh LaunchDaemon
-# path — a bare "ssh.plist" substring also matched a jamf ".../startssh.plist" task.
+# path. A bare "ssh.plist" substring also matched a jamf ".../startssh.plist" task.
 SHARING_LABELS = ("com.apple.smbd", "com.apple.screensharing", "com.openssh.sshd",
                   "/ssh.plist", "com.apple.RemoteDesktop", "com.apple.ARDAgent")
 # networksetup/systemsetup are polled read-only by macOS daemons (Wi-Fi refresh,
-# Network scan, time sync). Drop queries — sometimes invoked WITHOUT the dash
+# Network scan, time sync). Drop queries. Sometimes invoked WITHOUT the dash
 # (`networksetup listallhardwareports`), so strip dashes first; write verbs all
 # start with set/create/remove/add/switch/… anyway.
 READONLY_VERBS = ("get", "list", "print", "show")
@@ -5704,7 +5704,7 @@ while True:
             if is_readonly(basename, args):
                 continue
             # An argument carrying a newline would be re-emitted as TWO `Cmd:`
-            # lines, the second one being attacker text presented as a command —
+            # lines, the second one being attacker text presented as a command.
             # shlex.quote preserves \n, and the shell side reads this stream line
             # by line. Nothing legitimate needs it.
             if any("\n" in a for a in args):
@@ -5722,7 +5722,7 @@ while True:
             if not any(lbl in " ".join(args) for lbl in SHARING_LABELS):
                 continue
             # Skip load/unload churn of socket-activated system daemons that
-            # launchd cycles on its own (smbd, bootpd, dhcp6d) — their real
+            # launchd cycles on its own (smbd, bootpd, dhcp6d). Their real
             # persistent state is reported by launchd_state_watch.
             if args[1] in ("load", "unload") and any(
                 n in a for n in ("com.apple.smbd", "com.apple.bootpd", "com.apple.dhcp6d")
@@ -5737,7 +5737,7 @@ while True:
       | while IFS= read -r cmd; do
           [ -n "$cmd" ] || continue
           # Re-emitted sharing CLIs (systemsetup/sharing/networksetup/kickstart/
-          # launchctl) all need root — prefix sudo like every other privileged emit.
+          # launchctl) all need root. Prefix sudo like every other privileged emit.
           log_line "Cmd: sudo $cmd"
           # Drop a timestamped marker per service so launchd_state_watch can
           # detect when it's about to emit an equivalent form and add a NOTE.
@@ -5771,18 +5771,18 @@ while True:
 import json, sys, fnmatch, shlex
 prev_path, curr_path, domain = sys.argv[1], sys.argv[2], sys.argv[3]
 # Third-party VM / container helpers that auto-toggle their own launchd
-# state in the user gui session — not user-driven preference changes.
+# state in the user gui session. Not user-driven preference changes.
 NOISE_PATTERNS = (
     "codes.rambo.*",                  # VirtualBuddy
     "com.parallels.*",                # Parallels Desktop
     "com.vmware.*",                   # VMware Fusion
     "org.virtualbox.*",               # VirtualBox
     "com.docker.*",                   # Docker Desktop
-    "com.fortinet.*",                 # FortiClient VPN/security agent — re-bootstraps its daemons on wake
+    "com.fortinet.*",                 # FortiClient VPN/security agent. Re-bootstraps its daemons on wake
     "com.apple.ManagedClient*",       # MDM enrollagent auto-disable post-enrollment
-    "com.apple.bootpd",               # DHCP/BOOTP server — flaps with Internet Sharing/network
-    "com.apple.dhcp6d",               # DHCPv6 server — flaps automatically
-    "com.apple.FolderActionsDispatcher",  # Folder Actions dispatcher — system auto-toggles it (enable+disable in one burst = net no-op flap)
+    "com.apple.bootpd",               # DHCP/BOOTP server. Flaps with Internet Sharing/network
+    "com.apple.dhcp6d",               # DHCPv6 server. Flaps automatically
+    "com.apple.FolderActionsDispatcher",  # Folder Actions dispatcher. System auto-toggles it (enable+disable in one burst = net no-op flap)
 )
 def is_noisy(svc):
     return any(fnmatch.fnmatchcase(svc, p) for p in NOISE_PATTERNS)
@@ -5793,7 +5793,7 @@ def load(p):
         return {}
 prev = load(prev_path)
 curr = load(curr_path)
-# gui/<uid> services live in the console user's domain — a root replay needs
+# gui/<uid> services live in the console user's domain. A root replay needs
 # `launchctl asuser <uid> …`, not a bare `launchctl … gui/<uid>/…`. System stays.
 def _lc(verb, k):
     # `k` is a label an unprivileged user can put there with
@@ -5839,7 +5839,7 @@ PY
     #  - a one-shot dedup NOTE if sharing_exec_watch logged the equivalent
     #    load/unload form for the same service in the last 10s;
     #  - the bootstrap/bootout companion (system domain) so the output is
-    #    actually replayable — enable/disable only flips the persistent
+    #    actually replayable. Enable/disable only flips the persistent
     #    on-disk flag; a socket/on-demand service (smbd, ssh, …) won't
     #    start/stop until launchd (re)loads it, so the UI stays unchanged
     #    until a bootstrap/bootout (or a reboot).
@@ -5863,10 +5863,10 @@ PY
         fi
       fi
       # launchctl in the system domain (and `asuser` for gui) needs root, like
-      # every other privileged emit — prefix sudo for a copy-paste deploy.
+      # every other privileged emit. Prefix sudo for a copy-paste deploy.
       log_line "Cmd: sudo $cmd"
 
-      # Bootstrap/bootout companion (system daemons only — gui agent plist
+      # Bootstrap/bootout companion (system daemons only. Gui agent plist
       # paths vary; for those a reboot also applies the enable/disable).
       if [ "$_ld_domain" = "system" ] && [ -n "$_svc" ]; then
         local _companion=""
@@ -5878,12 +5878,12 @@ PY
           _companion="sudo /bin/launchctl bootout system/${_svc}"
         fi
         # Burst-dedup (like every other NOTE) not once-per-session: show it once
-        # per service-toggle burst, re-show after 15s of quiet — so a later,
+        # per service-toggle burst, re-show after 15s of quiet. So a later,
         # separate sharing change still carries its explanation. The actionable
         # bootstrap/bootout command below is emitted every time regardless.
         if _note_should_show __launchd_bootstrap__; then
           log_line "Cmd: # NOTE: enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing)"
-          log_line "Cmd: #       won't start/stop — and its UI toggle won't move — until launchd (re)loads it via bootstrap/bootout, or a reboot"
+          log_line "Cmd: #       won't start/stop, and its UI toggle won't move, until launchd (re)loads it via bootstrap/bootout, or a reboot"
         fi
         [ -n "$_companion" ] && log_line "Cmd: $_companion"
       fi
@@ -5962,7 +5962,7 @@ PY
       /bin/sleep 2
       /usr/bin/pmset -g custom > "$pmset_current" 2>/dev/null || true
 
-      # Quick check — skip parsing if nothing changed
+      # Quick check. Skip parsing if nothing changed
       if ! /usr/bin/cmp -s "$pmset_snapshot" "$pmset_current"; then
         # Parse both snapshots into "section|key|value" lines and diff
         local snap_parsed="" curr_parsed=""  # init: re-`local` in this loop would print the vars
@@ -5987,14 +5987,14 @@ PY
           new_label=$(_pmset_label "$key" "$val")
           if [ -n "$old_val" ]; then
             old_label=$(_pmset_label "$key" "$old_val")
-            log_line "Cmd: # Energy: ${section} — ${key} changed: ${old_label} → ${new_label}"
+            log_line "Cmd: # Energy: ${section}. ${key} changed: ${old_label} → ${new_label}"
           else
-            log_line "Cmd: # Energy: ${section} — ${key} set to ${new_label}"
+            log_line "Cmd: # Energy: ${section}. ${key} set to ${new_label}"
           fi
           # `pmset -g custom` prints DISPLAY LABELS, and a label is not a setting
           # name. Measured on 26.6.2: every name pmset accepts is a single token
           # (its man page lists no other shape), and the one multi-word key this
-          # machine produces — `Sleep On Power Button` — is REJECTED with `Usage:`
+          # machine produces, `Sleep On Power Button`, is REJECTED with `Usage:`
           # while every single-word key gets as far as the root check. It was also
           # emitted unquoted, so it arrived as four arguments. A space is the
           # test, not a list of known labels: any label Apple adds next would
@@ -6002,7 +6002,7 @@ PY
           case "$key" in
             *\ *)
               _note_should_show "__pmset_label__:$key" \
-                && log_line "Cmd: #       (no pmset setting name for '$key' — set it in System Settings > Battery)" ;;
+                && log_line "Cmd: #       (no pmset setting name for '$key'. Set it in System Settings > Battery)" ;;
             *)
               log_line "Cmd: sudo /usr/bin/pmset ${flag} ${key} ${val}" ;;
           esac
@@ -6014,7 +6014,7 @@ PY
   }
 
   # Remote Management per-user privileges (Observe/Control/…). These live as the
-  # `naprivs` bitmask in each user's directory record — not a plist, and the UI
+  # `naprivs` bitmask in each user's directory record. Not a plist, and the UI
   # sets them via XPC (no kickstart exec), so fs/poll/launchd/exec watchers all
   # miss them. Poll `dscl . -list /Users naprivs` and emit the replayable write.
   ard_privs_watch() {
@@ -6040,7 +6040,7 @@ PY
           _changed=true
       done < "$_snap"
       # Apply: the dscl write (which is exactly what kickstart does internally)
-      # only persists the value — the ARD agent must restart to pick it up, or
+      # only persists the value. The ARD agent must restart to pick it up, or
       # the Options UI / live access won't reflect the change.
       if [ "$_changed" = "true" ] && [ -x "$_ks" ]; then
         if [ -z "${_ARD_RESTART_NOTED:-}" ]; then
@@ -6054,7 +6054,7 @@ PY
     _snapshot_watch ard_privs 2 _read_ardprivs _onchange_ardprivs
   }
 
-  # File Sharing SHARE POINTS — which folders are shared, and their SMB flags.
+  # File Sharing SHARE POINTS. Which folders are shared, and their SMB flags.
   # These live in OpenDirectory (`dscl . -list /SharePoints`), never in a plist,
   # so the plist diff cannot see them: sharing a specific folder in the GUI used
   # to emit nothing at all. Replaying only the smbd launchctl commands then
@@ -6062,18 +6062,18 @@ PY
   # admin had just set up.
   #
   # Read through `dscl -plist -readall`, which every supported macOS has. The
-  # first version of this read `sharing -l -f json` — cleaner output, but `-f
+  # first version of this read `sharing -l -f json`. Cleaner output, but `-f
   # json` is a recent option and PrefWatch has to work on the last three macOS
   # releases, where an unknown option would make the read return nothing and the
   # watcher miss every share point in silence. The two readers were compared on
   # 26.6.2 and produce byte-identical output, so the portable one costs nothing.
   #
   # The emitted flags are MEASURED, not guessed (probe 2026-09-05, macOS 26.6.2):
-  # `-s` and `-g` take THREE digits — afp, ftp, smb in that order — so smb-only
+  # `-s` and `-g` take THREE digits (afp, ftp, smb in that order), so smb-only
   # is `001`, not `1`. Verified round-trip: `-s 001 -g 000 -R 1 -E 1` reads back
   # as shared=1 guest=0 read_only=1 sealed=1, and `sharing -e` flips them back.
   # afp and ftp are what `sharing` itself calls "no longer supported" and the
-  # JSON does not report them, so the first two digits are always 0 — faithful
+  # JSON does not report them, so the first two digits are always 0. Faithful
   # to everything that is observable.
   sharepoints_watch() {
     [ -x /usr/bin/dscl ] || return 0
@@ -6095,7 +6095,7 @@ for rec in recs:
     if not name: continue
     # Only the seven fields a `sharing` command can set. The record also carries
     # com_apple_sharing_uuid / sharepoint_group_id / sharepoint_account_uuid (per
-    # machine, would not transplant) and record_daemon_version (pure churn) —
+    # machine, would not transplant) and record_daemon_version (pure churn).
     # they are dropped by SELECTING what we need, not by a filter that could rot.
     rows.append((name, one(rec,"directory_path"), one(rec,"smb_shared","0"),
                  one(rec,"smb_guestaccess","0"), one(rec,"smb_readonly","0"),
@@ -6119,8 +6119,8 @@ for row in sorted(rows):
     # Flags for an EDIT: ONLY the fields that actually changed. Two measured
     # reasons, neither of them guessable (probe 2026-09-05, macOS 26.6.2):
     #
-    #  · `-S <name>` with the name the share ALREADY has is refused outright —
-    #    "sharing: smb name already exists" — and the whole edit is then a no-op.
+    #  · `-S <name>` with the name the share ALREADY has is refused outright.
+    #    "sharing: smb name already exists". And the whole edit is then a no-op.
     #    The first version of this emitted -S unconditionally, so every emitted
     #    edit silently did nothing. Only pass -S when the smb name really moved.
     #  · an omitted flag is PRESERVED, not reset. So a share going read-only
@@ -6146,10 +6146,10 @@ for row in sorted(rows):
         [ -n "$n" ] || continue
         old=$(/usr/bin/awk -F'\t' -v k="$n" '$1==k{print; exit}' "$_snap" 2>/dev/null)
         if [ -z "$old" ]; then
-          log_line "Cmd: # File Sharing: share point added — $n"
+          log_line "Cmd: # File Sharing: share point added. $n"
           log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags_add "$sh" "$gu" "$ro" "$se" "$sn")"
           if [ -z "${_SP_PATH_NOTED:-}" ]; then
-            log_line "Cmd: # NOTE: the shared folder must already exist on the target — sharing -a does not create it"
+            log_line "Cmd: # NOTE: the shared folder must already exist on the target. Sharing -a does not create it"
             typeset -g _SP_PATH_NOTED=1
           fi
         elif [ "$old" != "$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$n" "$p" "$sh" "$gu" "$ro" "$se" "$sn")" ]; then
@@ -6158,13 +6158,13 @@ for row in sorted(rows):
           if [ "$_op" != "$p" ]; then
             # The shared FOLDER moved. `sharing -e` cannot express that, so the
             # faithful reproduction is a remove followed by a fresh create.
-            log_line "Cmd: # File Sharing: share point now points elsewhere — $n"
+            log_line "Cmd: # File Sharing: share point now points elsewhere. $n"
             log_line "Cmd: sudo /usr/sbin/sharing -r \"$(_escape_dq "$n")\""
             log_line "Cmd: sudo /usr/sbin/sharing -a \"$(_escape_dq "$p")\" -n \"$(_escape_dq "$n")\" $(_sp_flags_add "$sh" "$gu" "$ro" "$se" "$sn")"
           else
             _ef=$(_sp_flags_edit "$_osh" "$_ogu" "$_oro" "$_ose" "$_osn" "$sh" "$gu" "$ro" "$se" "$sn")
             if [ -n "$_ef" ]; then
-              log_line "Cmd: # File Sharing: share point changed — $n"
+              log_line "Cmd: # File Sharing: share point changed. $n"
               log_line "Cmd: sudo /usr/sbin/sharing -e \"$(_escape_dq "$n")\" $_ef"
             fi
           fi
@@ -6174,7 +6174,7 @@ for row in sorted(rows):
       while IFS=$'\t' read -r n p sh gu ro se sn; do
         [ -n "$n" ] || continue
         /usr/bin/awk -F'\t' -v k="$n" '$1==k{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
-        log_line "Cmd: # File Sharing: share point removed — $n"
+        log_line "Cmd: # File Sharing: share point removed. $n"
         log_line "Cmd: sudo /usr/sbin/sharing -r \"$(_escape_dq "$n")\""
       done < "$_snap"
       return 0
@@ -6187,7 +6187,7 @@ for row in sorted(rows):
   # so it is an absence of data, not over-filtering). The plist diff can never see
   # it; polling is the only way.
   #
-  # `system_profiler SPBluetoothDataType` is the probe — measured 2026-09-05 on
+  # `system_profiler SPBluetoothDataType` is the probe. Measured 2026-09-05 on
   # 26.6.2: moves within 1s of a toggle, stable at rest (one value over 20 samples
   # a second apart), 0.10s a read. `/usr/sbin/BlueTool -c power` is ten times
   # cheaper but reads the controller's power rail, not the setting: it stayed at 1
@@ -6198,11 +6198,11 @@ for row in sorted(rows):
   # No `defaults` command reproduces it: the Bluetooth plists are byte-identical
   # between On and Off, so there is nothing to replay. `/usr/sbin/BlueTool` does
   # flip the radio but bluetoothd undoes it within 4 seconds (Off at +1s, back On
-  # at +4s) — the shape of the display preset and the battery charge limit.
+  # at +4s). The shape of the display preset and the battery charge limit.
   #
   # The emitted command needs NO third-party tool. The usual third-party answer is
   # a wrapper around IOBluetoothPreferenceSetControllerPowerState in the public
-  # IOBluetooth framework — read off its own linked symbols — and the python3
+  # IOBluetooth framework (read off its own linked symbols), and the python3
   # PrefWatch already requires calls that function directly through ctypes,
   # verified to set the state and to survive a reboot. Naming a binary would have
   # added an install step for no capability.
@@ -6222,7 +6222,7 @@ for row in sorted(rows):
       esac
       # Key the dedup on the STATE, not on the watcher. The plain key suppressed
       # the second half of an off-then-on within the 15s burst window, so the log
-      # said "turned Off" on a machine that had ended up On — worse than silence
+      # said "turned Off" on a machine that had ended up On. Worse than silence
       # for whoever replays it. _snapshot_watch already fires only on a real
       # change, so per-state keying reports every toggle and still collapses
       # a repeat of the same state. Same composite-key shape as __newdom__:$dom.
@@ -6236,7 +6236,7 @@ for row in sorted(rows):
       local _cmd="/usr/bin/python3 -c '${_py}${_flag})'"
       # The note states the fact, the command sits on its OWN line underneath: an
       # admin copies a line, not a sentence. No "not reproducible via defaults"
-      # here, unlike the other notes — the command right below already says that,
+      # here, unlike the other notes. The command right below already says that,
       # and it is emitted as a real command rather than inside the comment because
       # this one runs on any Mac as it stands.
       log_line "Cmd: # NOTE: Bluetooth turned $_st"
@@ -6249,7 +6249,7 @@ for row in sorted(rows):
       # the machine the command is replayed on, which is usually a different one
       # and usually the one without the tools.
       _note_should_show __bluetooth_py__ \
-        && log_line "Cmd: #       (needs python3 on the TARGET — without the Command Line Tools /usr/bin/python3 only offers to install them)"
+        && log_line "Cmd: #       (needs python3 on the TARGET. Without the Command Line Tools /usr/bin/python3 only offers to install them)"
       return 0
     }
     _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty
@@ -6257,7 +6257,7 @@ for row in sorted(rows):
 
   # Detect local user account add/remove (real users, UID >= 501). The account
   # itself (UID/home/password) lives in OpenDirectory/dslocal, not a plist, so
-  # it is NOT reproducible via `defaults` — emit a factual NOTE only, no command.
+  # it is NOT reproducible via `defaults`. Emit a factual NOTE only, no command.
   # `dscl -list` needs no root and works in every mode (same approach as ard_privs).
   # Also suppresses the misleading com.apple.preferences.accounts 'deletedUsers'
   # churn (see is_noisy_pbcmd) so the NOTE is the single source of truth.
@@ -6269,17 +6269,17 @@ for row in sorted(rows):
       local _snap="$1" _curr="$2" u
       while IFS= read -r u; do
         [ -n "$u" ] || continue
-        log_line "Cmd: # NOTE: user account '$u' added — the account itself (UID/home/password) is NOT reproducible via defaults;"
+        log_line "Cmd: # NOTE: user account '$u' added. The account itself (UID/home/password) is NOT reproducible via defaults;"
         log_line "Cmd: #       use sysadminctl/dscl or a config profile"
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       while IFS= read -r u; do
         [ -n "$u" ] || continue
-        log_line "Cmd: # NOTE: user account '$u' removed — not reproducible via defaults; use sysadminctl/dscl"
+        log_line "Cmd: # NOTE: user account '$u' removed. Not reproducible via defaults; use sysadminctl/dscl"
       done < <(/usr/bin/comm -23 "$_snap" "$_curr" 2>/dev/null)
       return 0
     }
     # _guard_nonempty: a transient dscl failure must not report every user as
-    # removed. (Cost: removing the very last real user is missed — negligible.)
+    # removed. (Cost: removing the very last real user is missed. Negligible.)
     _snapshot_watch useracct 2 _read_useracct _onchange_useracct _guard_nonempty
   }
 
@@ -6298,7 +6298,7 @@ for row in sorted(rows):
         printf '%s\t%s\n' "$n" "$v"
       done
     }
-    # LocalHostName is always set — if it read empty, scutil hiccuped; skip so a
+    # LocalHostName is always set. If it read empty, scutil hiccuped; skip so a
     # transient failure can't emit a phantom set / churn the snapshot.
     _guard_hostname() { /usr/bin/awk -F'\t' '$1=="LocalHostName" && $2!=""{ok=1} END{exit !ok}' "$1" 2>/dev/null; }
     _onchange_hostname() {
@@ -6377,16 +6377,16 @@ PY
     }
     # 1s (not the usual 2s): a default-app change is a discrete user action the
     # admin is actively watching for, so favor responsiveness. The bulk of the
-    # residual latency is lsd flushing the secure plist async — not the poll.
+    # residual latency is lsd flushing the secure plist async. Not the poll.
     _snapshot_watch default_apps 1 _read_defapps _onchange_defapps _guard_nonempty
   }
 
   # Desktop wallpaper lives in the com.apple.wallpaper Store (Index.plist),
-  # OUTSIDE ~/Library/Preferences — so the plist diff never sees it — and it is
+  # OUTSIDE ~/Library/Preferences, so the plist diff never sees it, and it is
   # not reproducible via defaults. It IS reproducible with desktoppr, and the
   # image path is in the Store: each choice carries a nested binary plist under
   # `Configuration` holding {type: imageFile, url: {relative: file://…}}. That
-  # holds for a custom image too — verified by setting one and reading it back;
+  # holds for a custom image too. Verified by setting one and reading it back;
   # it is a plain percent-encoded file URL, not a security-scoped bookmark, which
   # is what an earlier version of this comment claimed. Only a dynamic or system
   # wallpaper (a provider with no file) yields nothing, and then the NOTE says so.
@@ -6401,7 +6401,7 @@ try:
     with open(sys.argv[1], 'rb') as f: d = plistlib.load(f)
 except Exception:
     sys.exit(0)
-# Serialize the wallpaper config WITHOUT LastSet/LastUse — the system rewrites
+# Serialize the wallpaper config WITHOUT LastSet/LastUse. The system rewrites
 # those timestamps on login without a real change, so ignoring them means we
 # only fire on a genuine wallpaper change.
 def clean(o):
@@ -6416,13 +6416,13 @@ print(clean(d))
 PY
     }
     # What the Store holds, as `<kind>\t<location>\t<value>` lines:
-    #   I — an image file           → `desktoppr "<path>"`
-    #   C — the colour BEHIND it    → `desktoppr color <hex>`  (EncodedOptionValues)
-    #   N — a solid system colour   → a NAME, and only a name
+    #   I. An image file           → `desktoppr "<path>"`
+    #   C. The colour BEHIND it    → `desktoppr color <hex>`  (EncodedOptionValues)
+    #   N. A solid system colour   → a NAME, and only a name
     #
     # The LOCATION matters as much as the value. The Store keeps an entry for
     # every display it has ever seen, and a disconnected one keeps whatever it
-    # had — measured on a Mac with four display entries and two screens attached.
+    # had. Measured on a Mac with four display entries and two screens attached.
     # So neither the set of values nor its size says what changed: comparing the
     # LINES does, because an untouched display's line is identical. SystemDefault
     # is skipped: it is the fallback a NEW space or display inherits.
@@ -6430,7 +6430,7 @@ PY
     # I and C are INDEPENDENT, and confusing them is what an earlier version did:
     # `desktoppr color FF0000` leaves the image alone and repaints the ground
     # behind it (verified), while a solid-colour wallpaper picked in System
-    # Settings writes N and leaves the colour option untouched — its components
+    # Settings writes N and leaves the colour option untouched. Its components
     # stayed identical across an image change AND a colour change, so they are
     # NOT the chosen colour and must never be emitted as one.
     _wallpaper_paths() {
@@ -6515,7 +6515,7 @@ WP
       _nc=0; [ -n "$_col" ] && _nc=$(printf '%s\n' "$_col" | /usr/bin/wc -l | /usr/bin/tr -d ' ')
 
       # Same dedup key as _note_desktoppr, so the two sources can't both print the
-      # image line for one change (they are separate processes — see that function).
+      # image line for one change (they are separate processes. See that function).
       if [ "$_ni" = "1" ] && _note_should_show "__desktoppr__:$_img"; then
         _note_desktoppr_head; _head=true
         log_line "Cmd: $(_mdm_wrap "desktoppr \"$(_escape_dq "$_img")\"")"
@@ -6529,8 +6529,8 @@ WP
       _note_should_show __wallpaper__ || return 0
       if [ "$_ni" -gt 1 ] || [ "$_nc" -gt 1 ]; then
         # desktoppr addresses one screen by INDEX, and that index is this Mac's
-        # screen order — not something to emit as a deployable command.
-        log_line "Cmd: # NOTE: desktop wallpaper changed — the screens did not all get the same thing, so no"
+        # screen order. Not something to emit as a deployable command.
+        log_line "Cmd: # NOTE: desktop wallpaper changed. The screens did not all get the same thing, so no"
         log_line "Cmd: #       single command reproduces it. Deploy per screen with desktoppr (github.com/scriptingosx/desktoppr):"
         printf '%s\n' "$_img" | while IFS= read -r _p; do
           [ -n "$_p" ] && log_line "Cmd: #       desktoppr <screen> \"$(_escape_dq "$_p")\""
@@ -6541,13 +6541,13 @@ WP
       elif [ -n "$_nam" ]; then
         # A solid colour picked in System Settings. desktoppr CAN set a colour,
         # but only by hex, and the Store records the colour's NAME and nothing
-        # else — the RGB sitting in EncodedOptionValues is the separate
+        # else. The RGB sitting in EncodedOptionValues is the separate
         # behind-the-image colour, unchanged by this pick (measured).
-        log_line "Cmd: # NOTE: desktop wallpaper set to the solid system colour '$(printf '%s' "$_nam" | /usr/bin/tr '\n' ' ' | /usr/bin/sed 's/ $//')' — the Store"
+        log_line "Cmd: # NOTE: desktop wallpaper set to the solid system colour '$(printf '%s' "$_nam" | /usr/bin/tr '\n' ' ' | /usr/bin/sed 's/ $//')'. The Store"
         log_line "Cmd: #       records the name, not the shade, so the exact colour is not recoverable. desktoppr"
         log_line "Cmd: #       takes a hex value: desktoppr color <RRGGBB>"
       else
-        log_line "Cmd: # NOTE: desktop wallpaper changed, but no image or colour moved in the Store — a dynamic"
+        log_line "Cmd: # NOTE: desktop wallpaper changed, but no image or colour moved in the Store. A dynamic"
         log_line "Cmd: #       wallpaper, which neither defaults nor desktoppr reproduces; set it in System"
         log_line "Cmd: #       Settings > Wallpaper"
       fi
@@ -6558,12 +6558,12 @@ WP
 
   # Privacy & Security permissions (Full Disk Access, Screen Recording,
   # Accessibility, Camera, Microphone, Automation…). They live in TWO SQLite
-  # databases, not plists, so the plist diff has never seen them — this was a
+  # databases, not plists, so the plist diff has never seen them. This was a
   # silent blind spot, with no command AND no NOTE.
   #
   # Reading them needs Full Disk Access. When that is granted the change can be
   # named exactly (service, client, decision); when it is not, the file's mtime
-  # and size still move, so the change is still reported — just not detailed.
+  # and size still move, so the change is still reported. Just not detailed.
   # Either way it is NOT reproducible by command: `tccutil` only RESETS an
   # existing grant, it cannot create one. A grant is deployed as a PPPC profile.
   tcc_watch() {
@@ -6574,11 +6574,11 @@ WP
     # ProtectedSystem container: /private/var/containers/Data/ProtectedSystem/
     # <UUID>/Data/Library/Application Support/com.apple.TCC/TCC.db. The old path
     # is gone (no symlink), so the `-f` test below skipped the user scope in
-    # silence and every per-user permission — camera, microphone, Accessibility —
+    # silence and every per-user permission (camera, microphone, Accessibility)
     # went unwatched. The container's parent cannot be listed and its UUID is
     # written nowhere readable, but the user's own tccd holds the file open:
     # `lsof -p` on that one pid names it in 0.09s (measured; `lsof -c tccd`
-    # across all processes takes minutes — never that). The file itself answers
+    # across all processes takes minutes. Never that). The file itself answers
     # `stat`, so the metadata fallback in _read_tcc still works; the SQL read is
     # refused there even with Full Disk Access (measured on 27.0), so on 27 the
     # user scope reports "changed", never which permission.
@@ -6601,7 +6601,7 @@ WP
       else
         # Say so rather than watch half the surface quietly: the summary line
         # above already lists "tcc" as active.
-        log_line "Cmd: # NOTE: per-user TCC database not found (neither ~/Library nor the tccd container) — only SYSTEM privacy permissions are watched"
+        log_line "Cmd: # NOTE: per-user TCC database not found (neither ~/Library nor the tccd container). Only SYSTEM privacy permissions are watched"
       fi
     fi
     _read_tcc() {
@@ -6636,18 +6636,18 @@ WP
       _added=$(/usr/bin/comm -13 <(/usr/bin/sort "$_snap") <(/usr/bin/sort "$_curr") 2>/dev/null) || _added=""
       _removed=$(/usr/bin/comm -23 <(/usr/bin/sort "$_snap") <(/usr/bin/sort "$_curr") 2>/dev/null) || _removed=""
       _note_should_show __tcc__ || return 0
-      log_line "Cmd: # NOTE: privacy permission changed (System Settings > Privacy & Security) — NOT"
+      log_line "Cmd: # NOTE: privacy permission changed (System Settings > Privacy & Security). NOT"
       log_line "Cmd: #       reproducible by command: tccutil only RESETS a grant, it cannot create one."
       log_line "Cmd: #       Deploy it as a PPPC (Privacy Preferences Policy Control) configuration profile."
       if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q 'UNREADABLE'; then
         # On 27 the per-user database sits in a ProtectedSystem container that
-        # refuses the read even WITH Full Disk Access (measured) — telling the
+        # refuses the read even WITH Full Disk Access (measured). Telling the
         # reader to grant FDA would send them to a setting that changes nothing.
         if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q '^user.UNREADABLE' \
            && [ -n "${_tcc_usr:-}" ] && [ "${_tcc_usr#/private/var/containers/}" != "$_tcc_usr" ]; then
-          log_line "Cmd: #       Which permission moved is not visible here — this macOS keeps the per-user TCC.db in a container no process may read."
+          log_line "Cmd: #       Which permission moved is not visible here. This macOS keeps the per-user TCC.db in a container no process may read."
         else
-          log_line "Cmd: #       Which permission moved is not visible here — reading TCC.db needs Full Disk Access."
+          log_line "Cmd: #       Which permission moved is not visible here. Reading TCC.db needs Full Disk Access."
         fi
         return 0
       fi
@@ -6660,7 +6660,7 @@ WP
       #
       # Here-strings, never `printf | while`: a pipeline runs the loop in a
       # subshell and the arrays filled in it would be gone by the next line.
-      # $'\t' is NOT expanded inside an array subscript — it stays the four
+      # $'\t' is NOT expanded inside an array subscript. It stays the four
       # literal characters, so every key was one blob and the field splits below
       # returned the whole thing three times. Build the separator once.
       local -A _was _now
@@ -6703,7 +6703,7 @@ WP
   }
 
   # Startup sound (System Settings > Sound > "Play sound on startup") and its
-  # volume live in NVRAM, not in any plist — so the diff has never been able to
+  # volume live in NVRAM, not in any plist. So the diff has never been able to
   # see them, with no command and no NOTE. `nvram` reads and writes them, and it
   # accepts back the same %xx escaping it prints (nvram(8)), so the value read
   # here is the value to replay.
@@ -6725,7 +6725,7 @@ WP
         [ "$_old" = "$_v" ] && continue
         case "$_k" in
           StartupMute)
-            log_line "Cmd: # NOTE: startup sound changed (Settings > Sound) — it lives in NVRAM, not a plist." ;;
+            log_line "Cmd: # NOTE: startup sound changed (Settings > Sound). It lives in NVRAM, not a plist." ;;
         esac
         log_line "Cmd: sudo /usr/sbin/nvram ${_k}=$(_escape_dq "$_v")"
       done < "$_curr"
@@ -6735,7 +6735,7 @@ WP
   }
 
   # Time zone lives in the /etc/localtime SYMLINK (→ .../zoneinfo/<Zone>), NOT a
-  # plist — so the diff never sees it, and sharing_exec_watch only catches a
+  # plist. So the diff never sees it, and sharing_exec_watch only catches a
   # `systemsetup` CLI run (root+eslogger), not a GUI change. This watcher polls
   # the symlink and emits the EXACT `systemsetup -settimezone` command.
   # Detection needs no root.
@@ -6746,7 +6746,7 @@ WP
       printf '%s' "${t#*/zoneinfo/}"      # /var/db/timezone/zoneinfo/Europe/Paris → Europe/Paris
     }
     # NTP time server lives in /etc/ntp.conf (readable; `systemsetup
-    # -getnetworktimeserver` needs root) — same Date & Time pane, folded in here.
+    # -getnetworktimeserver` needs root). Same Date & Time pane, folded in here.
     _read_ntp() { /usr/bin/awk '/^server /{print $2; exit}' /etc/ntp.conf 2>/dev/null || true; }
     _read_timezone() { printf 'tz\t%s\nntp\t%s\n' "$(_read_tz)" "$(_read_ntp)"; }
     # Guard: skip a read whose tz is empty (transient readlink failure) so the
@@ -6762,9 +6762,9 @@ WP
         case "$_k" in
           tz)
             # "Set time zone automatically" (location-based) can overwrite a
-            # manual set — flag it so the deploy sticks.
+            # manual set. Flag it so the deploy sticks.
             [ "$(defaults read /Library/Preferences/com.apple.timezone.auto Active 2>/dev/null)" = "1" ] \
-              && { log_line "Cmd: # NOTE: 'Set time zone automatically' is ON (com.apple.timezone.auto) — it can override a manual set;"
+              && { log_line "Cmd: # NOTE: 'Set time zone automatically' is ON (com.apple.timezone.auto). It can override a manual set;"
                    log_line "Cmd: #       turn it off first (Settings > Date & Time)"; }
             log_line "Cmd: sudo /usr/sbin/systemsetup -settimezone \"$_v\"" ;;
           ntp)
@@ -6779,7 +6779,7 @@ WP
   # Security posture that lives OUTSIDE plists: FileVault (fdesetup), Gatekeeper
   # (spctl), the application firewall (socketfilterfw). All three read WITHOUT
   # root; emit the deploy command (or a NOTE where one command can't reproduce
-  # it) on change. Compliance-relevant — surfaces if a protection got disabled.
+  # it) on change. Compliance-relevant. Surfaces if a protection got disabled.
   security_watch() {
     local sfw=/usr/libexec/ApplicationFirewall/socketfilterfw
     _read_security() {
@@ -6788,7 +6788,7 @@ WP
       # set -e would abort mid-read (killing this watcher / losing later fields).
       fv=$(/usr/bin/fdesetup status 2>/dev/null | /usr/bin/grep -oE 'is (On|Off)' | /usr/bin/head -1 || true)
       # System Integrity Protection. It cannot be CHANGED from a booted Mac (it
-      # takes Recovery), so nothing is emitted — but it is exactly as
+      # takes Recovery), so nothing is emitted. But it is exactly as
       # compliance-relevant as the three below, and it was never read at all.
       sip=$(/usr/bin/csrutil status 2>/dev/null | /usr/bin/grep -oE '(enabled|disabled)' | /usr/bin/head -1 || true)
       # `--status --verbose` prints TWO lines: "assessments <state>" (the master
@@ -6818,15 +6818,15 @@ WP
           [ -n "$_v" ] || continue
           case "$_k" in
             sip)
-              log_line "Cmd: # NOTE: System Integrity Protection is now $_v — it cannot be changed from a"
+              log_line "Cmd: # NOTE: System Integrity Protection is now $_v. It cannot be changed from a"
               log_line "Cmd: #       booted Mac, only from Recovery (Startup Security Utility, or csrutil there),"
               log_line "Cmd: #       so no command reproduces it. On a managed fleet, disabled SIP is a finding." ;;
             filevault)
-              # Enabling needs a recovery key (interactive/MDM) — not a single command.
-              log_line "Cmd: # NOTE: FileVault is now ${_v#is } — not reproducible by one command;"
+              # Enabling needs a recovery key (interactive/MDM). Not a single command.
+              log_line "Cmd: # NOTE: FileVault is now ${_v#is }. Not reproducible by one command;"
               log_line "Cmd: #       enable needs a recovery key (sudo fdesetup enable) or an MDM/config profile" ;;
             # `--master-enable`/`--master-disable` are GONE from both `spctl --help`
-            # and `man spctl` on 26.6.2 — the man mentions "master" zero times. They
+            # and `man spctl` on 26.6.2. The man mentions "master" zero times. They
             # still parse (`--master-enable` answers "Operation not permitted", while
             # `--bogus-enable` answers "unrecognized option"), so they are surviving
             # undocumented aliases: exactly what disappears at the next release.
@@ -6834,7 +6834,7 @@ WP
             # Only the ENABLE side has a documented replacement. The man defines
             # `--global-enable` as "Enable the assessment subsystem", word for word
             # what `--master-enable` did, so that one is switched outright.
-            # `--global-disable` is NOT the counterpart — the man says it "reveals
+            # `--global-disable` is NOT the counterpart. The man says it "reveals
             # the option to allow applications downloaded from anywhere in the
             # Privacy & Security settings pane", which is a different act. Emitting
             # it would be a command that looks right and does something else, so the
@@ -6851,12 +6851,12 @@ WP
               fi ;;
             gatekeeper-devid)
               # App Store-only (developer id disabled) vs +identified-developers.
-              # No single spctl command reproduces it — it's a GUI/MDM setting.
+              # No single spctl command reproduces it. It's a GUI/MDM setting.
               if [ "$_v" = disabled ]; then
-                log_line "Cmd: # NOTE: Gatekeeper set to 'App Store' only (identified developers disabled) — no single spctl command"
+                log_line "Cmd: # NOTE: Gatekeeper set to 'App Store' only (identified developers disabled). No single spctl command"
                 log_line "Cmd: #       reproduces this; set it in System Settings > Privacy & Security, or via an MDM Gatekeeper config profile"
               else
-                log_line "Cmd: # NOTE: Gatekeeper now allows 'App Store and identified developers' — set in System Settings > Privacy & Security"
+                log_line "Cmd: # NOTE: Gatekeeper now allows 'App Store and identified developers'. Set in System Settings > Privacy & Security"
                 log_line "Cmd: #       or an MDM config profile (no single spctl command)"
               fi ;;
             firewall)
@@ -6880,7 +6880,7 @@ WP
     _snapshot_watch security 3 _read_security _onchange_security _guard_security
   }
 
-  # Per-application firewall rules — the per-app "allow/block incoming
+  # Per-application firewall rules. The per-app "allow/block incoming
   # connections" list (Settings > Network > Firewall > Options), e.g. blocking
   # smbd. On modern macOS com.apple.alf.plist is GONE, so the plist diff never
   # sees it, and security_watch covers only the GLOBAL firewall. Poll
@@ -6908,7 +6908,7 @@ WP
         _note_should_show __fw_apps__ && log_line "Cmd: # NOTE: per-app firewall rule (Firewall > Options)"
         # _escape_dq on the path: it comes from `socketfilterfw --listapps`, i.e.
         # a bundle path the user chose, and it lands inside double quotes in a
-        # line meant to be pasted as root — `$(…)` there runs BEFORE socketfilterfw.
+        # line meant to be pasted as root. `$(…)` there runs BEFORE socketfilterfw.
         # Its neighbour sharepoints_watch has escaped its own names since 1.5.0;
         # this watcher was missed.
         local _pq; _pq=$(_escape_dq "$_path")
@@ -6990,7 +6990,7 @@ WP
             # before putting it in a policy. (System scope does not: it answers
             # "Only an admin can adjust…", which the emitted `sudo` covers.)
             _note_should_show __touchid_prompt__ \
-              && log_line "Cmd: #       (asks the user for their password on stdin — cannot be deployed unattended)"
+              && log_line "Cmd: #       (asks the user for their password on stdin, so it cannot be deployed unattended)"
           fi
         else
           case "$_key" in
@@ -7006,7 +7006,7 @@ WP
         # rejects what it does not know, and a dead line in a paste-this log is
         # worse than an honest sentence.
         if [ -z "$_cmd" ] && _note_should_show "__touchid_label__:$_scope:$_key"; then
-          log_line "Cmd: # NOTE: Touch ID ($_scope) '$_key' is now $_val — bioutil has no write verb for it"
+          log_line "Cmd: # NOTE: Touch ID ($_scope) '$_key' is now $_val. Bioutil has no write verb for it"
         fi
       done < "$_curr"
       return 0
@@ -7060,13 +7060,13 @@ WP
     _snapshot_watch defprinter 3 _read_defprinter _onchange_defprinter
   }
 
-  # Spotlight indexing state lives in the metadata store, not a plist — read it
+  # Spotlight indexing state lives in the metadata store, not a plist. Read it
   # with `mdutil -s` (no root) and emit `mdutil -i` on change. Common MDM op
   # (disabling indexing on a volume). Distinct from the com.apple.Spotlight plist
   # (search categories), which the diff already covers.
   #
   # EVERY volume, not just `/`. The probe used to be `mdutil -s /`, so indexing
-  # turned off on the data volume or on an external disk was invisible — and
+  # turned off on the data volume or on an external disk was invisible. And
   # `/System/Volumes/Data` is the one that actually holds the user's files, so
   # the single most useful case was the one that was missed. Measured here: five
   # volumes answer (`/`, `/System/Volumes/Data`, `/System/Volumes/Preboot`, and
@@ -7095,7 +7095,7 @@ WP
       while IFS=$'\t' read -r _vol _state; do
         [ -n "$_vol" ] || continue
         _old=$(/usr/bin/awk -F'\t' -v v="$_vol" '$1==v{print $2}' "$_snap" 2>/dev/null)
-        # A volume ABSENT from the snapshot was just mounted — its indexing state
+        # A volume ABSENT from the snapshot was just mounted. Its indexing state
         # is what it always was, not a change someone made. Mounting a disk must
         # not emit a command. Same on the way out: a volume that disappeared was
         # unmounted, and there is nothing to reproduce.
@@ -7106,11 +7106,11 @@ WP
           && log_line "Cmd: sudo /usr/bin/mdutil -i on \"$(_escape_dq "$_vol")\"" \
           || log_line "Cmd: sudo /usr/bin/mdutil -i off \"$(_escape_dq "$_vol")\""
         # A path under /Volumes is a mounted disk NAMED by whoever formatted it.
-        # The command is right here and means nothing on another Mac — the same
+        # The command is right here and means nothing on another Mac. The same
         # trap as the ColorSync display UUID, so it gets the same treatment.
         case "$_vol" in
           /Volumes/*)
-            log_line "Cmd: #       ('$_vol' is a mounted volume on THIS Mac — the path is not portable)" ;;
+            log_line "Cmd: #       ('$_vol' is a mounted volume on THIS Mac. The path is not portable)" ;;
         esac
       done < "$_curr"
       return 0
@@ -7130,7 +7130,7 @@ WP
     /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$_hd" 2>/dev/null || true
   done
 
-  # Launch every watcher whose guard passes — single loop over the SAME _WATCHERS
+  # Launch every watcher whose guard passes. Single loop over the SAME _WATCHERS
   # registry that built the summary line above. `eval "$_W_GUARD"` sits in an `if`
   # so a false guard (e.g. non-root for fs) can't set -e-abort. Adding a watcher
   # now means ONE registry entry: no separate launch line, no PID var, no trap.
@@ -7162,11 +7162,11 @@ WP
 }
 
 # ============================================================================
-# MAIN — pre-flight, logging setup, launch
+# MAIN. Pre-flight, logging setup, launch
 # ============================================================================
 
 # Pre-flight banner + conditional confirmation. The y/n prompt only appears
-# when Python3/CLT is missing (degraded detection — user should acknowledge).
+# when Python3/CLT is missing (degraded detection. User should acknowledge).
 # With CLT installed, start directly. Non-interactive contexts (Jamf Self
 # Service / launchd / cron) always auto-confirm and log the decision.
 _pf_target="$DOMAIN"
@@ -7179,7 +7179,7 @@ if [ -z "$PYTHON3_BIN" ]; then
   # full context in the osascript dialog. Capture return in `||` context so
   # set -e doesn't exit on non-zero returns (1 = declined, 2 = no channel).
   _pf_rc=0
-  prompt_yn "⚠ Python3 unavailable — limited detection.
+  prompt_yn "⚠ Python3 unavailable. Limited detection.
 
 Run 'xcode-select --install' to enable full detection (array/dict diffs, PlistBuddy commands).
 
@@ -7188,8 +7188,8 @@ Start anyway?" || _pf_rc=$?
     0) ;;
     1) printf "Aborted.\n"; exit 0 ;;
     2)
-      printf "⚠ No TTY or GUI session available — auto-continuing with limited detection\n"
-      /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable — auto-continued (no prompt channel)"
+      printf "⚠ No TTY or GUI session available. Auto-continuing with limited detection\n"
+      /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable. Auto-continued (no prompt channel)"
       ;;
   esac
 fi
@@ -7199,8 +7199,8 @@ LOGFILE="$(prepare_logfile "$LOGFILE")"
 
 # Announce the log path, plus the two facts every bug report needs and that no
 # user thinks to include: which prefwatch, and which macOS. Preference layouts
-# move between releases — Weather went to an internal DB in Sonoma, menu-bar
-# offsets to com.apple.MenuBarAgent in 27 — so a report without the OS version is
+# move between releases. Weather went to an internal DB in Sonoma, menu-bar
+# offsets to com.apple.MenuBarAgent in 27. So a report without the OS version is
 # usually unactionable. Printed even under ONLY_CMDS: one extra line, once.
 _os_ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || printf '?')"
 _os_build="$(/usr/bin/sw_vers -buildVersion 2>/dev/null || printf '?')"
@@ -7221,30 +7221,30 @@ else
   log_line "Starting monitoring on $DOMAIN"
 fi
 
-# Python3 status — user already consented at pre-flight; log/warn only
+# Python3 status. User already consented at pre-flight; log/warn only
 if [ -n "$PYTHON3_BIN" ]; then
   log_line "Python3: $PYTHON3_BIN (array change detection enabled)"
 else
-  printf "WARNING: Xcode Command Line Tools not installed — Python3 unavailable\n"         | tee -a "$LOGFILE" 2>/dev/null || true
+  printf "WARNING: Xcode Command Line Tools not installed. Python3 unavailable\n"         | tee -a "$LOGFILE" 2>/dev/null || true
   printf "Without Python3: array/dict changes and PlistBuddy commands will not be detected\n" | tee -a "$LOGFILE" 2>/dev/null || true
-  /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable — limited detection"
+  /usr/bin/logger -t "prefwatch[init]" -- "Python3 unavailable. Limited detection"
 fi
 
 # Warn if ALL mode without root. The old wording said real-time was disabled and
-# "only polling will be used (slower)" — measured false: with fs_usage running or
+# "only polling will be used (slower)". Measured false: with fs_usage running or
 # not, the same commands come out at the same latency. So name what root actually
 # adds, and do not advertise a slowdown that does not happen.
 if [ "$ALL_MODE" = "true" ] && [ "$(id -u)" -ne 0 ]; then
   local _ts; _ts="$(get_timestamp)"
-  local _w1="[$_ts] NOTE: running without sudo — user preferences are fully covered"
+  local _w1="[$_ts] NOTE: running without sudo. User preferences are fully covered"
   local _w2="[$_ts]   Not covered: /Library/Preferences (system), sharing commands, launchd state"
   local _w3="[$_ts]   For those, re-run with: sudo $0 ALL"
   printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3"
   printf "%s\n%s\n%s\n" "$_w1" "$_w2" "$_w3" >> "$LOGFILE" 2>/dev/null || true
-  /usr/bin/logger -t "prefwatch[init]" -- "Running without sudo — system prefs and root-only watchers unavailable"
+  /usr/bin/logger -t "prefwatch[init]" -- "Running without sudo. System prefs and root-only watchers unavailable"
 fi
 
-# Warn if domain is normally excluded (but don't stop — user explicitly requested it)
+# Warn if domain is normally excluded (but don't stop. User explicitly requested it)
 if [ "$ALL_MODE" != "true" ] && is_excluded_domain "$DOMAIN"; then
   log_line "Cmd: # NOTE: $DOMAIN is normally excluded in ALL mode, but monitoring as explicitly requested"
 fi
@@ -7262,8 +7262,8 @@ WATCH_PID=$!
 
 # Tear the watcher down on a termination signal aimed at the MAIN pid, then remove the
 # tmpdir. Without this, a SIGTERM/SIGHUP to the main pid (a supervisor, launchd,
-# `kill <pid>`) kills this shell by default disposition — the EXIT trap is skipped on
-# signal death — orphaning the watcher child and leaking $PREFWATCH_TMPDIR. Ctrl-C
+# `kill <pid>`) kills this shell by default disposition. The EXIT trap is skipped on
+# signal death. Orphaning the watcher child and leaking $PREFWATCH_TMPDIR. Ctrl-C
 # already works (process-group SIGINT reaches the child's own trap); this makes
 # single-pid signals safe too, which matters most in Jamf/root where the process is
 # killed non-interactively by pid.
@@ -7275,7 +7275,7 @@ _kill_tree() {
   local _root=$1 _kid
   [ -n "$_root" ] || return 0
   # `|| true`: pgrep exits 1 when a process has no children, which is the normal
-  # case at every LEAF of the recursion — without the guard that non-zero status
+  # case at every LEAF of the recursion. Without the guard that non-zero status
   # trips ERR_EXIT and aborts the teardown mid-tree (observed: three
   # "# ABORT: set -e … (in _kill_tree)" lines on a single Console-close shutdown).
   for _kid in $(pgrep -P "$_root" 2>/dev/null || true); do _kill_tree "$_kid"; done
@@ -7319,13 +7319,13 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   #     load). A single miss must NOT end monitoring → require N CONSECUTIVE
   #     misses (~N seconds) before concluding Console really closed.
   # Follow Console by PID, not by name. `pgrep -x Console` forks a process every
-  # second for the entire run — measured at 14ms a call, about 50 seconds of CPU
+  # second for the entire run. Measured at 14ms a call, about 50 seconds of CPU
   # per hour spent asking whether an app is still open. `kill -0` is a shell
   # builtin: 100 of them cost a millisecond.
   #
   # The name lookup is still needed, just not every second. When the PID stops
   # answering, Console has either quit or been restarted with a new PID, and only
-  # a lookup can tell the two apart — so pay for one there, a handful of times
+  # a lookup can tell the two apart. So pay for one there, a handful of times
   # over a session instead of thousands.
   # `|| true` is load-bearing: with `set -o pipefail` (L51) a `pgrep` that matches
   # nothing makes the whole substitution non-zero, and ERR_EXIT then kills main --
@@ -7347,11 +7347,11 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
     fi
     sleep 1 || true
   done
-  log_line "Console.app closed — stopping monitoring"
-  # Reuse the signal traps' teardown — do NOT re-inline it. A bare
+  log_line "Console.app closed. Stopping monitoring"
+  # Reuse the signal traps' teardown. Do NOT re-inline it. A bare
   # `kill -TERM "$WATCH_PID"` here only reached the sub-watchers (via their own
-  # trap, which TERMs $_WATCH_PIDS); their pipeline members — eslogger/grep/python3
-  # for sharing_exec_watch, script/fs_usage/sed/awk for fs_watch — got no signal and
+  # trap, which TERMs $_WATCH_PIDS); their pipeline members. Eslogger/grep/python3
+  # for sharing_exec_watch, script/fs_usage/sed/awk for fs_watch. Got no signal and
   # were reparented to launchd, still running as root. And since Console closing is
   # how a Jamf session ends, this is the PRODUCTION exit path: every run leaked an
   # Endpoint Security client a standard user cannot even kill. Tell-tale signature:
@@ -7360,9 +7360,9 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   exit 0
 else
   if [ "$NO_CONSOLE" = "true" ]; then
-    log_line "Console disabled (--no-console) — monitoring until Ctrl+C / SIGTERM"
+    log_line "Console disabled (--no-console). Monitoring until Ctrl+C / SIGTERM"
   else
-    log_line "Console not detected — continuing monitoring (Ctrl+C to stop)"
+    log_line "Console not detected. Continuing monitoring (Ctrl+C to stop)"
   fi
   wait "$WATCH_PID" 2>/dev/null || true
   exit 0

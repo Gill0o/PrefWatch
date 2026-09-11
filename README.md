@@ -4,12 +4,12 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands** — every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy`, or the right built-in CLI (`networksetup`, `scselect`, `scutil`, `systemsetup`, `sharing`, `tmutil`, `nvram`, `spctl`/`socketfilterfw`, `mdutil`, `bioutil`, `pmset`, `lpadmin`, `lpoptions`, `cupsctl`, `launchctl`, `kickstart`, `dscl`), or a `python3` one-liner where macOS offers no CLI at all
-- **ALL mode** — watch every domain at once; no need to know which one changed
-- **Contextual notes** — inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
-- **ByHost support** — emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
-- **Noise filtering** — 500+ rules, so only real changes surface
-- **Minimal dependencies** — one zsh script + Python 3
+- **Reproducible commands**. Every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy`, or the right built-in CLI (`networksetup`, `scselect`, `scutil`, `systemsetup`, `sharing`, `tmutil`, `nvram`, `spctl`/`socketfilterfw`, `mdutil`, `bioutil`, `pmset`, `lpadmin`, `lpoptions`, `cupsctl`, `launchctl`, `kickstart`, `dscl`), or a `python3` one-liner where macOS offers no CLI at all
+- **ALL mode**. Watch every domain at once; no need to know which one changed
+- **Contextual notes**. Inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
+- **ByHost support**. Emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
+- **Noise filtering**. 500+ rules, so only real changes surface
+- **Minimal dependencies**. One zsh script + Python 3
 
 ## Quick Start
 
@@ -41,7 +41,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--exclude <glob>` | `-e` | Domain patterns to exclude in ALL mode; naming a domain explicitly always watches it | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
-| `--no-console` | -- | Don't open Console.app or stop when it closes — run until Ctrl+C (interactive/VM testing) | Off |
+| `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
 | `--fs-usage` | -- | ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`). Measured to add nothing polling does not; it takes the machine's single ktrace slot | Off |
 
 ## Jamf Pro Integration
@@ -52,33 +52,33 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-A few changes it **detects but can't reduce to one built-in command** — it emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing (its keys mirror state the daemon never reads back), and a privacy permission, which is granted by a PPPC profile rather than a command. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing (its keys mirror state the daemon never reads back), and a privacy permission, which is granted by a PPPC profile rather than a command. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
-Everything else is **invisible** — no output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
+Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
 
-A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command — a positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
+A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command. A positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
 
 ## Third-party tools
 
-For settings with no built-in command, a `# NOTE:` names the tool — and for default apps and the wallpaper it emits the tool's command outright, with the real value:
+For settings with no built-in command, a `# NOTE:` names the tool. And for default apps and the wallpaper it emits the tool's command outright, with the real value:
 
-- [`utiluti`](https://github.com/scriptingosx/utiluti) — default apps (URL schemes & file types)
-- [`dockutil`](https://github.com/kcrawford/dockutil) — Dock items and order
-- [`desktoppr`](https://github.com/scriptingosx/desktoppr) — desktop wallpaper, and the colour behind it
+- [`utiluti`](https://github.com/scriptingosx/utiluti). Default apps (URL schemes & file types)
+- [`dockutil`](https://github.com/kcrawford/dockutil). Dock items and order
+- [`desktoppr`](https://github.com/scriptingosx/desktoppr). Desktop wallpaper, and the colour behind it
 
 ## Detection
 
 - ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state.
-- Detection is by polling. `--fs-usage` adds the `fs_usage` real-time detector, off by default: measured three times, it detected nothing polling did not, at the same latency, and it needs the machine's single ktrace slot — when another process holds it the log names which one (a stale `fs_usage` from a crashed run: `sudo pkill -x fs_usage`; a licensing daemon such as FlexNet holds it for good). Under load it is also killed by PrefWatch past 1 GB resident, and the log says so.
-- Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change — pass it via `--hot-domains` upfront if that matters.
+- Detection is by polling. `--fs-usage` adds the `fs_usage` real-time detector, off by default: measured three times, it detected nothing polling did not, at the same latency, and it needs the machine's single ktrace slot. When another process holds it the log names which one (a stale `fs_usage` from a crashed run: `sudo pkill -x fs_usage`; a licensing daemon such as FlexNet holds it for good). Under load it is also killed by PrefWatch past 1 GB resident, and the log says so.
+- Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
 
 ## Security
 
-PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths). **Review before sharing** — use `--exclude` to skip sensitive domains.
+PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths). **Review before sharing**. Use `--exclude` to skip sensitive domains.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ---
 
