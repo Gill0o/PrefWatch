@@ -2972,22 +2972,27 @@ _emit_cmd() {
   [ -n "$cmd" ] || return 0
   if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command)"; return 0; fi
 
-  if [ "$is_delete" != "true" ]; then
-    local _cmd_dom
-    _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
-    # See _log: only ALL mode may drop an excluded domain.
-    if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
-    _emit_contextual_note "$note_dom" ""
-  fi
-
   # In ALL mode the DOMAIN pass is redundant: every change it sees has already
   # been emitted by the per-plist diff. The condition used to require ONLY_CMDS
   # too, so `--verbose` printed every command TWICE. Which made the debugging
   # mode disagree with the mode everyone actually runs. Production output is the
   # reference: verbose should add diagnostics, never different commands. The
   # `Diff …` lines it exists for are logged elsewhere and stay.
+  #
+  # BEFORE the contextual note, not after: the redundant pass still fed the
+  # bulk counter, so two real Stage Manager toggles counted four, and the
+  # "opening Desktop & Dock settings writes every default" note printed on the
+  # dropped duplicate, over nothing.
   if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
     return 0
+  fi
+
+  if [ "$is_delete" != "true" ]; then
+    local _cmd_dom
+    _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
+    # See _log: only ALL mode may drop an excluded domain.
+    if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
+    _emit_contextual_note "$note_dom" ""
   fi
 
 
