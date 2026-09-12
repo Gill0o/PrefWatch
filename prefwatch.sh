@@ -564,6 +564,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.imagent"
   "com.apple.madrid"
   "com.apple.SafariCloudHistoryPushAgent"
+  "com.apple.powerlogHelperd"               # power-log helper: boot session UUID and an hour-bucket offset, rewritten per boot (system domain, checked on 27.0)
+  "com.apple.gms.availability"              # Apple Intelligence availability cache: boot UUIDs, ever-installed apps, indexing state, reasons blob. No toggle here (checked on 27.0)
   "com.apple.voicetrigger.notbackedup"      # Siri voice-profile enrollment id + its date, power-logging asset version and language. State only; the toggles live in com.apple.voicetrigger (checked on 27.0)
   "com.apple.SafariBookmarksSyncAgent"      # sync tokens, account hash, migration blobs, last-launched versions. Daemon state only, no key a user sets (checked on 27.0)
 
@@ -1743,9 +1745,11 @@ is_noisy_key() {
     # marks an in-flight index update. Per-KEY, never the domain: this plist also
     # holds ~89 keys of real settings. SUAutomaticallyUpdate, soundEffects,
     # searchHistoryEnabled, assistantButtonPosition, <id>-favorites.
+    # ManagedObjectContext_<sha256>_dieInfo is Core Data's in-flight save marker:
+    # written "saving", deleted on completion, seen as a write + a Delete pair.
     com.setapp.*)
       case "$keyname" in
-        *ActiveRefreshSession*|UpdatingSearchIndexItem-*) return 0 ;;
+        *ActiveRefreshSession*|UpdatingSearchIndexItem-*|ManagedObjectContext_*) return 0 ;;
       esac
       ;;
 
