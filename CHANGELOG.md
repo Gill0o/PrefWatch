@@ -28,6 +28,7 @@
 - Container plists and unknown trees are no longer diffed by `fs_watch`. No baseline, so always a false full dump. `--debug` says so.
 - A non-UTF-8 byte in any file name ended real-time detection (`sed` exited). `LC_ALL=C` now.
 - A "new domain" NOTE, or a positional-array NOTE, printed over nothing when every key was filtered. Both wait for the first line they introduce.
+- The "opening Desktop & Dock settings writes every default" note counted the dropped DOMAIN-pass duplicates, so three real writes printed it over nothing. Emitted lines only now.
 - A print preset dropped colour model, resolution, paper size and its own name as noise. Reject list now, shared with the diff worker.
 - Its NOTE never fired (keyed on a key no machine has). It now says a logout is needed and what does not travel.
 - Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful; emptying the list gives a bare `-array`.
