@@ -2516,18 +2516,27 @@ _build_defaults_delete_cmd() {
 }
 
 # Internal: route a log line through the right wrapper by kind.
-# A NOTE folded for Console: "# NOTE: " on the first line, "#       " on the
-# continuations, cut on a space at 110 characters. Console wraps a long line
-# at the window edge and the wrapped part shows no "#", which reads as a
-# command. $1 kind (USER/SYSTEM/"" for log_line), $2 the text.
+# A NOTE laid out for Console: "# NOTE: " on the first line, "#       " on the
+# others, ONE SENTENCE OR CLAUSE PER LINE (split after ". " and "; "), and a
+# sentence longer than 110 characters folded on a space. Console wraps a long
+# line at the window edge and the wrapped part shows no "#", which reads as a
+# command; a fold in the middle of a sentence ('Use as / Defaults') read no
+# better. $1 kind (USER/SYSTEM/"" for log_line), $2 the text.
 _log_note_wrapped() {
-  local _kind="$1" _first=true _l
-  while IFS= read -r _l; do
-    _l="${_l%% }"
-    [ -n "$_l" ] || continue
-    if [ "$_first" = true ]; then _log_kind "$_kind" "Cmd: # NOTE: $_l"; _first=false
-    else _log_kind "$_kind" "Cmd: #       $_l"; fi
-  done < <(printf '%s\n' "$2" | /usr/bin/fold -s -w 110)
+  local _kind="$1" _t="$2" _first=true _l _s _m=$'\x1e'
+  local -a _parts
+  # Mark sentence ends, then split there. \x1e never occurs in a note.
+  _t="${_t//. /.$_m}"; _t="${_t//; /;$_m}"
+  _parts=("${(@ps:\x1e:)_t}")
+  for _s in "${_parts[@]}"; do
+    [ -n "$_s" ] || continue
+    while IFS= read -r _l; do
+      _l="${_l%% }"
+      [ -n "$_l" ] || continue
+      if [ "$_first" = true ]; then _log_kind "$_kind" "Cmd: # NOTE: $_l"; _first=false
+      else _log_kind "$_kind" "Cmd: #       $_l"; fi
+    done < <(printf '%s\n' "$_s" | /usr/bin/fold -s -w 110)
+  done
 }
 
 _log_kind() {
@@ -3618,7 +3627,7 @@ _emit_contextual_note() {
     com.apple.Spotlight)
       case "$array_base" in
         EnabledPreferenceRules|DisabledUTTypes)
-          _note="Spotlight re-reads this only when its Settings pane is reopened (killall Spotlight is not enough; a logout is the fallback). And despite its name, EnabledPreferenceRules lists the DISABLED categories" ;;
+          _note="Spotlight re-reads this only when its Settings pane is reopened (killall Spotlight is not enough, a logout is the fallback). And despite its name, EnabledPreferenceRules lists the DISABLED categories" ;;
       esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)

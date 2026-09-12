@@ -43,7 +43,7 @@
 - Gatekeeper on → `spctl --global-enable` (`--master-enable` is undocumented since 26); the disable side keeps its verb under a NOTE.
 - A `pmset` display label (`Sleep On Power Button`) was emitted as a setting name.
 - Re-enabling a Spotlight category emitted a positional `Delete`; it targets the value now.
-- Long NOTEs wrapped in Console with no `#` on the second line, which reads as a command. Folded at 110 characters, every line prefixed.
+- Long NOTEs wrapped in Console with no `#` on the second line, which reads as a command. One sentence per line now, every line prefixed.
 
 ### Security
 - Startup read every file name under Group Containers. The user's synced documents. It looks only where a plist can be.
