@@ -2569,16 +2569,15 @@ _note_device_uuid() {
   local kind="$1" key="$2"
   [[ "$key" == *"Device.mntr."[0-9A-Fa-f]* ]] || return 0
   _note_should_show __device_uuid__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID. Per-monitor, and different on every Mac."
-  # The "--mdm can't templatize it" half is only meaningful to someone who asked
-  # for deployable output. Outside --mdm it answered a question nobody had put,
-  # and buried the one fact that matters here: this command names one monitor.
+  # Two lines, not three: the display list command rides on the sentence that
+  # calls for it. The "--mdm can't templatize it" half is only meaningful to
+  # someone who asked for deployable output.
+  _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID, per-monitor and different on every Mac."
   if [ "$MDM_OUTPUT" = "true" ]; then
-    _log_kind "$kind" "Cmd: #       --mdm cannot templatize it. On the target, list displays and pick the one you set:"
+    _log_kind "$kind" "Cmd: #       --mdm cannot templatize it; on the target, pick the display: defaults -currentHost read -g com.apple.ColorSync.Devices"
   else
-    _log_kind "$kind" "Cmd: #       This command targets that monitor alone. To replay elsewhere, list displays there:"
+    _log_kind "$kind" "Cmd: #       To replay elsewhere, list the displays there: defaults -currentHost read -g com.apple.ColorSync.Devices"
   fi
-  _log_kind "$kind" "Cmd: #       defaults -currentHost read -g com.apple.ColorSync.Devices"
 }
 
 # The one part of the filtered network tree that IS reproducible: the service
@@ -4424,8 +4423,7 @@ _note_wifi_power() {
     1|true|TRUE) _log_kind "$kind" "Cmd: sudo /usr/sbin/networksetup -setairportpower $_dev on" ;;
     *)           _log_kind "$kind" "Cmd: sudo /usr/sbin/networksetup -setairportpower $_dev off" ;;
   esac
-  _log_kind "$kind" "Cmd: #       ($_dev is this Mac's Wi-Fi device; check it on the target with"
-  _log_kind "$kind" "Cmd: #        networksetup -listallhardwareports)"
+  _log_kind "$kind" "Cmd: #       ($_dev is this Mac's Wi-Fi device; on the target: networksetup -listallhardwareports)"
 }
 
 _note_charge_limit() {
