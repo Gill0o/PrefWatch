@@ -6,7 +6,7 @@
 - Privacy permissions are watched, named where the TCC database is readable; the NOTE points at a PPPC profile (`tccutil` can only reset).
 - On macOS 27 the per-user TCC database is unreadable even with Full Disk Access: a change there is reported, not named.
 - `--fs-usage` (Jamf `$12`): the real-time detector is opt-in. Measured three times, it added nothing polling did not, at the same latency, and it holds the single ktrace slot.
-- The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand; read verbs are dropped.
+- The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand; read verbs and Time Machine exclusions on temp paths are dropped.
 - Bluetooth on/off → a `python3` line, under a NOTE saying which way it went and that the target needs `python3`. No plist, no CLI.
 - Shared folders → `sharing -a`/`-e`/`-r`.
 - Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name.

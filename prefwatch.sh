@@ -5726,10 +5726,17 @@ WRITE_VERBS = {
                               "flushSharedCache", "reloadSettings", "moveCacheTo",
                               "absorbCacheFrom"),
 }
+# A Time Machine exclusion on a TEMPORARY path is an app housekeeping its own
+# scratch space (the .noindex folder of a build tool under /var/folders, seen on
+# 27.0), never a setting anyone deploys. Treated as a read: dropped.
+TRANSIENT_PREFIXES = ("/var/folders/", "/private/var/folders/", "/tmp/", "/private/tmp/")
 def is_readonly(basename, args):
     rest = args[1:]
     if basename in WRITE_VERBS:
         subs = [a for a in rest if not a.startswith("-")]
+        if basename == "tmutil" and subs and subs[0] in ("addexclusion", "removeexclusion") \
+           and all(a.startswith(TRANSIENT_PREFIXES) for a in subs[1:]):
+            return True
         return not (subs and subs[0] in WRITE_VERBS[basename])
     if basename == "nvram":
         # A write is name=value; -d deletes one, -c clears all. Everything else
