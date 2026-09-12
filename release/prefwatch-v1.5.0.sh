@@ -5829,7 +5829,7 @@ while True:
           case "$cmd" in
             */nvram\ prev-lang:kbd=*)
               _note_should_show __nvram_prevlang__ \
-                && _log_note_wrapped "" "macOS wrote this itself when the input sources changed. It sets the keyboard layout and language of the login window. Deploy it only if the login window should use this layout too." ;;
+                && _log_note_wrapped "" "macOS wrote this itself when the input sources changed. It sets the keyboard layout and language of the login window." ;;
           esac
           # Re-emitted sharing CLIs (systemsetup/sharing/networksetup/kickstart/
           # launchctl) all need root. Prefix sudo like every other privileged emit.
