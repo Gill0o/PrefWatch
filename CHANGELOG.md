@@ -65,6 +65,7 @@
 - Excluded, daemon state only: `com.apple.SafariBookmarksSyncAgent`, `com.apple.voicetrigger.notbackedup`, `com.apple.powerlogHelperd`, `com.apple.gms.availability`.
 - Setapp's Core Data save marker (`ManagedObjectContext_*_dieInfo`, a write and a Delete per save) is filtered per key.
 - `com.apple.MenuBarAgent` telemetry (`MenuBarAnalytics.*`, macOS 27) is filtered; it flipped all day on an idle Mac.
+- `com.apple.campo` (macOS 27) shares the Spotlight usage-counter filter: engagement counts and dates, launch time, first-run reset.
 
 ### Note
 - A domain living only in a group container is explained, not watched: `defaults` cannot address it.

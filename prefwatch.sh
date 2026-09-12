@@ -1468,10 +1468,13 @@ is_noisy_key() {
       esac
       ;;
 
-    com.apple.Spotlight)
+    # com.apple.campo (macOS 27) carries the same Spotlight usage counters
+    # (engagement counts and dates, launch time, first-run reset) next to the
+    # menu bar item flag the global filter already drops.
+    com.apple.Spotlight|com.apple.campo)
       case "$keyname" in
         # Noisy: usage counters, window state, timestamps, binary data
-        engagementCount*|engagementDate*|useCount|startTime|showedFTE)
+        engagementCount*|engagementDate*|useCount|startTime|showedFTE|FTEReset*)
           return 0 ;;
         lastWindowPosition|lastVisibleScreenRect|userHasMovedWindow|windowHeight)
           return 0 ;;
