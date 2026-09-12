@@ -2914,12 +2914,7 @@ _note_network_service() {
     *) return 0 ;;
   esac
   _note_should_show __network_service__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: network service configuration changed (VPN / proxies / DNS / service order)."
-  _log_kind "$kind" "Cmd: #       Not emitted: configd owns this file and each service is keyed by a UUID"
-  _log_kind "$kind" "Cmd: #       minted on this Mac (a VPN client recreating its service mints a new one)."
-  _log_kind "$kind" "Cmd: #       Reproduce with: networksetup where it has a verb for the setting,"
-  _log_kind "$kind" "Cmd: #       or a configuration profile for a VPN (a 'com.apple.payload' subtree means"
-  _log_kind "$kind" "Cmd: #       the service is already profile-managed. Deploy the profile, not this file)."
+  _log_note_wrapped "$kind" "network service configuration changed (VPN / proxies / DNS / service order). Not emitted: configd owns this file and each service is keyed by a UUID minted on this Mac (a VPN client recreating its service mints a new one). Reproduce with networksetup where it has a verb for the setting, or a configuration profile for a VPN (a 'com.apple.payload' subtree means the service is already profile-managed, so deploy the profile, not this file)."
 }
 
 _note_byhost_uuid() {
@@ -3564,8 +3559,7 @@ _note_should_show() {
 # installing. Burst-deduped so a multi-app change shows it once.
 _note_dockutil_alt() {
   _note_should_show __dockutil_alt__ || return 0
-  _log_kind "$1" "Cmd: # NOTE: 'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here. Run ONE or the other,"
-  _log_kind "$1" "Cmd: #       not both (needs dockutil installed: github.com/kcrawford/dockutil)"
+  _log_note_wrapped "$1" "'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here. Run ONE or the other, not both (needs dockutil installed: github.com/kcrawford/dockutil)"
 }
 
 # Emit contextual notes for domains that need extra steps
@@ -4258,8 +4252,7 @@ _note_menubar_positions() {
         | /usr/bin/sort | /usr/bin/uniq -d | /usr/bin/head -1 || true)
   [ -n "$_k" ] || return 0
   _note_should_show __menubar_pos__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: menu bar layout changed. Item positions are pixel offsets, not"
-  _log_kind "$kind" "Cmd: #       portable, so not emitted. A reorder OR a display connect/disconnect triggers this."
+  _log_note_wrapped "$kind" "menu bar layout changed. Item positions are pixel offsets, not portable, so not emitted. A reorder OR a display connect/disconnect triggers this."
 }
 
 # Detect a pure Dock reorder. Persistent-apps/others hold the SAME apps in a
@@ -4294,8 +4287,7 @@ for key in ("persistent-apps", "persistent-others"):
 PY
 )
   if [ -n "$_r" ] && _note_should_show __dock_reorder__; then
-    _log_kind "$kind" "Cmd: # NOTE: Dock icons reordered. No command emitted; reproduce the order for deployment with dockutil"
-    _log_kind "$kind" "Cmd: #       (github.com/kcrawford/dockutil), e.g. $(_mdm_wrap "dockutil --move <app> --position <N>")"
+    _log_note_wrapped "$kind" "Dock icons reordered. No command emitted; reproduce the order for deployment with dockutil (github.com/kcrawford/dockutil), for example: $(_mdm_wrap "dockutil --move <app> --position <N>")"
   fi
 }
 
@@ -4378,9 +4370,7 @@ _note_timemachine() {
 _note_mediasharing() {
   local kind="$1"
   _note_should_show __mediasharing__ || return 0
-  _log_kind "$kind" "Cmd: # NOTE: Media Sharing changed, not reproducible via defaults: these keys mirror state"
-  _log_kind "$kind" "Cmd: #       the daemon writes and never reads back (measured. The write survives a restart of"
-  _log_kind "$kind" "Cmd: #       mediasharingd and the pane never follows). Set it in System Settings > General > Sharing."
+  _log_note_wrapped "$kind" "Media Sharing changed, not reproducible via defaults: these keys mirror state the daemon writes and never reads back (measured: the write survives a restart of mediasharingd and the pane never follows). Set it in System Settings > General > Sharing."
 }
 
 # Print presets. Three separate things an admin needs before deploying one, and
@@ -4406,15 +4396,11 @@ _note_print_preset() {
   local kind="$1" dom="$2"
   case "$dom" in com.apple.print.custompresets*) ;; *) return 0 ;; esac
   _note_should_show "__print_preset__:$dom" || return 0
-  _log_kind "$kind" "Cmd: # NOTE: print preset changed. It takes effect after a logout/login."
+  local _pp="print preset changed. It takes effect after a logout/login."
   case "$dom" in
-    *.forprinter.*)
-      _log_kind "$kind" "Cmd: #       This domain names the print queue ('${dom##*.forprinter.}'), which is whatever"
-      _log_kind "$kind" "Cmd: #       the printer was added as. The path matches only where the queue has that name." ;;
+    *.forprinter.*) _pp="$_pp This domain names the print queue ('${dom##*.forprinter.}'), which is whatever the printer was added as; the path matches only where the queue has that name." ;;
   esac
-  _log_kind "$kind" "Cmd: #       The top-level key is the preset's NAME. macOS's own entries are localised"
-  _log_kind "$kind" "Cmd: #       ('Réglages par défaut' here), so their path finds nothing on a Mac in another"
-  _log_kind "$kind" "Cmd: #       language. A preset you named yourself carries the name you chose, and travels."
+  _log_note_wrapped "$kind" "$_pp The top-level key is the preset's NAME; macOS's own entries are localised ('Réglages par défaut' here), so their path finds nothing on a Mac in another language. A preset you named yourself carries the name you chose, and travels."
 }
 
 # Wi-Fi radio on/off (System Settings > Wi-Fi). The state IS in a plist.
@@ -4767,8 +4753,8 @@ _note_group_container_domain() {
   (( ${#_gc[@]} )) || return 1
   log_line "Cmd: # NOTE: '$dom' has no preference file of its own. It lives in a group container:"
   log_line "Cmd: #       ${_gc[1]}"
-  log_line "Cmd: #       'defaults' cannot address a group container by domain name (measured: the export"
-  log_line "Cmd: #       comes back empty), so no command can be emitted for it and none will be."
+  log_line "Cmd: #       'defaults' cannot address a group container by domain name (measured: the export comes back empty);"
+  log_line "Cmd: #       no command can be emitted for it and none will be."
   return 0
 }
 
@@ -5420,8 +5406,7 @@ start_watch_all() {
     [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
     if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
       local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
-      log_line "Cmd: # NOTE: real-time detection stopped by PrefWatch. Fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB):"
-      log_line "Cmd: #       the machine's file activity outran it. Polling continues, at the same latency."
+      _log_note_wrapped "" "real-time detection stopped by PrefWatch: fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB), the machine's file activity outran it. Polling continues, at the same latency."
       return 0
     fi
     case "$_why" in
@@ -5974,8 +5959,7 @@ PY
         # separate sharing change still carries its explanation. The actionable
         # bootstrap/bootout command below is emitted every time regardless.
         if _note_should_show __launchd_bootstrap__; then
-          log_line "Cmd: # NOTE: enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing)"
-          log_line "Cmd: #       won't start/stop, and its UI toggle won't move, until launchd (re)loads it via bootstrap/bootout, or a reboot"
+          _log_note_wrapped "" "enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing) won't start/stop, and its UI toggle won't move, until launchd (re)loads it via bootstrap/bootout, or a reboot"
         fi
         [ -n "$_companion" ] && log_line "Cmd: $_companion"
       fi
@@ -6361,8 +6345,7 @@ for row in sorted(rows):
       local _snap="$1" _curr="$2" u
       while IFS= read -r u; do
         [ -n "$u" ] || continue
-        log_line "Cmd: # NOTE: user account '$u' added. The account itself (UID/home/password) is NOT reproducible via defaults;"
-        log_line "Cmd: #       use sysadminctl/dscl or a config profile"
+        _log_note_wrapped "" "user account '$u' added. The account itself (UID/home/password) is NOT reproducible via defaults; use sysadminctl/dscl or a config profile"
       done < <(/usr/bin/comm -13 "$_snap" "$_curr" 2>/dev/null)
       while IFS= read -r u; do
         [ -n "$u" ] || continue
@@ -6622,8 +6605,7 @@ WP
       if [ "$_ni" -gt 1 ] || [ "$_nc" -gt 1 ]; then
         # desktoppr addresses one screen by INDEX, and that index is this Mac's
         # screen order. Not something to emit as a deployable command.
-        log_line "Cmd: # NOTE: desktop wallpaper changed. The screens did not all get the same thing, so no"
-        log_line "Cmd: #       single command reproduces it. Deploy per screen with desktoppr (github.com/scriptingosx/desktoppr):"
+        _log_note_wrapped "" "desktop wallpaper changed. The screens did not all get the same thing, so no single command reproduces it. Deploy per screen with desktoppr (github.com/scriptingosx/desktoppr):"
         printf '%s\n' "$_img" | while IFS= read -r _p; do
           [ -n "$_p" ] && log_line "Cmd: #       desktoppr <screen> \"$(_escape_dq "$_p")\""
         done
@@ -6635,13 +6617,9 @@ WP
         # but only by hex, and the Store records the colour's NAME and nothing
         # else. The RGB sitting in EncodedOptionValues is the separate
         # behind-the-image colour, unchanged by this pick (measured).
-        log_line "Cmd: # NOTE: desktop wallpaper set to the solid system colour '$(printf '%s' "$_nam" | /usr/bin/tr '\n' ' ' | /usr/bin/sed 's/ $//')'. The Store"
-        log_line "Cmd: #       records the name, not the shade, so the exact colour is not recoverable. desktoppr"
-        log_line "Cmd: #       takes a hex value: desktoppr color <RRGGBB>"
+        _log_note_wrapped "" "desktop wallpaper set to the solid system colour '$(printf '%s' "$_nam" | /usr/bin/tr '\n' ' ' | /usr/bin/sed 's/ $//')'. The Store records the name, not the shade, so the exact colour is not recoverable. desktoppr takes a hex value: desktoppr color <RRGGBB>"
       else
-        log_line "Cmd: # NOTE: desktop wallpaper changed, but no image or colour moved in the Store. A dynamic"
-        log_line "Cmd: #       wallpaper, which neither defaults nor desktoppr reproduces; set it in System"
-        log_line "Cmd: #       Settings > Wallpaper"
+        _log_note_wrapped "" "desktop wallpaper changed, but no image or colour moved in the Store. A dynamic wallpaper, which neither defaults nor desktoppr reproduces; set it in System Settings > Wallpaper"
       fi
       return 0
     }
@@ -6728,9 +6706,7 @@ WP
       _added=$(/usr/bin/comm -13 <(/usr/bin/sort "$_snap") <(/usr/bin/sort "$_curr") 2>/dev/null) || _added=""
       _removed=$(/usr/bin/comm -23 <(/usr/bin/sort "$_snap") <(/usr/bin/sort "$_curr") 2>/dev/null) || _removed=""
       _note_should_show __tcc__ || return 0
-      log_line "Cmd: # NOTE: privacy permission changed (System Settings > Privacy & Security). NOT"
-      log_line "Cmd: #       reproducible by command: tccutil only RESETS a grant, it cannot create one."
-      log_line "Cmd: #       Deploy it as a PPPC (Privacy Preferences Policy Control) configuration profile."
+      _log_note_wrapped "" "privacy permission changed (System Settings > Privacy & Security). NOT reproducible by command: tccutil only RESETS a grant, it cannot create one. Deploy it as a PPPC (Privacy Preferences Policy Control) configuration profile."
       if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q 'UNREADABLE'; then
         # On 27 the per-user database sits in a ProtectedSystem container that
         # refuses the read even WITH Full Disk Access (measured). Telling the
@@ -6856,8 +6832,7 @@ WP
             # "Set time zone automatically" (location-based) can overwrite a
             # manual set. Flag it so the deploy sticks.
             [ "$(defaults read /Library/Preferences/com.apple.timezone.auto Active 2>/dev/null)" = "1" ] \
-              && { log_line "Cmd: # NOTE: 'Set time zone automatically' is ON (com.apple.timezone.auto). It can override a manual set;"
-                   log_line "Cmd: #       turn it off first (Settings > Date & Time)"; }
+              && _log_note_wrapped "" "'Set time zone automatically' is ON (com.apple.timezone.auto). It can override a manual set; turn it off first (Settings > Date & Time)"
             log_line "Cmd: sudo /usr/sbin/systemsetup -settimezone \"$_v\"" ;;
           ntp)
             log_line "Cmd: sudo /usr/sbin/systemsetup -setnetworktimeserver \"$_v\"" ;;
@@ -6915,8 +6890,7 @@ WP
               log_line "Cmd: #       so no command reproduces it. On a managed fleet, disabled SIP is a finding." ;;
             filevault)
               # Enabling needs a recovery key (interactive/MDM). Not a single command.
-              log_line "Cmd: # NOTE: FileVault is now ${_v#is }. Not reproducible by one command;"
-              log_line "Cmd: #       enable needs a recovery key (sudo fdesetup enable) or an MDM/config profile" ;;
+              _log_note_wrapped "" "FileVault is now ${_v#is }. Not reproducible by one command; enable needs a recovery key (sudo fdesetup enable) or an MDM/config profile" ;;
             # `--master-enable`/`--master-disable` are GONE from both `spctl --help`
             # and `man spctl` on 26.6.2. The man mentions "master" zero times. They
             # still parse (`--master-enable` answers "Operation not permitted", while
@@ -6945,11 +6919,9 @@ WP
               # App Store-only (developer id disabled) vs +identified-developers.
               # No single spctl command reproduces it. It's a GUI/MDM setting.
               if [ "$_v" = disabled ]; then
-                log_line "Cmd: # NOTE: Gatekeeper set to 'App Store' only (identified developers disabled). No single spctl command"
-                log_line "Cmd: #       reproduces this; set it in System Settings > Privacy & Security, or via an MDM Gatekeeper config profile"
+                _log_note_wrapped "" "Gatekeeper set to 'App Store' only (identified developers disabled). No single spctl command reproduces this; set it in System Settings > Privacy & Security, or via an MDM Gatekeeper config profile"
               else
-                log_line "Cmd: # NOTE: Gatekeeper now allows 'App Store and identified developers'. Set in System Settings > Privacy & Security"
-                log_line "Cmd: #       or an MDM config profile (no single spctl command)"
+                _log_note_wrapped "" "Gatekeeper now allows 'App Store and identified developers'. Set in System Settings > Privacy & Security or an MDM config profile (no single spctl command)"
               fi ;;
             firewall)
               case "$_v" in
