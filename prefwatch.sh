@@ -1390,6 +1390,15 @@ is_noisy_key() {
       esac
       ;;
 
+    # Activity Monitor: column widths are geometry (a dict here, so the global
+    # `*.column.*.width` rule does not see it) and SelectedTab is the last tab
+    # shown. Keep ShowCategory (All / My processes…), UpdatePeriod, the columns.
+    com.apple.ActivityMonitor)
+      case "$keyname" in
+        Column\ Width|SelectedTab) return 0 ;;
+      esac
+      ;;
+
     # Game controllers: `controllers` and `devices` are the paired-hardware
     # inventory (positional entries per controller: profile, hidden flag, form
     # fitting), rewritten when the pane opens or a pad connects; settingsVersion
