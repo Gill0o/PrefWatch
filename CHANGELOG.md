@@ -44,6 +44,7 @@
 - A `pmset` display label (`Sleep On Power Button`) was emitted as a setting name.
 - Re-enabling a Spotlight category emitted a positional `Delete`; it targets the value now.
 - Long NOTEs wrapped in Console with no `#` on the second line, which reads as a command. One sentence per line now, every line prefixed.
+- A Dock removal carried seven lines of preamble for one command. The dockutil note is one line and the app label is the dockutil line itself.
 
 ### Security
 - Startup read every file name under Group Containers. The user's synced documents. It looks only where a plist can be.

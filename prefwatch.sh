@@ -3559,7 +3559,8 @@ _note_should_show() {
 # installing. Burst-deduped so a multi-app change shows it once.
 _note_dockutil_alt() {
   _note_should_show __dockutil_alt__ || return 0
-  _log_note_wrapped "$1" "'dockutil' is a deploy-friendly ALTERNATIVE to the PlistBuddy command(s) here. Run ONE or the other, not both (needs dockutil installed: github.com/kcrawford/dockutil)"
+  # One line: seven lines of preamble for one Dock removal was too much to read.
+  _log_kind "$1" "Cmd: # NOTE: dockutil (github.com/kcrawford/dockutil) is an ALTERNATIVE to the PlistBuddy line(s): run one or the other"
 }
 
 # Emit contextual notes for domains that need extra steps
@@ -3869,8 +3870,8 @@ emit_array_deletions() {
     # comment (--remove by label is more robust than deleting by positional
     # index, which shifts as the array changes; the PlistBuddy Delete below
     # still reproduces it on its own).
+    # No separate "# Dock: removed X" label: the dockutil line names the app.
     if [ -n "$app_label" ]; then
-      _log_kind "$kind" "Cmd: # Dock: removed $app_label"
       _note_dockutil_alt "$kind"
       _log_kind "$kind" "Cmd: # dockutil --remove '$app_label'"
     fi
