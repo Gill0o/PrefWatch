@@ -1390,6 +1390,17 @@ is_noisy_key() {
       esac
       ;;
 
+    # Game controllers: `controllers` and `devices` are the paired-hardware
+    # inventory (positional entries per controller: profile, hidden flag, form
+    # fitting), rewritten when the pane opens or a pad connects; settingsVersion
+    # and showGCPrefsPane are pane state. Keep the thumbstick scrolling settings,
+    # the Bluetooth long-press action, and the games/profiles remaps.
+    com.apple.GameController)
+      case "$keyname" in
+        controllers|devices|settingsVersion|showGCPrefsPane) return 0 ;;
+      esac
+      ;;
+
     # Menu bar agent (macOS 27): telemetry counters the agent rewrites whenever an
     # item appears or leaves. The trailing item count flipped 27↔28 all day on
     # an idle Mac. Reject list: the positions dict is caught by the global filter,

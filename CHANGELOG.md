@@ -60,6 +60,7 @@
 ### Noise
 - Un-excluded, filtered per key: `com.apple.Music`/`TV`, `AddressBook`, `sharingd` (AirDrop discoverability).
 - `WindowLeft`/`WindowTop` join the window-geometry filter.
+- Game controllers: the paired-hardware inventory (`controllers`, `devices`) and pane state are filtered; the scrolling settings and remaps stay.
 - Excluded, daemon state only: `com.apple.SafariBookmarksSyncAgent`, `com.apple.voicetrigger.notbackedup`, `com.apple.powerlogHelperd`, `com.apple.gms.availability`.
 - Setapp's Core Data save marker (`ManagedObjectContext_*_dieInfo`, a write and a Delete per save) is filtered per key.
 - `com.apple.MenuBarAgent` telemetry (`MenuBarAnalytics.*`, macOS 27) is filtered; it flipped all day on an idle Mac.
