@@ -14,6 +14,7 @@
 - Wi-Fi on/off → `networksetup -setairportpower`; the raw `PowerEnabled` write is filtered.
 - Time Machine "Back up automatically" and exclusions → `tmutil`; the raw writes are filtered, `AutoBackupInterval` too when it just follows the toggle.
 - Startup sound → `sudo nvram StartupMute=…` (NVRAM, not a plist).
+- The `nvram prev-lang:kbd` line macOS writes on an input-source change carries a NOTE saying what it is: the login window keyboard.
 - Default printer → `lpoptions -d`, read from `~/.cups/lpoptions` (`lpstat -d` is localised).
 - Spotlight indexing is read on every volume, not just `/`.
 - Touch ID → `bioutil`, both scopes; the user-scope line says it prompts for a password.

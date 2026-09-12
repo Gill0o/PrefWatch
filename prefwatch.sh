@@ -5822,6 +5822,15 @@ while True:
 ' 2>/dev/null \
       | while IFS= read -r cmd; do
           [ -n "$cmd" ] || continue
+          # macOS itself writes the login window keyboard to NVRAM whenever the
+          # input sources change (seen on 27.0 on every add/remove of a layout).
+          # A bare nvram line under an input-source edit reads as a mystery, or
+          # as something the admin did; say where it comes from and what it is.
+          case "$cmd" in
+            */nvram\ prev-lang:kbd=*)
+              _note_should_show __nvram_prevlang__ \
+                && _log_note_wrapped "" "macOS wrote this when the input sources changed: the login window keyboard layout and language. Deploy it only if the login keyboard should follow." ;;
+          esac
           # Re-emitted sharing CLIs (systemsetup/sharing/networksetup/kickstart/
           # launchctl) all need root. Prefix sudo like every other privileged emit.
           log_line "Cmd: sudo $cmd"
