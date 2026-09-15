@@ -77,6 +77,7 @@
 - AirDrop discoverability says to run `killall sharingd`: the write alone is inert.
 - SIP is read alongside FileVault, Gatekeeper and the firewall; only Recovery changes it.
 - The new-domain NOTE says the commands below are the domain's full configuration.
+- README: on macOS 27 a menu-bar reorder writes no preference (measured; the position keys exist but never move), so the reorder NOTE is a macOS 26 feature.
 - Spotlight category changes say the pane must be reopened, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
 

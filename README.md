@@ -52,9 +52,9 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing (its keys mirror state the daemon never reads back), and a privacy permission, which is granted by a PPPC profile rather than a command. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, a menu-bar reorder (macOS 26 and earlier; on 27 it is invisible, see below), Media Sharing (its keys mirror state the daemon never reads back), and a privacy permission, which is granted by a PPPC profile rather than a command. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
-Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
+Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), hardware state (display & keyboard brightness, HDR), and on macOS 27 the menu-bar item order, which no longer reaches a plist at all.
 
 A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command. A positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
 
