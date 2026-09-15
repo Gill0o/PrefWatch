@@ -68,6 +68,8 @@
 - Setapp's Core Data save marker (`ManagedObjectContext_*_dieInfo`, a write and a Delete per save) is filtered per key.
 - `com.apple.MenuBarAgent` telemetry (`MenuBarAnalytics.*`, macOS 27) is filtered; it flipped all day on an idle Mac.
 - `com.apple.campo` (macOS 27) shares the Spotlight usage-counter filter: engagement counts and dates, launch time, first-run reset.
+- `sharingd` ByHost session tokens (`AirDropID`, `StreamID`, `AppleIDAgentMetaInfo`) are filtered: the daemon writes and deletes them on its own.
+- Shortcuts' indexing markers (`WFSpotlightIndexed*`, `Spotlight*Version*`, `WFLastSyncedFlagsHash`) are filtered per key; the tool database UUID changed on its own.
 
 ### Note
 - A domain living only in a group container is explained, not watched: `defaults` cannot address it.

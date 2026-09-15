@@ -1420,6 +1420,15 @@ is_noisy_key() {
       esac
       ;;
 
+    # Shortcuts: the markers its indexer and sync rewrite on their own. The tool
+    # database UUID changed with no hand on the app. Reject list: the plist holds
+    # no setting today, but one appearing must still surface.
+    com.apple.siri.shortcuts)
+      case "$keyname" in
+        WFSpotlightIndexed*|SpotlightDomainVersion|SpotlightSchemaVersionHash|WFLastSyncedFlagsHash) return 0 ;;
+      esac
+      ;;
+
     # GlobalPreferences: Filter Keyboard panel first-open artifacts
     .GlobalPreferences)
       case "$keyname" in
@@ -1815,6 +1824,9 @@ is_noisy_key() {
         AirDropRandomHashUUIDKey*|AutoUnlock*|HashManager-*|SDAirDrop*|\
         SFCollaborationUserDefaults*|AUIconTransferStore|\
         AfterFirstUseExpirationDate|OneTimeAirDropReset*) return 0 ;;
+        # ByHost session tokens (12 hex) and an Apple ID blob the daemon writes
+        # and deletes on its own; a write and a Delete per AirDrop session.
+        AirDropID|StreamID|AppleIDAgentMetaInfo) return 0 ;;
       esac
       ;;
 
