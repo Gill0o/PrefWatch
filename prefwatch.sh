@@ -2586,7 +2586,7 @@ _note_device_uuid() {
   # someone who asked for deployable output.
   _log_kind "$kind" "Cmd: # NOTE: Device.mntr.<UUID> is the DISPLAY's own UUID, per-monitor and different on every Mac."
   if [ "$MDM_OUTPUT" = "true" ]; then
-    _log_kind "$kind" "Cmd: #       --mdm cannot templatize it; on the target, pick the display: defaults -currentHost read -g com.apple.ColorSync.Devices"
+    _log_kind "$kind" "Cmd: #       --mdm cannot templatize it. On the target: defaults -currentHost read -g com.apple.ColorSync.Devices"
   else
     _log_kind "$kind" "Cmd: #       To replay elsewhere, list the displays there: defaults -currentHost read -g com.apple.ColorSync.Devices"
   fi
@@ -6698,7 +6698,7 @@ WP
       else
         # Say so rather than watch half the surface quietly: the summary line
         # above already lists "tcc" as active.
-        log_line "Cmd: # NOTE: per-user TCC database not found (neither ~/Library nor the tccd container). Only SYSTEM privacy permissions are watched"
+        log_line "Cmd: # NOTE: per-user TCC database not found (~/Library, tccd container). Only SYSTEM privacy permissions are watched"
       fi
     fi
     _read_tcc() {
@@ -6740,7 +6740,7 @@ WP
         # reader to grant FDA would send them to a setting that changes nothing.
         if printf '%s\n' "$_added$_removed" | /usr/bin/grep -q '^user.UNREADABLE' \
            && [ -n "${_tcc_usr:-}" ] && [ "${_tcc_usr#/private/var/containers/}" != "$_tcc_usr" ]; then
-          log_line "Cmd: #       Which permission moved is not visible here. This macOS keeps the per-user TCC.db in a container no process may read."
+          log_line "Cmd: #       Which permission moved is not visible here. This macOS keeps the per-user TCC.db where no process may read."
         else
           log_line "Cmd: #       Which permission moved is not visible here. Reading TCC.db needs Full Disk Access."
         fi
