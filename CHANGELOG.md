@@ -62,7 +62,7 @@
 
 ### Noise
 - Un-excluded, filtered per key: `com.apple.Music`/`TV`, `AddressBook`, `sharingd` (AirDrop discoverability).
-- `WindowLeft`/`WindowTop` join the window-geometry filter.
+- `WindowLeft`/`WindowTop` and `*WindowLocation` (Finder's copy-progress window) join the window-geometry filter.
 - Game controllers: the paired-hardware inventory (`controllers`, `devices`) and pane state are filtered; the scrolling settings and remaps stay.
 - Activity Monitor: column widths and the last tab shown are filtered; the process filter, refresh period and column choices stay.
 - Excluded: `com.apple.dt.xctest.tool`, where `UserDefaults.standard` lands during a test run; every `swift test` writes and deletes the suite's keys.
@@ -71,6 +71,10 @@
 - `com.apple.MenuBarAgent` telemetry (`MenuBarAnalytics.*`, macOS 27) is filtered; it flipped all day on an idle Mac.
 - `com.apple.campo` (macOS 27) shares the Spotlight usage-counter filter: engagement counts and dates, launch time, first-run reset.
 - `sharingd` ByHost session tokens (`AirDropID`, `StreamID`, `AppleIDAgentMetaInfo`) are filtered: the daemon writes and deletes them on its own.
+- Messages' app-browser "seen" dictionary (`kCKBrowserSelectionControllerSeenDictionaryKey`) is filtered, scalar and PlistBuddy paths.
+- System Settings' Spotlight stamps (`com.apple.systemsettingsagent lastIndexed_*`, one per pane) are filtered per key.
+- Time Machine's `StableLocalSnapshotDate` joins the destination-record metrics filter.
+- Messages nickname sync counters (`*Version`, `Nickname*`, `IMDNickname*`) are filtered per key; `MeCardSharingEnabled` and its audience stay.
 - Shortcuts' indexing markers (`WFSpotlightIndexed*`, `Spotlight*Version*`, `WFLastSyncedFlagsHash`) are filtered per key; the tool database UUID changed on its own.
 
 ### Note

@@ -1085,7 +1085,7 @@ is_noisy_key() {
     # reached. (It also swallows `NSStatusItem VisibleCC <Module>`. A known,
     # deliberate trade-off; do not narrow it without measuring what a System
     # Settings toggle really writes.)
-    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|WindowLeft|WindowTop|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
+    NSWindow\ Frame*|NSNavPanel*|NSSplitView*|NSTableView*|NSStatusItem*|*ItemPreferredPositions*|*WindowBounds*|*WindowState*|*WindowFrame*|*WindowOriginFrame*|*WindowLocation|WindowLeft|WindowTop|*PreferencesWindow*|*.column.*.width|*.column.*.width.*|*_frame|NSOSPLastRootDirectory|NSNavLastRootDirectory|recentlyPlayed*|*SidebarWidth*)
       return 0 ;;
 
     # App-controlled macOS menu item overrides (set by app, not user)
@@ -1300,11 +1300,13 @@ is_noisy_key() {
       esac
       ;;
 
-    # System Settings: Filter timestamps
+    # System Settings: Filter timestamps. Also covers com.apple.systemsettingsagent,
+    # one `lastIndexed_<deep link>` stamp per pane (build:locale:UUID:n) that
+    # Spotlight's re-index rewrites; that plist holds nothing else today.
     com.apple.systemsettings*)
       case "$keyname" in
         # Noisy: last seen timestamps, navigation state, indexing timestamps, extension state
-        *NavigationState*|*update-state-indexing*|*.extension)
+        *NavigationState*|*update-state-indexing*|*.extension|lastIndexed_*)
           return 0 ;;
       esac
       ;;
@@ -1429,6 +1431,16 @@ is_noisy_key() {
     com.apple.siri.shortcuts)
       case "$keyname" in
         WFSpotlightIndexed*|SpotlightDomainVersion|SpotlightSchemaVersionHash|WFLastSyncedFlagsHash) return 0 ;;
+      esac
+      ;;
+
+    # Messages nickname sync: version counters that climb with every exchange
+    # (four keys, eleven writes in a morning), plus the daemon's own flags.
+    # Kept: MeCardSharingEnabled and MeCardSharingAudience, the "Share Name and
+    # Photo" setting and its audience.
+    com.apple.messages.nicknames)
+      case "$keyname" in
+        *Version|IMDNickname*|Nickname*|MeCardSharingImageForkedFromMeCard) return 0 ;;
       esac
       ;;
 
@@ -1677,7 +1689,9 @@ is_noisy_key() {
     com.apple.MobileSMS)
       case "$keyname" in
         # Noisy: internal analytics (contact scrutiny, background report counters)
-        Scrutiny|CKBackgroundSettingsLastReportHour)
+        # and the iMessage app-browser "seen" dictionary (one entry per extension,
+        # rewritten as the drawer is opened).
+        Scrutiny|CKBackgroundSettingsLastReportHour|kCKBrowserSelectionControllerSeenDictionaryKey)
           return 0 ;;
       esac
       ;;
@@ -2111,7 +2125,7 @@ is_noisy_pbcmd() {
         *":SnapshotDates "*|*":SnapshotDates:"*|\
         *":ConsistencyScanDate "*|*":FilesystemTypeName "*|\
         *":LastKnownEncryptionState "*|*":LastKnownVolumeName "*|\
-        *":ReferenceLocalSnapshotDate "*|*":attemptDate "*|\
+        *":ReferenceLocalSnapshotDate "*|*":StableLocalSnapshotDate "*|*":attemptDate "*|\
         *":backupOfVolumeUUIDs"*)
           return 0 ;;
       esac
@@ -2135,9 +2149,10 @@ is_noisy_pbcmd() {
       esac
       ;;
     com.apple.MobileSMS)
-      # Noisy: Scrutiny analytics (contact tracking, timestamps)
+      # Noisy: Scrutiny analytics (contact tracking, timestamps), app-browser
+      # "seen" entries (a Delete per extension the drawer stops listing)
       case "$pb_cmd" in
-        *":Scrutiny:"*|*":Scrutiny "*)
+        *":Scrutiny:"*|*":Scrutiny "*|*":kCKBrowserSelectionControllerSeenDictionaryKey:"*)
           return 0 ;;
       esac
       ;;
