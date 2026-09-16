@@ -715,6 +715,9 @@ typeset -a DEFAULT_EXCLUSIONS=(
   "com.apple.MIDI*"
   "com.apple.corespotlightui"
   "com.apple.textunderstanding*"
+  # xctest's scratch domain: UserDefaults.standard inside a test run lands here,
+  # so every `swift test` writes and deletes the suite's own keys. Never a setting.
+  "com.apple.dt.xctest.tool"
 
   # Filtered per-key in is_noisy_key (not excluded) so real prefs survive:
   # dock, finder, Safari, systemsettings, Mail, Messages, and. Un-excluded
@@ -6621,9 +6624,23 @@ WP
       local _curr="$PREFWATCH_TMPDIR/wallpaper.paths.curr" _new _img _col _nam _ni _nc _p _head=false
       _wallpaper_paths | /usr/bin/sort -u > "$_curr" 2>/dev/null || : > "$_curr"
       _new=$(/usr/bin/comm -13 "$_wp_paths" "$_curr" 2>/dev/null) || _new=""
+      # The Store grows rows under a NEW key (a Space, a display) that all carry
+      # the wallpaper already in place. Seen on 27.0: `desktoppr` emitted for a
+      # desktop nobody touched. Only a row under a key the baseline already had
+      # is a change; a row that VANISHED from a key still present is one too
+      # (that is how a dynamic wallpaper shows). Neither: say nothing. The key
+      # is the row's path up to /Desktop (the Space or display), since an image
+      # row sits deeper than a colour row. Files are told apart by FILENAME,
+      # not NR==FNR, which swallows stdin when the first file is empty.
+      local _gone _wp_known
+      _wp_known='function key(p){ sub(/\/Desktop\/.*/, "", p); return p } FILENAME==P{ w[key($2)]=1; next } key($2) in w'
+      _gone=$(/usr/bin/comm -23 "$_wp_paths" "$_curr" 2>/dev/null) || _gone=""
+      _new=$(printf '%s\n' "$_new" | /usr/bin/awk -F'\t' -v P="$_wp_paths" "$_wp_known" "$_wp_paths" -) || _new=""
+      _gone=$(printf '%s\n' "$_gone" | /usr/bin/awk -F'\t' -v P="$_curr" "$_wp_known" "$_curr" -) || _gone=""
       /bin/mv -f "$_curr" "$_wp_paths" 2>/dev/null || true
-      # No early return on an empty $_new: switching TO a dynamic wallpaper only
-      # REMOVES lines, and the change still deserves the NOTE at the bottom.
+      [ -z "$_new" ] && [ -z "$_gone" ] && return 0
+      # No early return on an empty $_new alone: switching TO a dynamic wallpaper
+      # only REMOVES lines, and the change still deserves the NOTE at the bottom.
       _img=$(_wp_changed I "$_new"); _col=$(_wp_changed C "$_new"); _nam=$(_wp_changed N "$_new")
       _ni=0; [ -n "$_img" ] && _ni=$(printf '%s\n' "$_img" | /usr/bin/wc -l | /usr/bin/tr -d ' ')
       _nc=0; [ -n "$_col" ] && _nc=$(printf '%s\n' "$_col" | /usr/bin/wc -l | /usr/bin/tr -d ' ')
