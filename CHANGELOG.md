@@ -33,6 +33,8 @@
 - The "opening Desktop & Dock settings writes every default" note counted the dropped DOMAIN-pass duplicates, so three real writes printed it over nothing. Emitted lines only now.
 - A print preset dropped colour model, resolution, paper size and its own name as noise. Reject list now, shared with the diff worker.
 - Its NOTE never fired (keyed on a key no machine has). It now says a logout is needed and what does not travel.
+- A network service the plist orders but `networksetup` does not list made `-ordernetworkservices` unreplayable (a 27.0 VM). Left out now, and named.
+- A clean stop logged `# ABORT: set -e … (in cups_watch)`: the TERM landed in a watcher's bare `sleep`. Guarded, every watcher loop.
 - A Space created or a display plugged in re-emitted `desktoppr` for the wallpaper already in place: the Store grew rows under a new key. Known keys only now.
 - Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful; emptying the list gives a bare `-array`.
 - The two commands that need `python3` on the target say so.
@@ -76,6 +78,7 @@
 - System Settings' Spotlight stamps (`com.apple.systemsettingsagent lastIndexed_*`, one per pane) are filtered per key.
 - Time Machine's `StableLocalSnapshotDate` joins the destination-record metrics filter.
 - Microsoft apps: the crash-reporting SDK switch (`UseMERPCrashReportingSdk`), App Center bookkeeping, session record and OS stamp are filtered per key.
+- Bonjour's `genCount` (`com.apple.network.ServiceDiscovery`), bumped when advertised services change, is filtered per key.
 - Messages nickname sync counters (`*Version`, `Nickname*`, `IMDNickname*`) are filtered per key; `MeCardSharingEnabled` and its audience stay.
 - Shortcuts' indexing markers (`WFSpotlightIndexed*`, `Spotlight*Version*`, `WFLastSyncedFlagsHash`) are filtered per key; the tool database UUID changed on its own.
 

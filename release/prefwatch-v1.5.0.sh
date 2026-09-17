@@ -1448,6 +1448,15 @@ is_noisy_key() {
       esac
       ;;
 
+    # Bonjour: genCount is the DNS-SD generation counter, bumped whenever the
+    # advertised services change (seen on 27.0 next to a printer-sharing toggle,
+    # whose real command is the cupsctl line). The domain holds nothing else.
+    com.apple.network.ServiceDiscovery)
+      case "$keyname" in
+        genCount) return 0 ;;
+      esac
+      ;;
+
     # GlobalPreferences: Filter Keyboard panel first-open artifacts
     .GlobalPreferences)
       case "$keyname" in
@@ -2658,8 +2667,17 @@ _note_network_order() {
   [ -r "$path" ] || return 1
   set_uuid="${cmd#*:Sets:}"; set_uuid="${set_uuid%%:*}"
   [ -n "$set_uuid" ] || return 1
-  names=$("$PYTHON3_BIN" - "$path" "$set_uuid" 2>/dev/null <<'PY'
-import plistlib, sys
+  # `-ordernetworkservices` takes exactly the services networksetup itself
+  # lists, and that list can be SHORTER than the plist's ServiceOrder: a VM on
+  # 27.0 had two services in the set, both active, both interfaces up, and
+  # networksetup listed one. So the order is intersected with
+  # `-listallnetworkservices` (read on this Mac, the `*` of a disabled service
+  # stripped) and the NOTE names what was left out.
+  local _known
+  _known=$(/usr/sbin/networksetup -listallnetworkservices 2>/dev/null | /usr/bin/sed '1d; s/^\*//') || _known=""
+  local _out
+  _out=$(NS_KNOWN="$_known" "$PYTHON3_BIN" - "$path" "$set_uuid" 2>/dev/null <<'PY'
+import os, plistlib, sys
 
 def esc(s):
     for a, b in (('\\', '\\\\'), ('"', '\\"'), ('$', '\\$'), ('`', '\\`')):
@@ -2683,14 +2701,23 @@ try:
         names.append(str(name))
     if len(set(names)) != len(names) or not names:
         sys.exit(1)
+    known = [k for k in os.environ.get('NS_KNOWN', '').split('\n') if k]
+    dropped = [n for n in names if known and n not in known]
+    names = [n for n in names if n not in dropped]
+    if not names:
+        sys.exit(1)
     print(' '.join('"%s"' % esc(n) for n in names))
+    print(', '.join("'%s'" % n for n in dropped))
 except Exception:
     sys.exit(1)
 PY
 ) || return 1
+  names="${_out%%$'\n'*}"; local _dropped="${_out#*$'\n'}"
+  [ "$_dropped" = "$_out" ] && _dropped=""
   [ -n "$names" ] || return 1
   _note_should_show "__network_order__:$names" || return 0
   _log_kind "$kind" "Cmd: # NOTE: network service order changed (interface priority)."
+  [ -n "$_dropped" ] && _log_kind "$kind" "Cmd: #       Left out, unknown to networksetup on this Mac: $_dropped"
   _log_kind "$kind" "Cmd: sudo /usr/sbin/networksetup -ordernetworkservices $names"
 }
 
@@ -4948,7 +4975,7 @@ _orphan_watchdog() {
   local _root="$1" _pp
   [ -n "$_root" ] || return 0
   while :; do
-    /bin/sleep 5
+    /bin/sleep 5 || true
     _pp=$(/bin/ps -o ppid= -p "$_root" 2>/dev/null | /usr/bin/tr -d ' ') || _pp=""
     # Empty means the root is already gone: nothing to signal, and staying would
     # make this the orphan.
@@ -5635,7 +5662,7 @@ start_watch_all() {
       fi
       /bin/mv -f "$marker_user.next" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true
       /usr/bin/touch -r "$marker_user" "$marker_sys" 2>/dev/null || true
-      /bin/sleep 0.5
+      /bin/sleep 0.5 || true
     done
   }
 
@@ -5679,13 +5706,16 @@ start_watch_all() {
     # Initial snapshot of installed printers
     /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_snapshot" 2>/dev/null || true
 
+    # `|| true` on every sleep in a watcher loop: the shutdown's TERM lands in
+    # the sleep, which then exits non-zero, and under set -e the ERR trap logged
+    # "# ABORT: set -e … (in cups_watch)" on a clean stop (seen on 27.0).
     while true; do
-      /bin/sleep 1
+      /bin/sleep 1 || true
       /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
 
       # Debounce: if list changed, wait 5s and re-check to filter DNS-SD/Bonjour glitches
       if ! /usr/bin/cmp -s "$cups_snapshot" "$cups_current"; then
-        /bin/sleep 5
+        /bin/sleep 5 || true
         /usr/bin/lpstat -a 2>/dev/null | /usr/bin/awk '{print $1}' | /usr/bin/sort > "$cups_current" 2>/dev/null || true
       fi
 
@@ -6059,7 +6089,7 @@ PY
     }
 
     while true; do
-      /bin/sleep 2
+      /bin/sleep 2 || true
       if [ -f "$sys_plist" ]; then
         local sys_curr="$PREFWATCH_TMPDIR/launchd.sys.curr.json"
         /usr/bin/plutil -convert json -o "$sys_curr" "$sys_plist" >/dev/null 2>&1 || true
@@ -6128,7 +6158,7 @@ PY
     /usr/bin/pmset -g custom > "$pmset_snapshot" 2>/dev/null || true
 
     while true; do
-      /bin/sleep 2
+      /bin/sleep 2 || true
       /usr/bin/pmset -g custom > "$pmset_current" 2>/dev/null || true
 
       # Quick check. Skip parsing if nothing changed
