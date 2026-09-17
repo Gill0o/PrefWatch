@@ -23,33 +23,33 @@
 - With it on, `fs_usage` runs in `pathname` mode (6× less memory than `filesys`, which reached 8 GB under load) and is killed past 1 GB resident; polling continues.
 
 ### Fix
-- Startup walked `~/Library/Group Containers` recursively (35s on a large sync). A bounded glob now, 0.007s.
-- `kill -9` on the main process left the watcher tree running, `fs_usage` included. It notices and stops.
-- An abort under `set -e`, in main or in the watcher root, left the tree reparented to launchd. Both arm `EXIT`.
-- The diff blocked on the cfprefsd flush `fs_watch` backgrounds, holding the plist lock. It waits on its own dumps.
-- macOS 27 `fs_usage` reports `/System/Volumes/Data/…`, the baseline is keyed on `/Users/…`: every rewritten plist came out as a "new domain". Prefix dropped.
-- Container plists and unknown trees are no longer diffed by `fs_watch`. No baseline, so always a false full dump. `--debug` says so.
-- A non-UTF-8 byte in any file name ended real-time detection (`sed` exited). `LC_ALL=C` now.
-- A "new domain" NOTE, or a positional-array NOTE, printed over nothing when every key was filtered. Both wait for the first line they introduce.
-- The "opening Desktop & Dock settings writes every default" note counted the dropped DOMAIN-pass duplicates, so three real writes printed it over nothing. Emitted lines only now.
-- A print preset dropped colour model, resolution, paper size and its own name as noise. Reject list now, shared with the diff worker.
-- Its NOTE never fired (keyed on a key no machine has). It now says a logout is needed and what does not travel.
-- A clean stop logged `# ABORT: set -e … (in cups_watch)`: the TERM landed in a watcher's bare `sleep`. Guarded, every watcher loop.
-- A Space created or a display plugged in re-emitted `desktoppr` for the wallpaper already in place: the Store grew rows under a new key. Known keys only now.
-- Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful; emptying the list gives a bare `-array`.
-- The two commands that need `python3` on the target say so.
-- `cups_watch` died on the first failed `lpstat -v` (captured pipe under `set -e`).
-- An unreadable plist emitted a `defaults delete` for every key. Guarded.
-- Exclusion-list parsing died on an invalid byte (`printf | sed` under `pipefail`). Trimmed in zsh.
 - A system-level `defaults write` was emitted without `sudo`.
 - A system plist in a subdirectory (`SystemConfiguration/`) was emitted as `/Library/Preferences/<name>`, a file that does not exist. The real path now.
-- A wallpaper change emitted desktoppr's own record or a placeholder path. The real path now.
 - `--mdm` left `utiluti`, `desktoppr` and `dockutil` unwrapped; they carry `runAsUser`.
 - Gatekeeper on → `spctl --global-enable` (`--master-enable` is undocumented since 26); the disable side keeps its verb under a NOTE.
-- A `pmset` display label (`Sleep On Power Button`) was emitted as a setting name.
+- Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful; emptying the list gives a bare `-array`.
+- The two commands that need `python3` on the target say so.
 - Re-enabling a Spotlight category emitted a positional `Delete`; it targets the value now.
+- A wallpaper change emitted desktoppr's own record or a placeholder path. The real path now.
+- A Space created or a display plugged in re-emitted `desktoppr` for the wallpaper already in place.
+- A print preset dropped colour model, resolution, paper size and its own name as noise.
+- Its NOTE never fired (keyed on a key no machine has). It now says a logout is needed and what does not travel.
+- A `pmset` display label (`Sleep On Power Button`) was emitted as a setting name.
+- An unreadable plist emitted a `defaults delete` for every key. Guarded.
 - Long NOTEs wrapped in Console with no `#` on the second line, which reads as a command. One sentence per line now, every line prefixed.
 - A Dock removal carried seven lines of preamble for one command. The dockutil note is one line and the app label is the dockutil line itself.
+- A "new domain" NOTE, or a positional-array NOTE, printed over nothing when every key was filtered. Both wait for the first line they introduce.
+- The "opening Desktop & Dock settings writes every default" note fired on three ordinary writes.
+- Startup walked `~/Library/Group Containers` recursively (35s on a large sync). A bounded glob now, 0.007s.
+- `kill -9` on the main process left the watcher tree running, `fs_usage` included. It notices and stops.
+- An internal error in the main process or the watcher root left the whole tree running. It is torn down now.
+- A clean stop logged a spurious `# ABORT` line from a watcher.
+- Printer add/remove detection stopped for the session after the first printer `lpstat` could not describe.
+- An invalid byte in the exclusion list ended the run.
+- The diff could block on a flush it had itself started; it no longer does.
+- On macOS 27, with `--fs-usage`, every rewritten plist came out as a "new domain" with a full dump.
+- With `--fs-usage`, a container plist no longer comes out as a false full dump; `--debug` says it was skipped.
+- A non-UTF-8 byte in any file name ended real-time detection.
 
 ### Security
 - Startup read every file name under Group Containers. The user's synced documents. It looks only where a plist can be.
@@ -84,7 +84,7 @@
 - AirDrop discoverability says to run `killall sharingd`: the write alone is inert.
 - SIP is read alongside FileVault, Gatekeeper and the firewall; only Recovery changes it.
 - The new-domain NOTE says the commands below are the domain's full configuration.
-- The menu-bar reorder NOTE is a macOS 26 one: on 27 the reorder writes no preference at all (measured; the position keys exist but never move). README says so.
+- The menu-bar reorder NOTE is a macOS 26 one: on 27 the reorder writes no preference at all (measured; the position keys exist but never move).
 - Spotlight category changes say the pane must be reopened, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
 
