@@ -2,6 +2,9 @@
 
 ## 1.5.1 — unreleased
 
+### Note
+- The script's comments are down from 32 % to 25 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
+
 
 ## 1.5.0 — 2026-09-17
 
