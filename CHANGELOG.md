@@ -72,7 +72,7 @@
 - `sharingd` ByHost session tokens (`AirDropID`, `StreamID`, `AppleIDAgentMetaInfo`) are filtered: the daemon writes and deletes them on its own.
 - Messages' app-browser "seen" dictionary (`kCKBrowserSelectionControllerSeenDictionaryKey`) is filtered, scalar and PlistBuddy paths.
 - System Settings' Spotlight stamps (`com.apple.systemsettingsagent lastIndexed_*`, one per pane) are filtered per key.
-- Time Machine's `StableLocalSnapshotDate` joins the destination-record metrics filter.
+- Time Machine's `StableLocalSnapshotDate` and `RESULT` (the last backup's result code) join the destination-record metrics filter.
 - Microsoft apps: the crash-reporting SDK switch (`UseMERPCrashReportingSdk`), App Center bookkeeping, session record and OS stamp are filtered per key.
 - Bonjour's `genCount` (`com.apple.network.ServiceDiscovery`), bumped when advertised services change, is filtered per key.
 - Messages nickname sync counters (`*Version`, `Nickname*`, `IMDNickname*`) are filtered per key; `MeCardSharingEnabled` and its audience stay.

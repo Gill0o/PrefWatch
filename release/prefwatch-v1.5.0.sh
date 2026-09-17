@@ -2145,7 +2145,7 @@ is_noisy_pbcmd() {
         *":ConsistencyScanDate "*|*":FilesystemTypeName "*|\
         *":LastKnownEncryptionState "*|*":LastKnownVolumeName "*|\
         *":ReferenceLocalSnapshotDate "*|*":StableLocalSnapshotDate "*|*":attemptDate "*|\
-        *":backupOfVolumeUUIDs"*)
+        *":RESULT "*|*":backupOfVolumeUUIDs"*)
           return 0 ;;
       esac
       ;;
