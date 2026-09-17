@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.5.0 — unreleased
+## 1.5.1 — unreleased
+
+
+## 1.5.0 — 2026-09-17
 
 ### Feature
 - Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name. The order keeps only the services `networksetup` lists, and names the rest.
