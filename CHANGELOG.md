@@ -19,6 +19,7 @@
 - Spotlight indexing is read on every volume, not just `/`.
 - Touch ID → `bioutil`, both scopes; the user-scope line says it prompts for a password.
 - Colour behind the wallpaper → `desktoppr color <hex>`.
+- Beta program joined or left → a NOTE naming the program; the raw `CatalogURL`/`NSShowFeedbackMenu` writes are filtered, and `seedutil` no longer enrolls on 27.
 
 ### Fix
 - Startup walked `~/Library/Group Containers` recursively (35s on a large sync). A bounded glob now, 0.007s.
@@ -74,6 +75,7 @@
 - Messages' app-browser "seen" dictionary (`kCKBrowserSelectionControllerSeenDictionaryKey`) is filtered, scalar and PlistBuddy paths.
 - System Settings' Spotlight stamps (`com.apple.systemsettingsagent lastIndexed_*`, one per pane) are filtered per key.
 - Time Machine's `StableLocalSnapshotDate` joins the destination-record metrics filter.
+- Microsoft apps: the crash-reporting SDK switch (`UseMERPCrashReportingSdk`), App Center bookkeeping, session record and OS stamp are filtered per key.
 - Messages nickname sync counters (`*Version`, `Nickname*`, `IMDNickname*`) are filtered per key; `MeCardSharingEnabled` and its audience stay.
 - Shortcuts' indexing markers (`WFSpotlightIndexed*`, `Spotlight*Version*`, `WFLastSyncedFlagsHash`) are filtered per key; the tool database UUID changed on its own.
 

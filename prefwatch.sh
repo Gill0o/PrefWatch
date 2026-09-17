@@ -1374,6 +1374,10 @@ is_noisy_key() {
       case "$keyname" in
         LastResultCode|LastAttempt*|LastRecommendedUpdatesAvailable|LastUpdatesAvailable|RecommendedUpdates|LastSessionSuccessful|FirstOfferDateDictionary|AvailableUpdatesNotification*)
           return 0 ;;
+        # Beta program: the seed catalog URL comes and goes with enrollment, and
+        # LastCatalogChangeDate stamps it. _note_seed_enrollment speaks in their
+        # place; a raw CatalogURL write enrolls nothing.
+        CatalogURL|LastCatalogChangeDate) return 0 ;;
         # Keep: AutomaticCheckEnabled, AutomaticDownload, AutomaticallyInstall*, etc.
       esac
       ;;
@@ -1448,6 +1452,9 @@ is_noisy_key() {
     .GlobalPreferences)
       case "$keyname" in
         KB_SpellingLanguage|KB_SpellingLanguageIsAutomatic) return 0 ;;
+        # Beta program: set in the SYSTEM .GlobalPreferences on enroll, deleted
+        # on unenroll. The NOTE comes from the SoftwareUpdate side; this rides along.
+        NSShowFeedbackMenu) return 0 ;;
         # Time-zone picker breadcrumbs (Date & Time pane): the last-clicked city's
         # coords/name/country, its AppleMapID, the derived country code. NONE of
         # these SET the time zone. Timezone_watch emits `systemsetup -settimezone`
@@ -1805,10 +1812,13 @@ is_noisy_key() {
     # Office apps: UAE* = Unexpected Application Exit bookkeeping (the crash
     # detector sets a marker on launch and clears it on a clean quit), rewritten
     # on every launch/quit cycle. Never a setting. Real Office prefs don't carry
-    # this prefix, so the domain glob stays safe.
+    # this prefix, so the domain glob stays safe. Same family, seen in
+    # SharePoint-mac on 27.0: the crash-reporting SDK switch, App Center
+    # telemetry bookkeeping, the launch/session record and the OS stamp.
     com.microsoft.*)
       case "$keyname" in
-        UAE*) return 0 ;;
+        UAE*|kAppBootTimeForUAE|AppExitGraceful|UseMERPCrashReportingSdk|MSAppCenter*|\
+        SessionId|SessionVersion|SessionLongBuildNumber|OSVersion|OSLocale) return 0 ;;
       esac
       ;;
 
@@ -4468,6 +4478,31 @@ _note_wifi_power() {
   _log_kind "$kind" "Cmd: #       ($_dev is this Mac's Wi-Fi device; on the target: networksetup -listallhardwareports)"
 }
 
+# Beta program enrollment (System Settings > General > Software Update > Beta
+# Updates). Measured on 27.0: leaving the program deleted CatalogURL from
+# com.apple.SoftwareUpdate and NSShowFeedbackMenu from the system
+# .GlobalPreferences, both at once. The two Deletes that came out enroll
+# nothing, and neither does seedutil: its 27.0 binary carries "seedutil is no
+# longer supported. Use Software Update to manage beta enrollment". Older
+# macOS are not measured, and have no beta to join any more. So a NOTE, no
+# command. The program is named from the catalog URL, which the Seeding
+# framework maps in SeedCatalogs.plist (DeveloperSeed, PublicSeed, CustomerSeed).
+_note_seed_enrollment() {
+  local kind="$1" prev="$2" curr="$3" _p _c _prog
+  [ -s "$prev" ] && [ -s "$curr" ] || return 0
+  _p=$(/usr/bin/sed -n 's/^[[:space:]]*"CatalogURL" => "\(.*\)"$/\1/p' "$prev" 2>/dev/null | /usr/bin/head -1) || _p=""
+  _c=$(/usr/bin/sed -n 's/^[[:space:]]*"CatalogURL" => "\(.*\)"$/\1/p' "$curr" 2>/dev/null | /usr/bin/head -1) || _c=""
+  [ "$_p" != "$_c" ] || return 0
+  _note_should_show "__seed__:${_c:+on}" || return 0
+  if [ -z "$_c" ]; then
+    _log_note_wrapped "$kind" "left the beta program. Not a command. Beta enrollment is managed in System Settings > General > Software Update. seedutil no longer enrolls, its own binary says so"
+  else
+    _prog=$(/usr/bin/plutil -p /System/Library/PrivateFrameworks/Seeding.framework/Versions/A/Resources/SeedCatalogs.plist 2>/dev/null \
+              | /usr/bin/grep -F "\"$_c\"" | /usr/bin/sed -n 's/^[[:space:]]*"\([^"]*\)" =>.*/\1/p' | /usr/bin/head -1) || _prog=""
+    _log_note_wrapped "$kind" "joined the beta program${_prog:+ '$_prog'}. Not a command. Beta enrollment is managed in System Settings > General > Software Update. seedutil no longer enrolls, its own binary says so"
+  fi
+}
+
 _note_charge_limit() {
   local kind="$1"
   _note_should_show __charge_limit__ || return 0
@@ -4697,6 +4732,7 @@ show_plist_diff() {
     [ "$_dom" = "com.apple.batteryui.charging.mac" ] && _note_charge_limit "$kind"
     [ "$_dom" = "com.apple.airport.preferences" ] && _note_wifi_power "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.TimeMachine" ] && _note_timemachine "$kind" "$prev" "$curr"
+    [ "$_dom" = "com.apple.SoftwareUpdate" ] && _note_seed_enrollment "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.amp.mediasharingd" ] && _note_mediasharing "$kind"
     _note_print_preset "$kind" "$_dom"
   fi
