@@ -3,24 +3,24 @@
 ## 1.5.0 — unreleased
 
 ### Feature
+- Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name. The order keeps only the services `networksetup` lists, and names the rest.
+- Wi-Fi on/off → `networksetup -setairportpower`; the raw `PowerEnabled` write is filtered.
+- Network location → `scselect`; the raw `CurrentSet` UUID write is filtered, whether it comes as PlistBuddy or as a top-level `defaults write`.
+- Shared folders → `sharing -a`/`-e`/`-r`.
+- Time Machine "Back up automatically" and exclusions → `tmutil`; the raw writes are filtered, `AutoBackupInterval` too when it just follows the toggle.
+- Touch ID → `bioutil`, both scopes; the user-scope line says it prompts for a password.
+- Default printer → `lpoptions -d`, read from `~/.cups/lpoptions` (`lpstat -d` is localised).
+- Startup sound → `sudo nvram StartupMute=…` (NVRAM, not a plist).
+- Bluetooth on/off → a `python3` line, under a NOTE saying which way it went and that the target needs `python3`. No plist, no CLI.
+- Colour behind the wallpaper → `desktoppr color <hex>`.
+- Spotlight indexing is read on every volume, not just `/`.
+- The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand; read verbs and Time Machine exclusions on temp paths are dropped.
 - Privacy permissions are watched, named where the TCC database is readable; the NOTE points at a PPPC profile (`tccutil` can only reset).
 - On macOS 27 the per-user TCC database is unreadable even with Full Disk Access: a change there is reported, not named.
+- The `nvram prev-lang:kbd` line macOS writes on an input-source change carries a NOTE saying what it is: the login window keyboard.
+- Beta program joined or left → a NOTE naming the program; the raw `CatalogURL`/`NSShowFeedbackMenu` writes are filtered, and `seedutil` no longer enrolls on 27.
 - `--fs-usage` (Jamf `$12`): the real-time detector is opt-in. Measured three times, it added nothing polling did not, at the same latency, and it holds the single ktrace slot.
 - With it on, `fs_usage` runs in `pathname` mode (6× less memory than `filesys`, which reached 8 GB under load) and is killed past 1 GB resident; polling continues.
-- The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand; read verbs and Time Machine exclusions on temp paths are dropped.
-- Bluetooth on/off → a `python3` line, under a NOTE saying which way it went and that the target needs `python3`. No plist, no CLI.
-- Shared folders → `sharing -a`/`-e`/`-r`.
-- Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name. The order keeps only the services `networksetup` lists, and names the rest.
-- Network location → `scselect`; the raw `CurrentSet` UUID write is filtered, whether it comes as PlistBuddy or as a top-level `defaults write`.
-- Wi-Fi on/off → `networksetup -setairportpower`; the raw `PowerEnabled` write is filtered.
-- Time Machine "Back up automatically" and exclusions → `tmutil`; the raw writes are filtered, `AutoBackupInterval` too when it just follows the toggle.
-- Startup sound → `sudo nvram StartupMute=…` (NVRAM, not a plist).
-- The `nvram prev-lang:kbd` line macOS writes on an input-source change carries a NOTE saying what it is: the login window keyboard.
-- Default printer → `lpoptions -d`, read from `~/.cups/lpoptions` (`lpstat -d` is localised).
-- Spotlight indexing is read on every volume, not just `/`.
-- Touch ID → `bioutil`, both scopes; the user-scope line says it prompts for a password.
-- Colour behind the wallpaper → `desktoppr color <hex>`.
-- Beta program joined or left → a NOTE naming the program; the raw `CatalogURL`/`NSShowFeedbackMenu` writes are filtered, and `seedutil` no longer enrolls on 27.
 
 ### Fix
 - Startup walked `~/Library/Group Containers` recursively (35s on a large sync). A bounded glob now, 0.007s.
