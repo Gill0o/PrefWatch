@@ -9,7 +9,7 @@
 - The exec watcher also reports `scselect`, `tmutil`, `nvram` and `AssetCacheManagerUtil` run by hand; read verbs and Time Machine exclusions on temp paths are dropped.
 - Bluetooth on/off → a `python3` line, under a NOTE saying which way it went and that the target needs `python3`. No plist, no CLI.
 - Shared folders → `sharing -a`/`-e`/`-r`.
-- Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name.
+- Network service order, DNS, search domains, proxies, TCP/IP method, service on/off → `networksetup`, by service name. The order keeps only the services `networksetup` lists, and names the rest.
 - Network location → `scselect`; the raw `CurrentSet` UUID write is filtered, whether it comes as PlistBuddy or as a top-level `defaults write`.
 - Wi-Fi on/off → `networksetup -setairportpower`; the raw `PowerEnabled` write is filtered.
 - Time Machine "Back up automatically" and exclusions → `tmutil`; the raw writes are filtered, `AutoBackupInterval` too when it just follows the toggle.
@@ -33,7 +33,6 @@
 - The "opening Desktop & Dock settings writes every default" note counted the dropped DOMAIN-pass duplicates, so three real writes printed it over nothing. Emitted lines only now.
 - A print preset dropped colour model, resolution, paper size and its own name as noise. Reject list now, shared with the diff worker.
 - Its NOTE never fired (keyed on a key no machine has). It now says a logout is needed and what does not travel.
-- A network service the plist orders but `networksetup` does not list made `-ordernetworkservices` unreplayable (a 27.0 VM). Left out now, and named.
 - A clean stop logged `# ABORT: set -e … (in cups_watch)`: the TERM landed in a watcher's bare `sleep`. Guarded, every watcher loop.
 - A Space created or a display plugged in re-emitted `desktoppr` for the wallpaper already in place: the Store grew rows under a new key. Known keys only now.
 - Removing one array element emitted a `python3` line. `defaults write … -array` now, where faithful; emptying the list gives a bare `-array`.
@@ -88,7 +87,7 @@
 - AirDrop discoverability says to run `killall sharingd`: the write alone is inert.
 - SIP is read alongside FileVault, Gatekeeper and the firewall; only Recovery changes it.
 - The new-domain NOTE says the commands below are the domain's full configuration.
-- README: on macOS 27 a menu-bar reorder writes no preference (measured; the position keys exist but never move), so the reorder NOTE is a macOS 26 feature.
+- The menu-bar reorder NOTE is a macOS 26 one: on 27 the reorder writes no preference at all (measured; the position keys exist but never move). README says so.
 - Spotlight category changes say the pane must be reopened, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
 

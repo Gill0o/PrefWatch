@@ -42,7 +42,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
-| `--fs-usage` | -- | ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`). Measured to add nothing polling does not; it takes the machine's single ktrace slot | Off |
+| `--fs-usage` | -- | ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`) | Off |
 
 ## Jamf Pro Integration
 
@@ -52,9 +52,9 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, a menu-bar reorder (macOS 26 and earlier; on 27 it is invisible, see below), Media Sharing (its keys mirror state the daemon never reads back), and a privacy permission, which is granted by a PPPC profile rather than a command. Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
-Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), hardware state (display & keyboard brightness, HDR), and on macOS 27 the menu-bar item order, which no longer reaches a plist at all.
+Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
 
 A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command. A positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
 
@@ -68,13 +68,12 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 
 ## Detection
 
-- ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state.
-- Detection is by polling. `--fs-usage` adds the `fs_usage` real-time detector, off by default: measured three times, it detected nothing polling did not, at the same latency, and it needs the machine's single ktrace slot. When another process holds it the log names which one (a stale `fs_usage` from a crashed run: `sudo pkill -x fs_usage`; a licensing daemon such as FlexNet holds it for good). Under load it is also killed by PrefWatch past 1 GB resident, and the log says so.
-- Latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
+- ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state. Full Disk Access is what names a privacy permission; without it the change is reported, not named.
+- Detection is by polling, so latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
 
 ## Security
 
-PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths). **Review before sharing**. Use `--exclude` to skip sensitive domains.
+PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths, the privacy-permission table). The log is `0600`, owned by the console user. **Review before sharing**. Use `--exclude` to skip sensitive domains.
 
 ## License
 
