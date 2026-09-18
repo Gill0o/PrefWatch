@@ -2,6 +2,10 @@
 
 ## 1.5.1 — unreleased
 
+### Fix
+- Removing a printer emptied its preset plist: a positional `Delete` of its `customPresetsInfo` entry came out, and the print-preset NOTE with it, as if a preset had changed. Neither now.
+- A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
+
 ### Note
 - The script's comments are down from 32 % to 25 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
 

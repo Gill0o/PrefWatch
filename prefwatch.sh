@@ -2448,6 +2448,9 @@ _log_kind() {
     typeset -g _PENDING_NEWDOM_NOTE=""
     _log_kind "$1" "$_ndn"
   fi
+  # Count the real command lines, so a NOTE that only makes sense above one
+  # (print presets) can tell whether anything went out.
+  [[ "$2" == "Cmd: "* && "$2" != "Cmd: #"* ]] && typeset -g _CMD_LINES=$(( ${_CMD_LINES:-0} + 1 ))
   case "$1" in
     USER)   log_user   "$2" ;;
     SYSTEM) log_system "$2" ;;
@@ -3654,6 +3657,10 @@ emit_array_deletions() {
 
     # Skip noisy arrays
     if is_noisy_key "$dom" "$base"; then _dbg_filtered "$dom $base (noise-array)"; continue; fi
+    # Print presets: deletions are skipped, as in the scalar diff. Removing a
+    # printer empties its preset plist, and the customPresetsInfo element that
+    # goes with it is not a preset anyone removed.
+    if [[ "$dom" == com.apple.print.custompresets* ]]; then _dbg_filtered "$dom :$base:$idx (preset deletion, by design)"; continue; fi
 
     # Emit contextual note once per array
     if [ -z "${_noted_del_arrays[$base]:-}" ]; then
@@ -3876,10 +3883,15 @@ for top_key in sorted(curr.keys()):
         if not _first_create_noted:
             # The "mostly defaults" warning lives here, not in a per-domain table: a whole
             # tree appearing IS the first-open-a-pane case (observed: fourteen Add lines,
-            # thirteen of them defaults), for every pane. The "If" keeps it from
-            # over-claiming on a small deliberate tree.
+            # thirteen of them defaults), for every pane. Only for a tree of four leaves
+            # or more: two Spotlight categories disabled by hand are not "defaults".
+            def _leaves(o):
+                if isinstance(o, dict): return sum(_leaves(v) for v in o.values())
+                if isinstance(o, list): return sum(_leaves(v) for v in o)
+                return 1
             print("PBCMD\t# NOTE: new key tree. The Add commands build it top-down; later changes to it emit Set.")
-            print("PBCMD\t#       If this came from first opening a settings pane, most of these values are untouched defaults, not your choices.")
+            if _leaves(curr[top_key]) >= 4:
+                print("PBCMD\t#       If this came from first opening a settings pane, most of these values are untouched defaults, not your choices.")
             _first_create_noted = True
         changed_top_keys.add(top_key)
         sub_keys = set()
@@ -4358,6 +4370,9 @@ show_plist_diff() {
   typeset -gA _SKIP_KEYS
   _SKIP_KEYS=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
+  # Command lines emitted so far: the print-preset NOTE below is printed only
+  # if this diff (workers included) adds to the count.
+  local _cmd0=${_CMD_LINES:-0}
 
   if [ "$silent" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     _run_py_diff_workers "$kind" "$_dom" "$prev_json" "$curr_json" "$path" "$key"
@@ -4396,7 +4411,9 @@ show_plist_diff() {
     [ "$_dom" = "com.apple.TimeMachine" ] && _note_timemachine "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.SoftwareUpdate" ] && _note_seed_enrollment "$kind" "$prev" "$curr"
     [ "$_dom" = "com.apple.amp.mediasharingd" ] && _note_mediasharing "$kind"
-    _note_print_preset "$kind" "$_dom"
+    # Only above a command: removing a printer empties its preset plist, whose
+    # deletions are skipped by design, and the NOTE went out over nothing.
+    [ "${_CMD_LINES:-0}" -gt "$_cmd0" ] && _note_print_preset "$kind" "$_dom"
   fi
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
@@ -4443,6 +4460,7 @@ show_domain_diff() {
   typeset -gA _SKIP_KEYS
   _SKIP_KEYS=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
+  local _cmd0=${_CMD_LINES:-0}
 
   if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     _run_py_diff_workers DOMAIN "$dom" "$prev_json" "$curr_json" "$(get_plist_path "$dom" 2>/dev/null)" "$key"
@@ -4452,8 +4470,8 @@ show_domain_diff() {
   if [ "$dom" = "com.scriptingosx.desktoppr" ]; then
     _note_desktoppr DOMAIN "$prev" "$curr"
   fi
-  _note_print_preset DOMAIN "$dom"
   _process_diff_lines DOMAIN "$dom" "" "$prev" "$curr" "$tmpplist" "$dom"
+  [ "${_CMD_LINES:-0}" -gt "$_cmd0" ] && _note_print_preset DOMAIN "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
   # Only advance the JSON baseline when one was actually produced (see above).
