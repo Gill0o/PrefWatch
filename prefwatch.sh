@@ -5940,10 +5940,10 @@ for row in sorted(rows):
       # needs the Command Line Tools: without them /usr/bin/python3 is a shim
       # that offers to install them, so a root policy fails and a session pops
       # a dialog. The machine that replays is usually not the one PrefWatch ran on.
-      log_line "Cmd: # NOTE: Bluetooth turned $_st. No Apple command holds: bluetoothd undoes BlueTool in 4 s."
+      log_line "Cmd: # NOTE: Bluetooth turned $_st. Needs blueutil (github.com/toy/blueutil)"
       log_line "Cmd: blueutil -p $_flag"
-      _note_should_show __bluetooth_py__ \
-        && log_line "Cmd: #       (blueutil: github.com/toy/blueutil, brew install blueutil. Or, if the target has the Command Line Tools:)"
+      # Not deduplicated: the python3 line must never come out without its intro.
+      log_line "Cmd: #       Or, without blueutil, on a target that has the Command Line Tools:"
       log_line "Cmd: $_cmd"
       return 0
     }
