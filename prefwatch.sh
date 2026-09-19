@@ -37,10 +37,10 @@
 #     $11 = DEBUG (true/false). Log '# FILTERED: <dom> <key> (reason)' when a
 #          detected change is suppressed (noise key / excluded domain). Equivalent
 #          of the CLI --debug flag. Default: false.
-#     $12 = FS_USAGE (true/false). ALL mode as root: also run the fs_usage
-#          real-time detector next to polling (measured to add nothing polling
-#          does not; it takes the single ktrace slot). CLI: --fs-usage.
-#          Default: false.
+#     $12 = FS_USAGE (true/false). DEPRECATED, removed in the next release:
+#          also run the fs_usage real-time detector next to polling (measured
+#          to add nothing polling does not; it takes the single ktrace slot).
+#          CLI: --fs-usage. Default: false.
 # ============================================================================
 
 # ============================================================================
@@ -95,10 +95,10 @@ Options:
                         ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
-  --fs-usage            ALL mode as root: also run the fs_usage real-time
-                        detector next to polling. Off by default. Measured, it
-                        added nothing polling did not, and it takes the machine's
-                        single ktrace slot
+  --fs-usage            DEPRECATED, removed in the next release. ALL mode as
+                        root: also run the fs_usage real-time detector next to
+                        polling. Measured, it added nothing polling did not, and
+                        it takes the machine's single ktrace slot
 
 Examples:
   # Monitor all domains (default behavior)
@@ -210,9 +210,9 @@ parse_cli_args() {
         shift
         ;;
       --fs-usage)
-        # Opt-in since 1.5.0: measured three times, fs_usage added nothing polling did
-        # not, at the same latency, and it holds the one ktrace slot and ran to 8 GB
-        # under load. Kept for the tests that will decide whether 1.5.1 removes it.
+        # Opt-in since 1.5.0, deprecated in 1.5.1: measured three times, fs_usage
+        # added nothing polling did not, at the same latency, and it holds the one
+        # ktrace slot and ran to 8 GB under load. Still runs; gone next release.
         FS_USAGE_RAW="true"
         shift
         ;;
@@ -1814,10 +1814,11 @@ is_noisy_key() {
     # Never blanket-exclude a domain that holds real prefs.
     com.apple.Music|com.apple.TV)
       case "$keyname" in
-        # Window, column and sidebar geometry; per-library view state.
+        # Window, column and sidebar geometry; per-library view state; the video
+        # player's last size and fullscreen state.
         "NSSplitView"*|"NSWindow Frame"*|"NSNavPanel"*|NSApplicationCrashOnExceptions|\
         PPr4:*|PLGD:*|RDoc:*|rprf:*|gnot:*|\
-        sidebar-hidden|sidebar-shown|sidebarItemInfo|bwui) return 0 ;;
+        sidebar-hidden|sidebar-shown|sidebarItemInfo|bwui|videoWindow*|playbackIsFullscreen) return 0 ;;
         # Store/account caches, bookmarks and one-shot UI milestones.
         *-bookmark|*-url|*Bookmark|*CacheKey|store*|Store*|doesStoreSupport*|\
         debugAssert*|checkedHLSKeysTime|refreshedHLSKeysTime|_MPC*|IRTokenAudio|tokenData|\
@@ -1832,6 +1833,13 @@ is_noisy_key() {
     com.apple.mobileipod)
       case "$keyname" in
         musicPlayerStateRestorationCache*|EnhancedAudioAvailable) return 0 ;;
+      esac
+      ;;
+    # Game Mode's agent: a per-app metadata cache with access dates, and an
+    # installed-games blob. No user setting.
+    com.apple.GamePolicyAgent)
+      case "$keyname" in
+        gameMetadataHintsCache|installedGames) return 0 ;;
       esac
       ;;
     com.apple.AddressBook)
@@ -2940,6 +2948,24 @@ _process_py_meta() {
 
   while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
     [ -n "$_array_base" ] || continue
+    # ARRAYRW <key> <quoted elements>: the whole string array, one command.
+    # Recorded in _ARRAY_REWRITTEN so the deletion worker, which runs after and
+    # rewrites from the OLD list, leaves this array alone.
+    if [ "$_array_base" = "ARRAYRW" ]; then
+      local _rw_base="$_array_idx" _rw_host=""
+      _SKIP_KEYS["$_rw_base"]=1
+      _ARRAY_REWRITTEN["$_rw_base"]=1
+      if is_noisy_key "$dom" "$_rw_base"; then _dbg_filtered "$dom $_rw_base (noise-array)"; continue; fi
+      if [ "$_domain_note_emitted" = "false" ]; then
+        _emit_contextual_note "$dom" "$_rw_base"
+        _domain_note_emitted=true
+      fi
+      [[ "$plist_path" == *"/ByHost/"* ]] && _rw_host="-currentHost "
+      _note_should_show "__arrayrw__:$dom:$_rw_base" \
+        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$_rw_base' list. Reproduces it, does not merge)"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "defaults ${_rw_host}write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$_rw_base")\" -array ${_array_keys}")"
+      continue
+    fi
     if [ "$_array_base" = "PBCMD" ]; then
       _pb_cmd="$_array_idx"
       # Buffer comments until a real command makes it through filtering
@@ -3313,6 +3339,18 @@ def emit_plistbuddy(array_name, index, item, path_prefix=""):
 
 diff(prev, curr, [])
 
+# An all-string top-level array gaining elements is emitted ONCE as the whole
+# list (`defaults write … -array …`, the form the deletion side already uses):
+# no positional index, so no "may land elsewhere" NOTE. `-array` stringifies,
+# so only all-string arrays qualify, and a " or \ in any element falls back
+# to the positional Add.
+def rewritable(arr_name):
+    arr = curr.get(arr_name)
+    return (isinstance(arr, list) and arr
+            and all(isinstance(e, str) for e in arr)
+            and not any(any(c in e for c in '"\\\n\t') for e in arr))
+_rewritten = set()
+
 _array_add_noted = False
 for prefix, index, item in results:
     if len(prefix) != 1:
@@ -3322,11 +3360,22 @@ for prefix, index, item in results:
     # anything is printed, so neither the Add lines nor the positional NOTE go out.
     if is_noise_element(arr_name, item):
         continue
-    # Skip reorders: if array length is the same, elements just moved (not added)
-    if arr_name in prev and arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
-        continue
     # New top-level arrays handled entirely by emit_nested_dict_changes (with NOTE)
     if arr_name not in prev:
+        continue
+    # Before the same-length skip: a same-length REPLACE (one id out, one in) is
+    # a content change, and the per-index Sets it used to get were wrong when an
+    # element also moved (measured: [a, b] → [b, c] emitted only `Set :1 c`).
+    # A pure reorder has no unmatched element, so it never reaches here.
+    if isinstance(item, str) and rewritable(arr_name):
+        print(f"{prefix[0]}\t{index}\t\t")
+        if arr_name not in _rewritten:
+            _rewritten.add(arr_name)
+            print("ARRAYRW\t%s\t%s" % (arr_name, ' '.join(
+                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in curr[arr_name])))
+        continue
+    # Skip reorders: if array length is the same, elements just moved (not added)
+    if arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
         continue
     # Adding to an EXISTING array: the index is positional. Warn once. A target
     # whose array has a different length won't get the element at the same spot.
@@ -3671,6 +3720,8 @@ emit_array_deletions() {
 
     # Skip noisy arrays
     if is_noisy_key "$dom" "$base"; then _dbg_filtered "$dom $base (noise-array)"; continue; fi
+    # Already emitted whole by the additions worker (a replace in one diff).
+    if [ -n "${_ARRAY_REWRITTEN[$base]:-}" ]; then _dbg_filtered "$dom $base (rewritten whole above)"; continue; fi
     # Print presets: deletions are skipped, as in the scalar diff. Removing a
     # printer empties its preset plist, and the customPresetsInfo element that
     # goes with it is not a preset anyone removed.
@@ -3934,6 +3985,13 @@ for top_key in sorted(curr.keys()):
         additions = []
         deletions = []
         if len(prev[top_key]) != len(curr[top_key]):
+            changes = []
+        elif (curr[top_key] and all(isinstance(e, str) for e in curr[top_key])
+              and not any(any(c in e for c in '"\\\n\t') for e in curr[top_key])):
+            # All-string list: emit_array_additions rewrites it whole on any
+            # content change (same test as its rewritable()), and a pure reorder
+            # emits nothing by design. Per-index Sets here were wrong when an
+            # element moved as well (measured: [a, b] → [b, c] gave `Set :1 c`).
             changes = []
         elif changes:
             # Same-length array: drop positional Set diffs for elements that merely moved,
@@ -4381,8 +4439,8 @@ show_plist_diff() {
     return 0
   fi
 
-  typeset -gA _SKIP_KEYS
-  _SKIP_KEYS=()
+  typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN
+  _SKIP_KEYS=(); _ARRAY_REWRITTEN=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
   # Command lines emitted so far: the print-preset NOTE below is printed only
   # if this diff (workers included) adds to the count.
@@ -4471,8 +4529,8 @@ show_domain_diff() {
   [ "$skip_arrays" != "true" ] && dump_plist_json "$tmpplist" "$curr_json"
 
   prev_json="$CACHE_DIR/${key}.prev.json"
-  typeset -gA _SKIP_KEYS
-  _SKIP_KEYS=()
+  typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN
+  _SKIP_KEYS=(); _ARRAY_REWRITTEN=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
   local _cmd0=${_CMD_LINES:-0}
 
@@ -4792,8 +4850,9 @@ start_watch_all() {
     log_line "Mode: monitoring ALL preferences (polling only. No root)"
   elif [ "$FS_USAGE" = true ]; then
     log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
+    log_line "Cmd: # NOTE: --fs-usage (Jamf \$12) is deprecated and will be removed in the next release. Polling sees the same writes."
   else
-    log_line "Mode: monitoring ALL preferences (polling. --fs-usage adds the real-time detector)"
+    log_line "Mode: monitoring ALL preferences (polling)"
   fi
 
   local prefs_user prefs_system
@@ -5875,16 +5934,17 @@ for row in sorted(rows):
       # emitted line was a Python syntax error (caught by EXECUTING it).
       local _py='import ctypes; ctypes.cdll.LoadLibrary("/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth").IOBluetoothPreferenceSetControllerPowerState('
       local _cmd="/usr/bin/python3 -c '${_py}${_flag})'"
-      # The NOTE states the fact and the command sits on its own line: an admin
-      # copies a line, not a sentence.
-      log_line "Cmd: # NOTE: Bluetooth turned $_st"
-      log_line "Cmd: $_cmd"
-      # The TARGET needs a working python3: without the Command Line Tools
-      # /usr/bin/python3 is a shim that offers to install them, so under a root
-      # policy the line fails and in a session it pops a dialog. The machine that
-      # replays is usually not the one PrefWatch ran on.
+      # Two lines, the admin picks by fleet. blueutil first: a third-party tool
+      # (a wrapper of the same IOBluetooth call, persists across a reboot,
+      # measured) but it runs on any Mac. The python3 line needs no install and
+      # needs the Command Line Tools: without them /usr/bin/python3 is a shim
+      # that offers to install them, so a root policy fails and a session pops
+      # a dialog. The machine that replays is usually not the one PrefWatch ran on.
+      log_line "Cmd: # NOTE: Bluetooth turned $_st. No Apple command holds: bluetoothd undoes BlueTool in 4 s."
+      log_line "Cmd: blueutil -p $_flag"
       _note_should_show __bluetooth_py__ \
-        && log_line "Cmd: #       (needs python3 on the TARGET. Without the Command Line Tools /usr/bin/python3 only offers to install them)"
+        && log_line "Cmd: #       (blueutil: github.com/toy/blueutil, brew install blueutil. Or, if the target has the Command Line Tools:)"
+      log_line "Cmd: $_cmd"
       return 0
     }
     _snapshot_watch bluetooth 2 _read_bluetooth _onchange_bluetooth _guard_nonempty

@@ -42,7 +42,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
-| `--fs-usage` | -- | ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`) | Off |
+| `--fs-usage` | -- | Deprecated, removed in the next release. ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`) | Off |
 
 ## Jamf Pro Integration
 
@@ -65,6 +65,7 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 - [`utiluti`](https://github.com/scriptingosx/utiluti). Default apps (URL schemes & file types)
 - [`dockutil`](https://github.com/kcrawford/dockutil). Dock items and order
 - [`desktoppr`](https://github.com/scriptingosx/desktoppr). Desktop wallpaper, and the colour behind it
+- [`blueutil`](https://github.com/toy/blueutil). Bluetooth on/off. A `python3` line follows it for targets that have the Command Line Tools
 
 ## Detection
 

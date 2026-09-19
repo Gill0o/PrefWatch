@@ -2,15 +2,23 @@
 
 ## 1.5.1 — unreleased
 
+### Feature
+- A list of strings that gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index, no NOTE about it.
+- Bluetooth on/off emits `blueutil -p 0|1` first (runs on any Mac), then the `python3` line for targets that have the Command Line Tools.
+
 ### Fix
+- Swapping one entry of a list for another (a Spotlight category re-enabled, another disabled, in one pass) emitted a command that kept the old entry on the target. The whole list is emitted now.
 - Removing a printer emptied its preset plist: a positional `Delete` of its `customPresetsInfo` entry came out, and the print-preset NOTE with it, as if a preset had changed. Neither now.
 - A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
 
 ### Noise
 - `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
-- Music `LastPlaybackSessionIdentifier`, `com.apple.mobileipod` now-playing restoration cache, and AVKit's duration/remaining counter flag (written into Messages, QuickTime, QuickLook) are filtered.
+- Music `LastPlaybackSessionIdentifier`, `videoWindow*`, `playbackIsFullscreen` and the `com.apple.mobileipod` now-playing restoration cache are filtered.
+- `com.apple.GamePolicyAgent` (Game Mode's per-app metadata cache with access dates, installed-games blob) is filtered.
+- AVKit's duration/remaining counter flag, written into every host app (Messages, QuickTime, QuickLook), is filtered.
 
 ### Note
+- `--fs-usage` (Jamf `$12`) is deprecated: it still runs, says so at startup, and is removed in the next release. Three measurements saw nothing polling did not.
 - The script's comments are down from 32 % to 25 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
 
 
