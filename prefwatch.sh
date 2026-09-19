@@ -1050,6 +1050,11 @@ is_noisy_key() {
     NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
       return 0 ;;
 
+    # AVKit player view state: clicking the time counter of a video player flips
+    # duration/remaining, written into every host app (Messages, QuickTime, QuickLook).
+    AVDesktopPlaybackControlsController*)
+      return 0 ;;
+
     # NSToolbar Configuration <UUID>. A per-instance toolbar layout an app dumps
     # on first window open (e.g. Console). The UUID is regenerated per instance,
     # so the command isn't portable. NAMED configs (NSToolbar Configuration
@@ -1816,8 +1821,15 @@ is_noisy_key() {
         debugAssert*|checkedHLSKeysTime|refreshedHLSKeysTime|_MPC*|IRTokenAudio|tokenData|\
         JetEngine*|*WelcomeScreenState|whatsNewLevel|updateLevel|jsVersion|\
         Kettle*|hasSeen*|hasRegisterd*|kAOSUI*|ImageProxy*|RetryOn*|VUIAssetCacheKey|\
-        last*|controllableInterfaceGUID|haveRadioState|notifications-warming*|\
+        last*|*SessionIdentifier|controllableInterfaceGUID|haveRadioState|notifications-warming*|\
         eqPrefsVersion|com.apple.amp.*|didSetLyricsByDefaultOnNowPlaying|firstLaunch*) return 0 ;;
+      esac
+      ;;
+    # MediaPlayer framework state behind Music: now-playing restoration cache and
+    # a capability flag, no user setting.
+    com.apple.mobileipod)
+      case "$keyname" in
+        musicPlayerStateRestorationCache*|EnhancedAudioAvailable) return 0 ;;
       esac
       ;;
     com.apple.AddressBook)
