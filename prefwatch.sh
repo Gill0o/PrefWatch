@@ -1555,10 +1555,12 @@ is_noisy_key() {
       esac
       ;;
 
-    # CUPS printing prefs: Filter printer history
+    # CUPS printing prefs: LastUsedPrinters is the print history (queue + the IP
+    # of the network it was used on), rewritten on every job and default change.
+    # UseLastPrinter ("Default printer: last used") is a real setting, kept.
     org.cups.PrintingPrefs)
       case "$keyname" in
-        Network|PrinterID) return 0 ;;
+        LastUsedPrinters|Network|PrinterID) return 0 ;;
       esac
       ;;
 

@@ -7,6 +7,7 @@
 - A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
 
 ### Noise
+- `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
 - Music `LastPlaybackSessionIdentifier`, `com.apple.mobileipod` now-playing restoration cache, and AVKit's duration/remaining counter flag (written into Messages, QuickTime, QuickLook) are filtered.
 
 ### Note
