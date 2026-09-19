@@ -52,7 +52,7 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing, Bluetooth on/off, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
 Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
 
@@ -60,7 +60,7 @@ A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `k
 
 ## Third-party tools
 
-For settings with no built-in command, a `# NOTE:` names the tool. And for default apps and the wallpaper it emits the tool's command outright, with the real value:
+For settings with no built-in command, a `# NOTE:` names the tool. And for default apps, the wallpaper and Bluetooth it emits the tool's command outright, with the real value:
 
 - [`utiluti`](https://github.com/scriptingosx/utiluti). Default apps (URL schemes & file types)
 - [`dockutil`](https://github.com/kcrawford/dockutil). Dock items and order
@@ -69,7 +69,7 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 
 ## Detection
 
-- ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state. Full Disk Access is what names a privacy permission; without it the change is reported, not named.
+- ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state. Full Disk Access is what names a privacy permission; without it, or where macOS keeps the per-user privacy database out of every process's reach, the change is reported, not named.
 - Detection is by polling, so latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
 
 ## Security
