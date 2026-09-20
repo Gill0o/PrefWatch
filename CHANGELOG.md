@@ -3,7 +3,7 @@
 ## 1.5.1 — unreleased
 
 ### Feature
-- A list of strings that gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index, no NOTE about it.
+- A list of strings that appears, gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index, no NOTE about it.
 - Bluetooth on/off emits `blueutil -p 0|1` first (runs on any Mac), then the `python3` line for targets that have the Command Line Tools.
 
 ### Fix
@@ -18,6 +18,7 @@
 - AVKit's duration/remaining counter flag, written into every host app (Messages, QuickTime, QuickLook), is filtered.
 
 ### Note
+- The script is laid out for reading: a table of contents in the header, titled sections, and each watcher (Touch ID, TCC, Bluetooth, …) as its own function in a WATCHERS section. No code changed.
 - `--fs-usage` (Jamf `$12`) is deprecated: it still runs, says so at startup, and is removed in the next release. Three measurements saw nothing polling did not.
 - The script's comments are down from 32 % to 25 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
 
