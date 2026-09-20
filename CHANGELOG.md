@@ -3,8 +3,12 @@
 ## 1.5.1 — unreleased
 
 ### Feature
-- A list of strings that appears, gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index, no NOTE about it.
+- A list of strings that appears, gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index.
 - Bluetooth on/off emits `blueutil -p 0|1` first (runs on any Mac), then the `python3` line for targets that have the Command Line Tools.
+
+### UX
+- A NOTE is never folded mid-sentence: one sentence per line, and the seven sentences that used to fold are split into short ones.
+- Every `-array` line on Spotlight's `EnabledPreferenceRules` says what it does: which categories it disables, or that an empty list shows every category again. The list reads backwards.
 
 ### Fix
 - Swapping one entry of a list for another (a Spotlight category re-enabled, another disabled, in one pass) emitted a command that kept the old entry on the target. The whole list is emitted now.

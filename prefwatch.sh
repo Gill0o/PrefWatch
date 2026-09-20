@@ -2504,12 +2504,10 @@ _log_note_wrapped() {
   _parts=("${(@ps:\x1e:)_t}")
   for _s in "${_parts[@]}"; do
     [ -n "$_s" ] || continue
-    while IFS= read -r _l; do
-      _l="${_l%% }"
-      [ -n "$_l" ] || continue
-      if [ "$_first" = true ]; then _log_kind "$_kind" "Cmd: # NOTE: $_l"; _first=false
-      else _log_kind "$_kind" "Cmd: #       $_l"; fi
-    done < <(printf '%s\n' "$_s" | /usr/bin/fold -s -w 110)
+    # Never folded: a sentence is one line, however long. Keep sentences short.
+    _l="${_s%% }"
+    if [ "$_first" = true ]; then _log_kind "$_kind" "Cmd: # NOTE: $_l"; _first=false
+    else _log_kind "$_kind" "Cmd: #       $_l"; fi
   done
 }
 
@@ -2614,7 +2612,7 @@ _emit_cmd() {
   local kind="$1" cmd="$2" note_dom="$3" is_delete="$4" emit_plist_path="${5:-}"
 
   [ -n "$cmd" ] || return 0
-  if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command)"; return 0; fi
+  if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command: ${cmd[1,120]})"; return 0; fi
 
   # In ALL mode the DOMAIN pass is redundant: the per-plist diff already emitted
   # every change it sees (with ONLY_CMDS in the condition, `--verbose` printed
@@ -2690,8 +2688,12 @@ _process_py_meta() {
         _domain_note_emitted=true
       fi
       [[ "$plist_path" == *"/ByHost/"* ]] && _rw_host="-currentHost "
-      _note_should_show "__arrayrw__:$dom:$_rw_base" \
-        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$_rw_base' list. Reproduces it, does not merge)"
+      if [ "$dom" = com.apple.Spotlight ] && [ "$_rw_base" = EnabledPreferenceRules ]; then
+        _note_spotlight_list "$kind" "$_array_keys"
+      else
+        _note_should_show "__arrayrw__:$dom:$_rw_base" \
+          && _log_kind "$kind" "Cmd: #       (rewrites the whole '$_rw_base' list. Reproduces it, does not merge)"
+      fi
       _log_kind "$kind" "Cmd: $(_mdm_wrap "defaults ${_rw_host}write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$_rw_base")\" -array ${_array_keys}")"
       continue
     fi
@@ -3343,6 +3345,9 @@ emit_array_deletions() {
   typeset -A _noted_del_arrays=()
   while IFS=$'\x1f' read -r base idx keylist app_label elem_value elem_rewrite; do
     [ -n "$base" ] || continue
+    # This worker owns the key: without this, _process_diff_lines later saw the
+    # `+ "key" => [` line of an emptied array and built an invalid write (dropped).
+    _SKIP_KEYS["$base"]=1
 
     # Skip noisy arrays
     if is_noisy_key "$dom" "$base"; then _dbg_filtered "$dom $base (noise-array)"; continue; fi
@@ -3388,8 +3393,12 @@ emit_array_deletions() {
     elif [ -n "$_rw_cmd" ]; then
       # Rewriting the whole array has no index to shift, so the "order shown" warning
       # does not apply. It replaces the target's list, it does not merge.
-      _note_should_show "__arrayrw__:$dom:$base" \
-        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$base' list. Reproduces it, does not merge)"
+      if [ "$dom" = com.apple.Spotlight ] && [ "$base" = EnabledPreferenceRules ]; then
+        _note_spotlight_list "$kind" "${${elem_rewrite#%EMPTY%}}"
+      else
+        _note_should_show "__arrayrw__:$dom:$base" \
+          && _log_kind "$kind" "Cmd: #       (rewrites the whole '$base' list. Reproduces it, does not merge)"
+      fi
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$_rw_cmd")"
     elif [ -n "$_val_cmd" ]; then
       # Value-targeted: no index to shift, so the "run these in the order shown"
@@ -3731,6 +3740,20 @@ _run_py_diff_workers() {
 # when defaults cannot, or why it is not reproducible. One function per topic.
 # ---------------------------------------
 
+# Spotlight's EnabledPreferenceRules lists the DISABLED categories, so a `-array`
+# rewrite reads backwards: an empty list turns every category back ON. Said on
+# the command itself, every time, since that is the line an admin copies; it
+# replaces the generic "rewrites the whole list" line for this key.
+# $2 = the quoted elements as emitted ("a" "b"), empty for an empty list.
+_note_spotlight_list() {
+  local kind="$1" els="$2"
+  if [ -z "$els" ]; then
+    _log_kind "$kind" "Cmd: #       No category disabled after this line, every category is shown again (the target's list is replaced)"
+  else
+    _log_kind "$kind" "Cmd: #       Categories DISABLED by this line: ${els//\"/} (the whole list, the target's is replaced)"
+  fi
+}
+
 # Per-burst notice dedup: _NOTED_DOMAIN[key] holds the last-emit time of a
 # NOTE or WARNING, which re-appears only after _NOTE_BURST_GAP seconds of quiet.
 typeset -gA _NOTED_DOMAIN=()
@@ -3807,7 +3830,7 @@ _emit_contextual_note() {
     com.apple.Spotlight)
       case "$array_base" in
         EnabledPreferenceRules|DisabledUTTypes)
-          _note="Spotlight re-reads this only when its Settings pane is reopened (killall Spotlight is not enough, a logout is the fallback). And despite its name, EnabledPreferenceRules lists the DISABLED categories" ;;
+          _note="Spotlight re-reads this only when its Settings pane is reopened, or at the next login" ;;
       esac ;;
   esac
   # Match on array_base for cross-domain keys (e.g. ColorSync in ByHost GlobalPreferences)
@@ -4156,7 +4179,7 @@ _note_network_service() {
     *) return 0 ;;
   esac
   _note_should_show __network_service__ || return 0
-  _log_note_wrapped "$kind" "network service configuration changed (VPN / proxies / DNS / service order). Not emitted: configd owns this file and each service is keyed by a UUID minted on this Mac (a VPN client recreating its service mints a new one). Reproduce with networksetup where it has a verb for the setting, or a configuration profile for a VPN (a 'com.apple.payload' subtree means the service is already profile-managed, so deploy the profile, not this file)."
+  _log_note_wrapped "$kind" "network service configuration changed (VPN / proxies / DNS / service order). Not emitted: configd owns this file, and each service is keyed by a UUID minted on this Mac. A VPN client recreating its service mints a new one. Reproduce it with networksetup where it has a verb for the setting, or with a configuration profile for a VPN. A 'com.apple.payload' subtree means the service is already profile-managed: deploy the profile, not this file."
 }
 
 # Menu bar item positions (`NSStatusItem Preferred Position <Item>`) are pixel
@@ -4283,7 +4306,7 @@ _note_timemachine() {
 _note_mediasharing() {
   local kind="$1"
   _note_should_show __mediasharing__ || return 0
-  _log_note_wrapped "$kind" "Media Sharing changed, not reproducible via defaults: these keys mirror state the daemon writes and never reads back (measured: the write survives a restart of mediasharingd and the pane never follows). Set it in System Settings > General > Sharing."
+  _log_note_wrapped "$kind" "Media Sharing changed, not reproducible via defaults. These keys mirror state the daemon writes and never reads back. Measured: the write survives a restart of mediasharingd, and the pane never follows. Set it in System Settings > General > Sharing."
 }
 
 # Print presets: three facts an admin needs before deploying one. It applies
@@ -4301,7 +4324,7 @@ _note_print_preset() {
   case "$dom" in
     *.forprinter.*) _pp="$_pp This domain names the print queue ('${dom##*.forprinter.}'), which is whatever the printer was added as; the path matches only where the queue has that name." ;;
   esac
-  _log_note_wrapped "$kind" "$_pp The top-level key is the preset's NAME; macOS's own entries are localised ('Réglages par défaut' here), so their path finds nothing on a Mac in another language. A preset you named yourself carries the name you chose, and travels."
+  _log_note_wrapped "$kind" "$_pp The top-level key is the preset's NAME. macOS's own entries are localised ('Réglages par défaut' here). Their path finds nothing on a Mac in another language. A preset you named yourself carries the name you chose, and travels."
 }
 
 # Wi-Fi radio on/off: PowerEnabled in com.apple.airport.preferences, a file
@@ -5192,7 +5215,7 @@ start_watch_all() {
     [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
     if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
       local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
-      _log_note_wrapped "" "real-time detection stopped by PrefWatch: fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB), the machine's file activity outran it. Polling continues, at the same latency."
+      _log_note_wrapped "" "real-time detection stopped by PrefWatch: fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB). The machine's file activity outran it. Polling continues, at the same latency."
       return 0
     fi
     case "$_why" in
@@ -5778,7 +5801,7 @@ PY
       # separate sharing change still carries its explanation. The actionable
       # bootstrap/bootout command below is emitted every time regardless.
       if _note_should_show __launchd_bootstrap__; then
-        _log_note_wrapped "" "enable/disable only sets the persistent flag; a socket/on-demand service (smbd, ssh, screensharing) won't start/stop, and its UI toggle won't move, until launchd (re)loads it via bootstrap/bootout, or a reboot"
+        _log_note_wrapped "" "enable/disable only sets the persistent flag. A socket/on-demand service (smbd, ssh, screensharing) won't start/stop until launchd (re)loads it. Its UI toggle won't move either. bootstrap/bootout does the reload, or a reboot"
       fi
       [ -n "$_companion" ] && log_line "Cmd: $_companion"
     fi
