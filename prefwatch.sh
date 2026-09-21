@@ -462,6 +462,8 @@ typeset -a DEFAULT_EXCLUSIONS=(
 
   # Input analytics / telemetry
   "com.apple.inputAnalytics*"
+  "com.apple.commerce.knownclients"           # App Store known-client blobs, one per client and pid
+  "com.apple.anvil.*"                         # ChatGPT integration daemon: per-uid rate-limit flags
   "com.apple.appleintelligencereporting"
   # Apple's analytics agent. Sync timestamps / usage counters only (AppUsageSyncTime)
   "com.apple.analyticsagent"
@@ -1098,6 +1100,12 @@ is_noisy_key() {
     NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
       return 0 ;;
 
+    # Generative model services (Apple Intelligence): availability, readiness and
+    # reasons the daemon mirrors into the ByHost global domain. The user's choices
+    # live elsewhere (siri.generativeassistantsettings, generativepartnerservicesettings).
+    com.apple.gms.*)
+      return 0 ;;
+
     # AVKit player view state: clicking the time counter of a video player flips
     # duration/remaining, written into every host app (Messages, QuickTime, QuickLook).
     AVDesktopPlaybackControlsController*)
@@ -1118,7 +1126,7 @@ is_noisy_key() {
 
     # Timestamps & dates (metadata, not preferences) - UNIVERSAL
     # Matches: lastRetryTimestamp, LastUpdate, last-seen, updateTimestamp, CKStartupTime, lastCheckTime, etc.
-    *timestamp*|*Timestamp*|*TimeStamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*|*last*Date|*Last*Date)
+    *timestamp*|*Timestamp*|*TimeStamp*|*-timestamp|*LastUpdate*|*LastSeen*|*-last-seen|*-last-update|*-last-modified|*LastRetry*|*LastSync*|*lastRetry*|*lastSync*|*StartupTime*|*StartTime*|*CheckTime|lastCheckTime|*LastSuccess*|*lastSuccess*|*LastKnown*|*lastKnown*|*LastLoadedOn*|*lastProcessed*|*LastProcessed*|*LastBackup*|*lastBackup*|*lastAppUpdateCheck*|*LastAppUpdateCheck*|*last*Date|*Last*Date|*.lastUpdated)
       return 0 ;;
 
     # bare *Date is too broad (masks ExpirationDate/StartDate); anchored *last*Date
@@ -1881,6 +1889,13 @@ is_noisy_key() {
     com.apple.mobileipod)
       case "$keyname" in
         musicPlayerStateRestorationCache*|EnhancedAudioAvailable) return 0 ;;
+      esac
+      ;;
+    # Siri extension partners (ChatGPT): selectedLLMId is the choice; the rest is
+    # provider metadata, blobs, an enablement counter and a metrics snapshot.
+    com.apple.generativepartnerservicesettings)
+      case "$keyname" in
+        AllLLMUISettings|externalProviders*|externalVipProviderMetadata|gatMigrationComplete*|siriExtensionProvidersMetricsSnapshot) return 0 ;;
       esac
       ;;
     # Game Mode's agent: a per-app metadata cache with access dates, and an

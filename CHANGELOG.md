@@ -19,6 +19,8 @@
 - `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
 - Music `LastPlaybackSessionIdentifier`, `videoWindow*`, `playbackIsFullscreen` and the `com.apple.mobileipod` now-playing restoration cache are filtered.
 - `com.apple.GamePolicyAgent` (Game Mode's per-app metadata cache with access dates, installed-games blob) is filtered.
+- `com.apple.commerce.knownclients` (App Store client blobs) is excluded, `com.apple.gms.*` availability keys mirrored into the global domain are filtered, `*.lastUpdated` is a timestamp.
+- Siri's ChatGPT extension: `selectedLLMId` and `isEnabled` are kept; the enablement counter, provider blobs, metrics snapshot and `com.apple.anvil.*` rate-limit flags are filtered.
 - AVKit's duration/remaining counter flag, written into every host app (Messages, QuickTime, QuickLook), is filtered.
 
 ### Note
