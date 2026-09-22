@@ -14,6 +14,7 @@
 - Swapping one entry of a list for another (a Spotlight category re-enabled, another disabled, in one pass) emitted a command that kept the old entry on the target. The whole list is emitted now.
 - Removing a printer emptied its preset plist: a positional `Delete` of its `customPresetsInfo` entry came out, and the print-preset NOTE with it, as if a preset had changed. Neither now.
 - A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
+- Printer Sharing on a Mac with no `/etc/cups/cupsd.conf` at launch emitted nothing: the toggle creates the file, and the watcher was gated on it. Absent now reads as off.
 
 ### Noise
 - `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
@@ -22,6 +23,7 @@
 - `com.apple.commerce.knownclients` (App Store client blobs) is excluded, `com.apple.gms.*` availability keys mirrored into the global domain are filtered, `*.lastUpdated` is a timestamp.
 - Siri's ChatGPT extension: `selectedLLMId` and `isEnabled` are kept; the enablement counter, provider blobs, metrics snapshot and `com.apple.anvil.*` rate-limit flags are filtered.
 - AVKit's duration/remaining counter flag, written into every host app (Messages, QuickTime, QuickLook), is filtered.
+- `com.apple.smb.server DOSCodePage` (locale-derived, not a setting) is filtered. `ServerDescription` stays.
 
 ### Note
 - The script is laid out for reading: a table of contents in the header, titled sections, and each watcher (Touch ID, TCC, Bluetooth, …) as its own function in a WATCHERS section. No code changed.

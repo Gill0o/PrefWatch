@@ -1400,10 +1400,11 @@ is_noisy_key() {
       ;;
 
     # SMB server: NetBIOSName is auto-derived from the host name (smbd rewrites
-    # it on start). Keep ServerDescription, AllowGuestAccess, etc.
+    # it on start), DOSCodePage from the locale (first written on 15.6 when a
+    # printer-sharing toggle started smbd). Keep ServerDescription, AllowGuestAccess, etc.
     com.apple.smb.server)
       case "$keyname" in
-        NetBIOSName) return 0 ;;
+        NetBIOSName|DOSCodePage) return 0 ;;
       esac
       ;;
 
@@ -4824,7 +4825,7 @@ typeset -ga _WATCHERS=(
   'poll|true|poll_watch|'
   'cups|true|cups_watch|'
   'pmset|true|pmset_watch|'
-  'cups_sharing|[ -f /etc/cups/cupsd.conf ]|cups_sharing_watch|y'
+  'cups_sharing|[ -d /etc/cups ]|cups_sharing_watch|y'
   'ard_privs|[ -x /usr/bin/dscl ]|ard_privs_watch|y'
   'sharepoints|[ -x /usr/bin/dscl ] && [ -n "$PYTHON3_BIN" ]|sharepoints_watch|y'
   'bluetooth|[ -x /usr/sbin/system_profiler ]|bluetooth_watch|y'
@@ -5420,16 +5421,17 @@ start_watch_all() {
 
 # Printer Sharing toggle. Own sub-shell so the lpstat 5s debounce never blocks
 # it. Reads cupsd.conf's Browsing directive directly (written before cupsd reloads).
+# A missing cupsd.conf means "off", it does not disable the watcher: the first
+# toggle is what creates the file, and a watcher gated on its presence at launch
+# slept through that very toggle.
 cups_sharing_watch() {
   local cupsdconf="/etc/cups/cupsd.conf"
-  [ -f "$cupsdconf" ] || { log_line "Cmd: # cups_sharing_watch DISABLED: $cupsdconf not present"; return 0; }
   local share_snap=""
   share_snap=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
   [ -z "$share_snap" ] && share_snap="off"
 
   while true; do
     /bin/sleep 0.5 || true
-    [ -f "$cupsdconf" ] || continue
     local share_curr=""
     share_curr=$(/usr/bin/grep -iE "^Browsing[[:space:]]+" "$cupsdconf" 2>/dev/null | /usr/bin/head -1 | /usr/bin/awk '{print tolower($2)}' || true)
     [ -z "$share_curr" ] && share_curr="off"
