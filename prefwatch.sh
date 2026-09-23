@@ -2896,19 +2896,19 @@ for path_tuple, index, item in results:
     if isinstance(item, str) and isinstance(prev.get(array_name), list):
         if sum(1 for e in prev[array_name] if e == item) == 1 and "\t" not in item and "\n" not in item:
             value = item
-    # 6th field: the array rewritten without the element (`-array`), the only
-    # python3-free removal. All-string arrays only (-array stringifies); " or \
-    # falls back. %EMPTY% = last element removed, emitted as a bare `-array`.
+    # 6th field: the array as it is NOW (`-array`), the only python3-free
+    # removal. Not "prev minus this element": two removals in one diff then gave
+    # two lines, each keeping the other element. All-string arrays only (-array
+    # stringifies); " or \ falls back. %EMPTY% = emptied, a bare `-array`.
     rewrite = ""
-    if value:
-        elements = prev[array_name]
-        if all(isinstance(e, str) for e in elements):
-            remaining = [e for e in elements if e != item]
-            if not remaining:
-                rewrite = "%EMPTY%"
-            elif not any(any(c in e for c in '"\\\n\t') for e in remaining):
-                rewrite = ' '.join(
-                    '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
+    remaining = curr.get(array_name)
+    if (isinstance(prev.get(array_name), list) and all(isinstance(e, str) for e in prev[array_name])
+            and isinstance(remaining, list) and all(isinstance(e, str) for e in remaining)):
+        if not remaining:
+            rewrite = "%EMPTY%"
+        elif not any(any(c in e for c in '"\\\n\t') for e in remaining):
+            rewrite = ' '.join(
+                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
     # \x1f, not tab: zsh collapses consecutive tabs, empty fields vanish.
     print(f"{array_name}\x1f{index}\x1f{keys}\x1f{app_label}\x1f{value}\x1f{rewrite}")
 PY
@@ -2987,6 +2987,8 @@ emit_array_deletions() {
           && _log_kind "$kind" "Cmd: #       (rewrites the whole '$base' list. Reproduces it, does not merge)"
       fi
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$_rw_cmd")"
+      # The final state is out: the array's other deletions are covered.
+      _ARRAY_REWRITTEN[$base]=1
     elif [ -n "$_val_cmd" ]; then
       # Value-targeted: no index, so no "order shown" warning.
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$_val_cmd")"

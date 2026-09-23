@@ -16,6 +16,7 @@
 - A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
 - Printer Sharing on a Mac with no `/etc/cups/cupsd.conf` at launch emitted nothing: the toggle creates the file, and the watcher was gated on it. Absent now reads as off.
 - A deleted key came out as PlistBuddy, which running apps never see (a Control Center item stayed hidden). It is `defaults [-currentHost] delete` now, with no hardware UUID.
+- Removing two entries of a list at once emitted one `-array` line per entry, each keeping the other: the target ended with the wrong list. One line now, the list as it stands.
 
 ### Noise
 - `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
