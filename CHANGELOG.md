@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.5.1 — 2026-09-23
+
+### Feature
+- A list of strings that appears, gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index.
+- Bluetooth on/off emits `blueutil -p 0|1` first (runs on any Mac), then the `python3` line for targets that have the Command Line Tools.
+
+### UX
+- A NOTE is never folded mid-sentence: one sentence per line, and the seven sentences that used to fold are split into short ones.
+- Every `-array` line on Spotlight's `EnabledPreferenceRules` says what it does: which categories it disables, or that an empty list shows every category again. The list reads backwards.
+
+### Fix
+- Swapping one entry of a list for another (a Spotlight category re-enabled, another disabled, in one pass) emitted a command that kept the old entry on the target. The whole list is emitted now.
+- Removing a printer emptied its preset plist: a positional `Delete` of its `customPresetsInfo` entry came out, and the print-preset NOTE with it, as if a preset had changed. Neither now.
+- A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
+- Printer Sharing on a Mac with no `/etc/cups/cupsd.conf` at launch emitted nothing: the toggle creates the file, and the watcher was gated on it. Absent now reads as off.
+- A deleted key came out as PlistBuddy, which running apps never see (a Control Center item stayed hidden). It is `defaults [-currentHost] delete` now, with no hardware UUID.
+- Removing two entries of a list at once emitted one `-array` line per entry, each keeping the other: the target ended with the wrong list. One line now, the list as it stands.
+
+### Noise
+- `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
+- Music `LastPlaybackSessionIdentifier`, `videoWindow*`, `playbackIsFullscreen` and the `com.apple.mobileipod` now-playing restoration cache are filtered.
+- `com.apple.GamePolicyAgent` (Game Mode's per-app metadata cache with access dates, installed-games blob) is filtered.
+- `com.apple.commerce.knownclients` (App Store client blobs) is excluded, `com.apple.gms.*` availability keys mirrored into the global domain are filtered, `*.lastUpdated` is a timestamp.
+- Siri's ChatGPT extension: `selectedLLMId` and `isEnabled` are kept; the enablement counter, provider blobs, metrics snapshot and `com.apple.anvil.*` rate-limit flags are filtered.
+- AVKit's duration/remaining counter flag, written into every host app (Messages, QuickTime, QuickLook), is filtered.
+- `com.apple.smb.server DOSCodePage` (locale-derived, not a setting) is filtered. `ServerDescription` stays.
+
+### Note
+- The script is laid out for reading: a table of contents in the header, titled sections, and each watcher (Touch ID, TCC, Bluetooth, …) as its own function in a WATCHERS section. No code changed.
+- `--fs-usage` (Jamf `$12`) is deprecated: it still runs, says so at startup, and is removed in the next release. Three measurements saw nothing polling did not.
+- The script's comments are down from 32 % to 14 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
+
+
 ## 1.5.0 — 2026-09-17
 
 ### Feature
