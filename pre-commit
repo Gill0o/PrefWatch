@@ -57,7 +57,7 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   fi
 
   # --- Comment density (staged prefwatch.sh) ---
-  # Warn, never block: the pre-release pass brings the script back to ~25 %.
+  # Warn, never block: the pre-release pass keeps the script at or under 20 %.
   # A block of 15+ comment lines (the usage header excepted) is usually a
   # story where a fact would do.
   git show ":$SRC_REL" | awk '
@@ -65,9 +65,9 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
     { if (n >= 15 && s > 1) big = big sprintf("  L%d (%d lignes)\n", s, n); n = 0 }
     END {
       pct = int(c * 100 / NR)
-      if (pct > 27 || big != "")
+      if (pct > 20 || big != "")
         printf "\n⚠  prefwatch.sh : %d %% de commentaires (%d/%d)%s\n%s\n", pct, c, NR,
-               (pct > 27 ? ", cible ~25 %" : ""), (big != "" ? "   blocs de 15 lignes et plus :\n" big : "")
+               (pct > 20 ? ", maximum 20 %" : ""), (big != "" ? "   blocs de 15 lignes et plus :\n" big : "")
     }'
 
   # --- Warn if CHANGELOG not touched ---

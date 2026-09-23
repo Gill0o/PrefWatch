@@ -29,7 +29,7 @@
 ### Note
 - The script is laid out for reading: a table of contents in the header, titled sections, and each watcher (Touch ID, TCC, Bluetooth, …) as its own function in a WATCHERS section. No code changed.
 - `--fs-usage` (Jamf `$12`) is deprecated: it still runs, says so at startup, and is removed in the next release. Three measurements saw nothing polling did not.
-- The script's comments are down from 32 % to 25 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
+- The script's comments are down from 32 % to 14 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
 
 
 ## 1.5.0 — 2026-09-17
