@@ -2498,6 +2498,8 @@ _build_defaults_delete_cmd() {
   # shell string, so " / $ / backtick in a key must not break (or execute in) the
   # emitted command. Array targets are digits+name and unaffected in practice.
   target=$(_escape_dq "$target")
+  # System pref: the file by full path, as the write builder does.
+  [ "${_EMIT_SYS:-false}" = "true" ] && [[ "$dom" != /* ]] && dom="${_EMIT_SYS_DOM:-/Library/Preferences/${dom}}"
   # Same as the write builder: the domain is a filename, so quote AND escape it.
   local _dm; _dm=$(_escape_dq "$dom")
   if [ -n "$hostflag" ]; then
@@ -2619,8 +2621,27 @@ _mdm_wrap_comment() {
   esac
 }
 
+# A top-level key deletion keeps its `defaults … delete` form when the plist
+# sits where `defaults` resolves the domain on its own.
+# PlistBuddy edits the file behind cfprefsd: running apps are not told.
+# Measured on 27: `PlistBuddy Delete WiFi` left the Wi-Fi item hidden,
+# `defaults -currentHost delete` brought it back in under a second.
+# $1 command, $2 real plist path (may be empty).
+_delete_keeps_defaults() {
+  local cmd="$1" p="$2" d
+  [[ "$cmd" == *'" ":'* ]] && return 1    # array or nested target: PlistBuddy
+  [ -n "$p" ] || return 0
+  d="${p:h}"
+  case "$d" in
+    */Library/Preferences/ByHost) [[ "$cmd" == *" -currentHost "* ]] || return 1 ;;
+    /Library/Preferences) [[ "$cmd" == *'"/Library/Preferences/'* ]] || return 1; return 0 ;;
+  esac
+  # User domains only; a sandbox container also ends in Library/Preferences.
+  [[ "${d%/ByHost}" =~ '^(/Users/[^/]+|/var/root|/private/var/root)/Library/Preferences$' ]]
+}
+
 # Emit a built defaults cmd via _log_kind, applying filters/NOTE/gate.
-# Deletes go through convert_delete_to_plistbuddy.
+# Deletes go through convert_delete_to_plistbuddy unless _delete_keeps_defaults.
 # Args: kind cmd note_dom is_delete
 _emit_cmd() {
   # $5 = OPTIONAL real plist path, forwarded to convert_delete_to_plistbuddy so a
@@ -2649,7 +2670,10 @@ _emit_cmd() {
 
   if [ "$is_delete" = "true" ]; then
     local pb_delete pb_line
-    if pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" 2>/dev/null); then
+    if _delete_keeps_defaults "$cmd" "$emit_plist_path"; then
+      _note_device_uuid "$kind" "${${cmd%\"}##*\"}"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
+    elif pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in

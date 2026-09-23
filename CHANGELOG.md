@@ -15,6 +15,7 @@
 - Removing a printer emptied its preset plist: a positional `Delete` of its `customPresetsInfo` entry came out, and the print-preset NOTE with it, as if a preset had changed. Neither now.
 - A new key tree of two values (two Spotlight categories disabled by hand) carried the "first opening a settings pane" hedge. Four values or more now.
 - Printer Sharing on a Mac with no `/etc/cups/cupsd.conf` at launch emitted nothing: the toggle creates the file, and the watcher was gated on it. Absent now reads as off.
+- A deleted key came out as PlistBuddy, which running apps never see (a Control Center item stayed hidden). It is `defaults [-currentHost] delete` now, with no hardware UUID.
 
 ### Noise
 - `org.cups.PrintingPrefs LastUsedPrinters` (queue + network IP, rewritten on every job) is filtered; the filter named its sub-keys and never matched. `UseLastPrinter` stays.
