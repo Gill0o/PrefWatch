@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.5.1 — unreleased
+## 1.5.2 — unreleased
+
+
+## 1.5.1 — 2026-09-23
 
 ### Feature
 - A list of strings that appears, gains or swaps an entry (a Spotlight category disabled) is emitted whole, `defaults write … -array …`, as its removal already was. No positional index.
