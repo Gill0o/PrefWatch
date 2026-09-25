@@ -818,10 +818,9 @@ get_plist_path_for_domain() {
   plist_path="$TARGET_HOME/Library/Preferences/${domain}.plist"
   [ -f "$plist_path" ] && echo "$plist_path" && return 0
 
-  plist_path="$TARGET_HOME/Library/Preferences/ByHost/${domain}."*".plist"
-  # No ByHost file: `ls` fails, and pipefail + set -e would abort.
-  plist_path=$(/bin/ls $plist_path 2>/dev/null | head -1) || plist_path=""
-  [ -n "$plist_path" ] && [ -f "$plist_path" ] && echo "$plist_path" && return 0
+  # A real glob: a pattern held in a variable is never expanded by zsh.
+  local -a _bh=( "$TARGET_HOME"/Library/Preferences/ByHost/${(b)domain}.*.plist(N.) )
+  (( ${#_bh} )) && echo "${_bh[1]}" && return 0
 
   return 1
 }
@@ -4262,8 +4261,14 @@ start_watch() {
   if [ -n "$plist_path" ]; then
     log_line "Mode: optimized mtime polling (0.5s check on $plist_path)"
 
+    # A ByHost-only domain: `defaults export` without -currentHost reads it
+    # empty, so diff the file, which also emits -currentHost.
+    _sw_diff() {
+      if [[ "$plist_path" == */ByHost/* ]]; then show_plist_diff USER "$plist_path"
+      else show_domain_diff "$DOMAIN"; fi
+    }
     (
-      show_domain_diff "$DOMAIN"
+      _sw_diff
       # From here a domain appearing is reportable.
       typeset -g _BASELINE_DONE=true
       last_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
@@ -4273,14 +4278,14 @@ start_watch() {
           current_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
 
           if [ -n "$current_mtime" ] && [ "$current_mtime" != "$last_mtime" ]; then
-            show_domain_diff "$DOMAIN"
+            _sw_diff
             last_mtime="$current_mtime"
             _forced_tick=0
           else
             # Forced diff every ~2s: mtime cannot see a same-second write.
             _forced_tick=$((_forced_tick + 1))
             if [ "$_forced_tick" -ge 4 ]; then
-              show_domain_diff "$DOMAIN"
+              _sw_diff
               last_mtime="$current_mtime"
               _forced_tick=0
             fi

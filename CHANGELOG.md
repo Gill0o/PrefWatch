@@ -2,6 +2,9 @@
 
 ## 1.5.2 — unreleased
 
+### Fix
+- Watching a single domain that exists only in ByHost (per-hardware) emitted nothing: the ByHost file was never found. It is watched now, with `-currentHost` commands.
+
 ### Note
 - `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
 

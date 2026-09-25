@@ -68,7 +68,7 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 
 ## Detection
 
-- A single domain is watched in its `~/Library/Preferences` plist only. Its ByHost (per-hardware) writes surface in ALL mode.
+- A single domain is watched in one plist: its `~/Library/Preferences` file, or its ByHost (per-hardware) file when it has only that. A domain with both shows its ByHost writes in ALL mode.
 - ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state. Full Disk Access is what names a privacy permission; without it, or where macOS keeps the per-user privacy database out of every process's reach, the change is reported, not named.
 - Detection is by polling, so latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
 
