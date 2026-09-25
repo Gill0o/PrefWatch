@@ -37,10 +37,7 @@
 #     $11 = DEBUG (true/false). Log '# FILTERED: <dom> <key> (reason)' when a
 #          detected change is suppressed (noise key / excluded domain). Equivalent
 #          of the CLI --debug flag. Default: false.
-#     $12 = FS_USAGE (true/false). DEPRECATED, removed in the next release:
-#          also run the fs_usage real-time detector next to polling (measured
-#          to add nothing polling does not; it takes the single ktrace slot).
-#          CLI: --fs-usage. Default: false.
+#     $12 = Removed in 1.5.2 (was fs_usage). Still accepted and ignored.
 # ============================================================================
 
 # Layout (grep the title to jump there):
@@ -111,10 +108,6 @@ Options:
                         ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
-  --fs-usage            DEPRECATED, removed in the next release. ALL mode as
-                        root: also run the fs_usage real-time detector next to
-                        polling. Measured, it added nothing polling did not, and
-                        it takes the machine's single ktrace slot
 
 Examples:
   # Monitor all domains (default behavior)
@@ -135,7 +128,7 @@ Examples:
 Jamf Pro Mode:
   Parameters are read from $4 onward ($1-$3 are Jamf-reserved):
     $4 domain · $5 log path · $6 include-system · $7 only-cmds · $8 exclusions
-    $9 MDM output · $10 hot domains · $11 debug · $12 fs_usage
+    $9 MDM output · $10 hot domains · $11 debug
   Each is documented in full in the "Jamf Parameters" block at the top of this
   script. That header is the single source for them.
 
@@ -219,8 +212,7 @@ parse_cli_args() {
         shift
         ;;
       --fs-usage)
-        # Deprecated in 1.5.1 (adds nothing polling does not, holds the ktrace
-        # slot, reached 8 GB under load). Removed next release.
+        # Removed in 1.5.2; accepted so an old invocation still runs.
         FS_USAGE_RAW="true"
         shift
         ;;
@@ -293,14 +285,6 @@ typeset -g _MDM_LIU_QB="'${_MDM_LIU}'"
 unsetopt xtrace verbose 2>/dev/null || true
 
 # ---------------------------------------
-# CONFIGURATION. Real-time detector ceiling
-# ---------------------------------------
-
-# fs_usage buffers every unwritten event (8 GB five minutes into a Spotlight
-# reindex, measured). Past this RSS fs_watch kills it; polling carries on.
-typeset -gi FS_USAGE_RSS_LIMIT_MB="${PREFWATCH_FS_USAGE_RSS_LIMIT_MB:-1024}"
-
-# ---------------------------------------
 # CONFIGURATION. Hot domains
 # ---------------------------------------
 
@@ -329,7 +313,7 @@ typeset -a HOT_DOMAINS=(
   com.apple.Spotlight
   com.apple.screencapture                              # screenshot location / format
   # Lock screen / software update
-  com.apple.screensaver                                # idle timing lives in ByHost (caught by fs_watch)
+  com.apple.screensaver                                # idle timing lives in ByHost
   com.apple.SoftwareUpdate
   # NOT hot: empty, outside Preferences, daemon-churned, or has its own watcher.
 )
@@ -3261,7 +3245,7 @@ PY
 _run_py_diff_workers() {
   local kind="$1" dom="$2" prev_json="$3" curr_json="$4" pb_plist_path="$5" key="$6"
   local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
-  # Wait on these three pids, never a bare `wait` (the fs_watch flush hint).
+  # Wait on these three pids, never a bare `wait` (it also waits for flush hints).
   local _pyw_add _pyw_del _pyw_nest
   emit_array_additions "$kind" "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
   _pyw_add=$!
@@ -3897,7 +3881,7 @@ _note_group_container_domain() {
 # ---------------------------------------
 # Diff Drivers
 #
-# show_plist_diff: a plist FILE changed on disk (poll_watch / fs_watch).
+# show_plist_diff: a plist FILE changed on disk (poll_watch).
 # show_domain_diff: a DOMAIN changed as cfprefsd sees it (`defaults export`).
 # ---------------------------------------
 
@@ -3926,7 +3910,7 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
-  # fs_watch/poll_watch mutex per plist (3s). Locks older than 10s are reclaimed:
+  # Mutex per plist (3s): one diff of a file at a time. Locks older than 10s are reclaimed:
   # an orphaned lock would silence the plist for the run.
   local lockdir="$CACHE_DIR/${key}.lock"
   if [ -d "$lockdir" ]; then
@@ -3952,7 +3936,7 @@ show_plist_diff() {
   done
 
   if [ "$silent" != "true" ]; then
-    # Wait on these two pids: a bare `wait` also waits for the fs_watch flush hint
+    # Wait on these two pids: a bare `wait` also waits for background flush hints
     # and, on a hung cfprefsd, froze the diff while holding the lock.
     local _dp_pid _dpj_pid
     dump_plist "$path" "$curr" &
@@ -4214,7 +4198,6 @@ _watchers_teardown() {
 # Watcher registry "name|guard|fn|summary", the one source for the spawn loop
 # and the "Watchers active" line. guard is evaluated at launch; summary "y" lists it.
 typeset -ga _WATCHERS=(
-  'fs|[ "$(id -u)" -eq 0 ] && [ "$FS_USAGE" = true ]|fs_watch|'
   'poll|true|poll_watch|'
   'cups|true|cups_watch|'
   'pmset|true|pmset_watch|'
@@ -4344,19 +4327,18 @@ start_watch() {
 # ---------------------------------------
 # ALL Mode (core)
 #
-# Baseline snapshot of every plist, then the two core detectors: poll_watch
-# (mtime polling) and fs_watch (fs_usage, deprecated). The feature watchers
-# they run next to are in the WATCHERS section that follows.
+# Baseline snapshot of every plist, then the core detector poll_watch (mtime
+# polling). The feature watchers it runs next to are in the WATCHERS section.
 # ---------------------------------------
 
 start_watch_all() {
   if [ "$(id -u)" -ne 0 ]; then
     log_line "Mode: monitoring ALL preferences (polling only. No root)"
-  elif [ "$FS_USAGE" = true ]; then
-    log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
-    log_line "Cmd: # NOTE: --fs-usage (Jamf \$12) is deprecated and will be removed in the next release. Polling sees the same writes."
   else
     log_line "Mode: monitoring ALL preferences (polling)"
+  fi
+  if [ "$FS_USAGE" = true ]; then
+    log_line "Cmd: # NOTE: --fs-usage (Jamf \$12) was removed in 1.5.2 and is ignored. Polling sees the same writes."
   fi
 
   local prefs_user prefs_system
@@ -4444,147 +4426,7 @@ start_watch_all() {
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear. Wait between actions for reliable capture"
   fi
 
-  # USER / SYSTEM (baselined), CONTAINER, OTHER. Separate for the harness.
-  _fs_classify() {
-    local _p="$1"
-    case "$_p" in
-      "$prefs_user"/*)   print -r -- USER ;;
-      "$prefs_system"/*) print -r -- SYSTEM ;;
-      */Library/Containers/*|*"/Library/Group Containers/"*) print -r -- CONTAINER ;;
-      *)                 print -r -- OTHER ;;
-    esac
-  }
-
-  # Real-time detector: plist writes via fs_usage.
-  fs_watch() {
-    # Debounce: cfprefsd fires several events per write; poll_watch catches misses.
-    typeset -A _fs_last_seen=()
-    local _FS_DEBOUNCE_S=0.3
-    # script(1) gives fs_usage a pty so it line-buffers (no stdbuf on macOS).
-    # Path resolved and its absence logged: a wrong path once killed it silently.
-    local _fsu=""
-    for _c in /usr/bin/fs_usage /usr/sbin/fs_usage /sbin/fs_usage; do
-      [ -x "$_c" ] && { _fsu="$_c"; break; }
-    done
-    if [ -z "$_fsu" ]; then
-      log_line "Cmd: # NOTE: fs_usage not found. Real-time detection off; polling covers the same ground"
-      return 0
-    fi
-    # ktrace admits ONE client. No warning up front (`ktrace info` names routine
-    # daemons on a healthy Mac); the post-mortem below asks who holds it.
-    local _fsu_who=""
-    local _fsu_err="${PREFWATCH_TMPDIR}/fs_usage.err"
-    # `</dev/null`: script(1) dies on a socket stdin (Jamf). fs_usage runs under
-    # `sh -c "exec … 2>>err"` so its stderr is kept and the tree stays flat.
-    # `-f pathname`, not filesys: 510 MB against 8 GB under a reindex.
-    # The watchdog kills only OUR fs_usage past FS_USAGE_RSS_LIMIT_MB (matched by
-    # grandparent pid) and dies with the pipeline.
-    local _fw_self="" _fw_watchdog=""
-    [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _fw_self="${sysparams[pid]}"
-    if [ -n "$_fw_self" ]; then
-      ( local _fw_pid _fw_gp _fw_rss _fw_seen=false
-        while /bin/sleep 10; do
-          _fw_pid=$(/usr/bin/pgrep -x fs_usage 2>/dev/null | /usr/bin/head -1) || _fw_pid=""
-          if [ -z "$_fw_pid" ]; then [ "$_fw_seen" = true ] && exit 0; continue; fi
-          _fw_gp=$(/bin/ps -o ppid= -p "$(/bin/ps -o ppid= -p "$_fw_pid" 2>/dev/null | /usr/bin/tr -d ' ')" 2>/dev/null | /usr/bin/tr -d ' ') || _fw_gp=""
-          [ "$_fw_gp" = "$_fw_self" ] || continue
-          _fw_seen=true
-          _fw_rss=$(/bin/ps -o rss= -p "$_fw_pid" 2>/dev/null | /usr/bin/tr -d ' ') || _fw_rss=""
-          [ -n "$_fw_rss" ] || continue
-          if (( _fw_rss / 1024 > FS_USAGE_RSS_LIMIT_MB )); then
-            printf '%d' "$(( _fw_rss / 1024 ))" > "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null || true
-            /bin/kill -TERM "$_fw_pid" 2>/dev/null || true
-            exit 0
-          fi
-        done ) &
-      _fw_watchdog=$!
-    fi
-    script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f pathname 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
-    # ONE sed, ON ONE LINE (fs-path-extract reads it back): 1. the plist path,
-    # anchored on space + '/' (a greedy `.*` once dropped the /Users prefix);
-    # 2. the 27 firmlink /System/Volumes/Data/Users → /Users; 3. only files IN a
-    # Preferences directory. LC_ALL=C: one non-UTF-8 byte kills BSD sed.
-    LC_ALL=C /usr/bin/sed -l -nE -e 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@' -e 's@^/System/Volumes/Data/@/@' -e '\@/Library/Preferences/(ByHost/)?[^/]+\.plist$@p' |
-    while IFS= read -r plist; do
-      [ -z "$plist" ] && continue
-      cat_type=$(_fs_classify "$plist")
-      if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
-        continue
-      fi
-      # Containers have no baseline: diffing would announce "a new domain". Dropped (--debug says so).
-      if [ "$cat_type" = "CONTAINER" ]; then
-        _dbg_filtered "$(domain_from_plist_path "$plist") (container prefs. Out of scope, see README)"
-        continue
-      fi
-      # Other trees (root's ~, another user's, a volume): no baseline either.
-      if [ "$cat_type" = "OTHER" ]; then
-        _dbg_filtered "$(domain_from_plist_path "$plist") (outside the watched preference trees: $plist)"
-        continue
-      fi
-      if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
-        local _now="$EPOCHREALTIME" _last="${_fs_last_seen[$plist]:-0}"
-        if (( _now - _last < _FS_DEBOUNCE_S )); then
-          continue
-        fi
-        _fs_last_seen[$plist]="$_now"
-      fi
-      dom=$(domain_from_plist_path "$plist")
-      if is_excluded_domain "$dom"; then
-        continue
-      fi
-      if [ -n "$dom" ]; then
-        /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
-        # Pre-flush cfprefsd so the first retry of show_plist_diff sees the change.
-        if [[ "$plist" == *"/ByHost/"* ]]; then
-          "${RUN_AS_USER[@]}" /usr/bin/defaults -currentHost read "$dom" >/dev/null 2>&1 &
-        else
-          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$dom" >/dev/null 2>&1 &
-        fi
-      fi
-      if [ "$cat_type" = "USER" ]; then
-        log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-      else
-        log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-      fi
-    done
-    # fs_usage exited: real-time detection is over; report what it said.
-    [ -n "$_fw_watchdog" ] && { /bin/kill "$_fw_watchdog" 2>/dev/null || true; }
-    local _why=""
-    [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
-    if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
-      local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
-      _log_note_wrapped "" "real-time detection stopped by PrefWatch: fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB). The machine's file activity outran it. Polling continues, at the same latency."
-      return 0
-    fi
-    case "$_why" in
-      *"Resource busy"*)
-        # Name the ktrace holder ("Owning process is [N]", e.g. FlexNet); "Last
-        # configured by" only as a labelled fallback. Guarded: fails without root.
-        local _kt="" _own_pid=""
-        if [ -x /usr/bin/ktrace ]; then
-          _kt=$(/usr/bin/ktrace info 2>/dev/null) || _kt=""
-          _own_pid=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE 's/.*Owning process is \[([0-9]+)\].*/\1/p' | /usr/bin/head -1) || _own_pid=""
-          if [ -n "$_own_pid" ]; then
-            _fsu_who=$(/bin/ps -o comm= -p "$_own_pid" 2>/dev/null) || _fsu_who=""
-            [ -n "$_fsu_who" ] && _fsu_who="held by $_fsu_who (pid $_own_pid)"
-          fi
-          if [ -z "$_fsu_who" ]; then
-            _fsu_who=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1) || _fsu_who=""
-            [ -n "$_fsu_who" ] && _fsu_who="taken; last configured by '$_fsu_who', which may not be the holder"
-          fi
-        fi
-        # Each branch supplies its full clause.
-        log_line "Cmd: # NOTE: real-time detection OFF. Ktrace allows one client and it is ${_fsu_who:-taken}."
-        # Measured: 0.47s with real-time, 0.49s without.
-        log_line "Cmd: #       Polling covers the same ground at the same latency (measured)." ;;
-      "")
-        log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message). Polling continues" ;;
-      *)
-        log_line "Cmd: # NOTE: real-time detection stopped. Fs_usage: $_why" ;;
-    esac
-  }
-
-  # Fallback detector: periodic `find -newer` for writes fs_usage misses.
+  # The detector: periodic `find -newer` on the preference trees.
   poll_watch() {
     local marker_user marker_sys active_dir
     # Locals declared once: a re-`local` prints `foo=value`.
@@ -4615,7 +4457,7 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          # Bare read only; ByHost is flushed by show_plist_diff/fs_watch.
+          # Bare read only; a ByHost write is picked up by its file mtime.
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
           _pids+=($!)
         done
@@ -6096,7 +5938,7 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
     sleep 1 || true
   done
   log_line "Console.app closed. Stopping monitoring"
-  # Reuse the teardown of the traps: a bare kill left eslogger and fs_usage running as root.
+  # Reuse the teardown of the traps: a bare kill left eslogger running as root.
   _shutdown_watcher
   exit 0
 else

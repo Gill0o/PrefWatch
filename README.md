@@ -42,11 +42,10 @@ sudo pkill -f 'prefwatch\.sh'
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
-| `--fs-usage` | -- | Deprecated, removed in the next release. ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`) | Off |
 
 ## Jamf Pro Integration
 
-Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug, `$12`=fs_usage. Launches Console.app for live viewing; logs to stdout + file + syslog.
+Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug. Launches Console.app for live viewing; logs to stdout + file + syslog.
 
 ## Scope
 

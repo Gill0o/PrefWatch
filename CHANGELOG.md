@@ -2,6 +2,9 @@
 
 ## 1.5.2 — unreleased
 
+### Note
+- `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
+
 
 ## 1.5.1 — 2026-09-23
 
