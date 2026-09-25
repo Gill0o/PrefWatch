@@ -4,6 +4,7 @@
 
 ### Fix
 - Watching a single domain that exists only in ByHost (per-hardware) emitted nothing: the ByHost file was never found. It is watched now, with `-currentHost` commands.
+- A list entry that reads as plist syntax, `(x)`, `{x}`, `<x>`, `$(x)`, was refused by `defaults -array` or written as a sub-list. It is quoted now; one with `"` or `\` no longer needs python3.
 
 ### Note
 - `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.

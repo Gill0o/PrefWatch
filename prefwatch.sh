@@ -2696,11 +2696,18 @@ diff(prev, curr, [])
 
 # An all-string array gaining elements is emitted whole (`-array`), no index.
 # A " or \ in any element falls back to the positional Add.
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 def rewritable(arr_name):
     arr = curr.get(arr_name)
     return (isinstance(arr, list) and arr
             and all(isinstance(e, str) for e in arr)
-            and not any(any(c in e for c in '"\\\n\t') for e in arr))
+            and not any(any(c in e for c in '\n\t') for e in arr))
 _rewritten = set()
 
 _array_add_noted = False
@@ -2720,7 +2727,7 @@ for prefix, index, item in results:
         if arr_name not in _rewritten:
             _rewritten.add(arr_name)
             print("ARRAYRW\t%s\t%s" % (arr_name, ' '.join(
-                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in curr[arr_name])))
+                _arg(e) for e in curr[arr_name])))
         continue
     # Same length: a reorder, not an addition.
     if arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
@@ -2785,6 +2792,13 @@ _py_deletions_raw() {
   [ -s "$prev_json" ] || return 0
   "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
 import json, sys, os
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -2889,9 +2903,9 @@ for path_tuple, index, item in results:
             and isinstance(remaining, list) and all(isinstance(e, str) for e in remaining)):
         if not remaining:
             rewrite = "%EMPTY%"
-        elif not any(any(c in e for c in '"\\\n\t') for e in remaining):
+        elif not any(any(c in e for c in '\n\t') for e in remaining):
             rewrite = ' '.join(
-                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
+                _arg(e) for e in remaining)
     # \x1f, not tab: zsh collapses consecutive tabs, empty fields vanish.
     print(f"{array_name}\x1f{index}\x1f{keys}\x1f{app_label}\x1f{value}\x1f{rewrite}")
 PY
@@ -3013,6 +3027,13 @@ emit_nested_dict_changes() {
   else
   py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_PRINT_PRESET_NOISE}" <<'PY'
 import json, sys, os
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -3140,11 +3161,11 @@ for top_key in sorted(curr.keys()):
         # A NEW all-string list is one `-array` write: no tree, no index, no NOTE.
         _nv = curr[top_key]
         if (isinstance(_nv, list) and _nv and all(isinstance(e, str) for e in _nv)
-                and not any(any(c in e for c in '"\\\n\t') for e in _nv)):
+                and not any(any(c in e for c in '\n\t') for e in _nv)):
             changed_top_keys.add(top_key)
             print(f"{top_key}\t\t")
             print("ARRAYRW\t%s\t%s" % (top_key, ' '.join(
-                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in _nv)))
+                _arg(e) for e in _nv)))
             continue
         if not _first_create_noted:
             # A whole tree appearing is the first-open-a-pane case. Four leaves or
@@ -3184,7 +3205,7 @@ for top_key in sorted(curr.keys()):
         if len(prev[top_key]) != len(curr[top_key]):
             changes = []
         elif (curr[top_key] and all(isinstance(e, str) for e in curr[top_key])
-              and not any(any(c in e for c in '"\\\n\t') for e in curr[top_key])):
+              and not any(any(c in e for c in '\n\t') for e in curr[top_key])):
             # All-string list: rewritten whole by emit_array_additions; per-index
             # Sets were wrong when an element also moved.
             changes = []
