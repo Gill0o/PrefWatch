@@ -969,6 +969,11 @@ is_noisy_key() {
     NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
       return 0 ;;
 
+    # Electron first launch writes these, fixed values (FortiClient, Slack, VS Code).
+    # The global domain keeps them: there they are system-wide switches.
+    AppleTextDirection|NSForceRightToLeftWritingDirection|NSTreatUnknownArgumentsAsOpen)
+      [[ "$domain" == .GlobalPreferences || "$domain" == NSGlobalDomain ]] || return 0 ;;
+
     # Apple Intelligence availability mirrored into the ByHost global domain.
     com.apple.gms.*)
       return 0 ;;
@@ -1574,6 +1579,14 @@ is_noisy_key() {
       case "$keyname" in
         *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid|UserName|swgConnectStatus)
           return 0 ;;
+      esac
+      ;;
+
+    # FortiClient: <gateway>/certWarn = an untrusted certificate accepted, pinned to its
+    # SHA-256. Deployed, it pre-trusts that cert fleet-wide until it renews. Per KEY.
+    com.fortinet.*)
+      case "$keyname" in
+        */certWarn) return 0 ;;
       esac
       ;;
 

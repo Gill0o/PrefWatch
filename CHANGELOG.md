@@ -6,6 +6,10 @@
 - Watching a single domain that exists only in ByHost (per-hardware) emitted nothing: the ByHost file was never found. It is watched now, with `-currentHost` commands.
 - A list entry that reads as plist syntax, `(x)`, `{x}`, `<x>`, `$(x)`, was refused by `defaults -array` or written as a sub-list. It is quoted now; one with `"` or `\` no longer needs python3.
 
+### Noise
+- Electron's first-launch keys `AppleTextDirection`, `NSForceRightToLeftWritingDirection`, `NSTreatUnknownArgumentsAsOpen` (FortiClient, Slack, VS Code) are filtered; the global domain keeps them.
+- FortiClient `<gateway>/certWarn` (an untrusted certificate accepted, pinned to its hash) is filtered: replayed, it would pre-trust that certificate on every Mac.
+
 ### Note
 - `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
 
