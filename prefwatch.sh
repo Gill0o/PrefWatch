@@ -2378,6 +2378,20 @@ _process_py_meta() {
       _log_kind "$kind" "Cmd: $(_mdm_wrap "defaults ${_rw_host}write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$_rw_base")\" -array ${_array_keys}")"
       continue
     fi
+    # DICTRW <top> <sub>\t<list literal, shell-quoted>: one -dict-add, no index.
+    if [ "$_array_base" = "DICTRW" ]; then
+      local _dr_top="$_array_idx" _dr_sub="${_array_keys%%$'\t'*}" _dr_val="${_array_keys#*$'\t'}" _dr_host=""
+      if is_noisy_key "$dom" "$_dr_top" || is_noisy_key "$dom" "$_dr_sub"; then _dbg_filtered "$dom $_dr_top:$_dr_sub (noise-key)"; continue; fi
+      if [ "$_domain_note_emitted" = "false" ]; then
+        _emit_contextual_note "$dom" "$_dr_top"
+        _domain_note_emitted=true
+      fi
+      [[ "$plist_path" == *"/ByHost/"* ]] && _dr_host="-currentHost "
+      _note_should_show "__dictrw__:$dom:$_dr_top:$_dr_sub" \
+        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$_dr_sub' list. Reproduces it, does not merge)"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "defaults ${_dr_host}write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$_dr_top")\" -dict-add \"$(_escape_dq "$_dr_sub")\" ${_dr_val}")"
+      continue
+    fi
     if [ "$_array_base" = "PBCMD" ]; then
       _pb_cmd="$_array_idx"
       if [[ "$_pb_cmd" == "#"* ]]; then
@@ -3211,6 +3225,22 @@ for top_key in sorted(curr.keys()):
     if not isinstance(prev[top_key], (dict, list)):
         continue
     changes, additions, deletions = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
+    # A string list one level into a dict (a toolbar's TB Item Identifiers) is
+    # the setting: written whole with -dict-add. Per index it broke on a target
+    # whose list differs. Empty keys and tab/newline elements stay per index.
+    rw_subs = {}
+    if isinstance(curr[top_key], dict) and isinstance(prev[top_key], dict) and top_key and "\t" not in top_key:
+        for sub, nv in curr[top_key].items():
+            pv = prev[top_key].get(sub)
+            if (sub and "\t" not in sub and nv != pv and isinstance(nv, list) and (pv is None or isinstance(pv, list))
+                    and (nv or pv) and all(isinstance(e, str) and '\n' not in e and '\t' not in e for e in nv)):
+                lit = '(' + ','.join('"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"' for e in nv) + ')'
+                rw_subs[sub] = "'" + lit.replace("'", "'\\''") + "'"
+    if rw_subs:
+        _in_rw = lambda pp: len(pp) >= 2 and pp[1] in rw_subs
+        changes = [c for c in changes if not _in_rw(c[0])]
+        additions = [a for a in additions if not _in_rw(a[0])]
+        deletions = [d for d in deletions if not _in_rw(d[0])]
     # Top-level arrays: Add/Delete belong to the array workers; Set only in place.
     if isinstance(curr[top_key], list):
         additions = []
@@ -3233,10 +3263,10 @@ for top_key in sorted(curr.keys()):
                     moved.add(str(i))
             if moved:
                 changes = [(pp, tv) for pp, tv in changes if len(pp) < 2 or pp[1] not in moved]
-    if not changes and not additions and not deletions:
+    if not changes and not additions and not deletions and not rw_subs:
         continue
     changed_top_keys.add(top_key)
-    sub_keys = set()
+    sub_keys = set(rw_subs)
     for path_parts, tv in changes:
         for part in path_parts:
             sub_keys.add(part)
@@ -3247,6 +3277,8 @@ for top_key in sorted(curr.keys()):
         for part in tup[0]:
             sub_keys.add(part)
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
+    for sub in sorted(rw_subs):
+        print(f"DICTRW\t{top_key}\t{sub}\t{rw_subs[sub]}")
     # Deletes first: they must precede Adds for array replacements.
     for (path_parts,) in deletions:
         if any(p == '' for p in path_parts):
@@ -4207,6 +4239,11 @@ _watchers_teardown() {
   # to their shell, and a `wait` hung a root teardown.
   local _p
   for _p in ${_WATCH_PIDS[@]}; do _kill_tree "$_p"; done
+  # Plus every child of the root: one spawned but not yet in _WATCH_PIDS when
+  # the signal landed would be orphaned.
+  if [ "${HAVE_ZSH_SYSTEM:-false}" = true ]; then
+    for _p in $(/usr/bin/pgrep -P "${sysparams[pid]}" 2>/dev/null || true); do _kill_tree "$_p"; done
+  fi
   # Bounded wait; stop when NO pid answers (`kill -0 a b` fails on the first gone).
   local _i _q _alive
   for _i in 1 2 3 4 5 6; do
@@ -4289,6 +4326,19 @@ _snapshot_watch() {
 start_watch() {
   local plist_path last_mtime current_mtime
 
+  # Armed BEFORE any spawn: a TERM during the launch loop killed the root
+  # untrapped and orphaned the watchers already started (measured 1 in 10).
+  # EXIT here: a trap inherited from main does not fire in a `&` job.
+  trap '_watchers_teardown; exit 0' TERM INT
+  trap '_watchers_teardown' EXIT
+  # The orphan watchdog survives a SIGKILL of main, which no trap catches.
+  local _wt_self=""
+  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
+  if [ -n "$_wt_self" ]; then
+    _orphan_watchdog "$_wt_self" &
+    _WATCH_PIDS+=($!)
+  fi
+
   # No plist yet (app never configured): fall back to full-domain polling.
   plist_path=$(get_plist_path_for_domain "$DOMAIN") || plist_path=""
 
@@ -4349,17 +4399,6 @@ start_watch() {
 
   _emit_mdm_resolver_header
 
-  # The orphan watchdog survives a SIGKILL of main, which no trap catches.
-  local _wt_self=""
-  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
-  if [ -n "$_wt_self" ]; then
-    _orphan_watchdog "$_wt_self" &
-    _WATCH_PIDS+=($!)
-  fi
-
-  # EXIT armed here: a trap inherited from main does not fire in a `&` job.
-  trap '_watchers_teardown; exit 0' TERM INT
-  trap '_watchers_teardown' EXIT
   wait
 }
 
@@ -4371,6 +4410,19 @@ start_watch() {
 # ---------------------------------------
 
 start_watch_all() {
+  # Armed BEFORE any spawn: a TERM during the launch loop killed the root
+  # untrapped and orphaned the watchers already started (measured 1 in 10).
+  # EXIT here: a trap inherited from main does not fire in a `&` job.
+  trap '_watchers_teardown; exit 0' TERM INT
+  trap '_watchers_teardown' EXIT
+  # The orphan watchdog survives a SIGKILL of main, which no trap catches.
+  local _wt_self=""
+  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
+  if [ -n "$_wt_self" ]; then
+    _orphan_watchdog "$_wt_self" &
+    _WATCH_PIDS+=($!)
+  fi
+
   if [ "$(id -u)" -ne 0 ]; then
     log_line "Mode: monitoring ALL preferences (polling only. No root)"
   else
@@ -4563,17 +4615,6 @@ start_watch_all() {
     if eval "$_W_GUARD"; then _spawn "$_W_FN"; fi
   done
 
-  # The orphan watchdog survives a SIGKILL of main, which no trap catches.
-  local _wt_self=""
-  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
-  if [ -n "$_wt_self" ]; then
-    _orphan_watchdog "$_wt_self" &
-    _WATCH_PIDS+=($!)
-  fi
-
-  # EXIT armed here: a trap inherited from main does not fire in a `&` job.
-  trap '_watchers_teardown; exit 0' TERM INT
-  trap '_watchers_teardown' EXIT
   wait
 }
 
@@ -5295,9 +5336,12 @@ PY
     while IFS=$'\t' read -r _kind _what _app; do
       [ -n "$_kind" ] || continue
       _note_should_show __default_apps__ && log_line "Cmd: # NOTE: needs utiluti (github.com/scriptingosx/utiluti)"
-      # Only the default browser pops a macOS confirmation.
-      [ "$_kind" = url ] && [ "$_what" = http ] && _note_should_show __default_browser__ \
-        && log_line "Cmd: # NOTE: changing the default browser prompts the user to confirm"
+      # Every type prompts, not only the browser (CSV measured on 27.0.1); utiluti
+      # blocks until someone answers, so an unattended policy hangs.
+      _note_should_show __default_apps_confirm__ && {
+        log_line "Cmd: # NOTE: macOS asks the user to confirm each default app change, not only the browser."
+        log_line "Cmd: # NOTE: utiluti waits for that answer: with nobody at the screen, the policy blocks."
+      }
       # Both fields are user-writable: escaped. --mdm wraps it (per-user state).
       local _uu="utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
       log_line "Cmd: $(_mdm_wrap "$_uu")"
