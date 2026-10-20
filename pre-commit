@@ -73,7 +73,7 @@ if git diff --name-only --cached | grep -qx "$SRC_REL"; then
   # --- Warn if CHANGELOG not touched ---
   if ! git diff --name-only --cached | grep -qx "$CHANGELOG_REL"; then
     echo ""
-    echo "⚠  CHANGELOG.md not updated — pensez à documenter les changements"
+    echo "⚠  CHANGELOG.md not updated: pensez à documenter les changements"
     echo ""
   fi
 fi

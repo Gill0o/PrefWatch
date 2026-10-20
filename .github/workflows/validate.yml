@@ -30,7 +30,7 @@ jobs:
           echo "Running ShellCheck on release.sh..."
           shellcheck release.sh || true
         else
-          echo "release.sh not present (main branch) — skipping"
+          echo "release.sh not present (main branch), skipping"
         fi
 
   syntax-check:
@@ -52,7 +52,7 @@ jobs:
           echo "Checking Bash syntax on release.sh..."
           bash -n release.sh
         else
-          echo "release.sh not present — skipping"
+          echo "release.sh not present, skipping"
         fi
 
   version-check:
