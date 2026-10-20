@@ -15,6 +15,7 @@
 
 ### Note
 - `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
+- CONTRIBUTING matches the script again: its 14 sections, a watcher added by one `_WATCHERS` line, Jamf `$11`, testing on macOS 15, 26 and 27.
 
 
 ## 1.5.1 — 2026-09-23
