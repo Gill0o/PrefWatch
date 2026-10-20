@@ -56,7 +56,7 @@
 #     Watcher Framework        _watcher_parse, _guard_nonempty, _snapshot_watch
 #     Single-domain Mode       start_watch
 #     ALL Mode (core)          start_watch_all
-#     WATCHERS                 one function per out-of-plist setting (20)
+#     WATCHERS                 one function per out-of-plist setting (21)
 #   MAIN                     pre-flight, log file, launch, teardown traps
 
 # ============================================================================
@@ -3742,9 +3742,10 @@ _note_network_service() {
 _note_menubar_positions() {
   local kind="$1" prev="$2" curr="$3" dom="${4:-}" _k _pat
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
-  # Per-app `NSStatusItem Preferred Position <Item>`; on 27 also in MenuBarAgent.
+  # Per-app `NSStatusItem Preferred Position <Item>`; on 27 one central dict
+  # (MenuBarAgent in the beta, the com.apple.MenuBar group container in 27.0.1).
   _pat='"NSStatusItem Preferred Position'
-  [ "$dom" = "com.apple.MenuBarAgent" ] && _pat='"(module|status):'
+  case "$dom" in com.apple.MenuBarAgent|com.apple.MenuBar) _pat='"(module|status):' ;; esac
   # `|| true` INSIDE the $(): diff exits 1 on a difference, pipefail would wipe the key.
   _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
         | /usr/bin/grep -E "^[<>].*$_pat" \
@@ -4289,6 +4290,7 @@ typeset -ga _WATCHERS=(
   'touchid|[ -x /usr/bin/bioutil ]|touchid_watch|y'
   'sharing_exec|[ "$(id -u)" -eq 0 ] && [ -x /usr/bin/eslogger ] && [ -n "$PYTHON3_BIN" ]|sharing_exec_watch|y'
   'launchd_state|[ "$(id -u)" -eq 0 ] && [ -n "$PYTHON3_BIN" ]|launchd_state_watch|y'
+  'menubar_pos|true|menubar_pos_watch|y'
 )
 
 _watcher_parse() {
@@ -4630,6 +4632,7 @@ start_watch_all() {
 #   useracct_watch, hostname_watch, default_apps_watch, wallpaper_watch
 #   tcc_watch, nvram_watch, timezone_watch, security_watch
 #   fw_apps_watch, touchid_watch, defprinter_watch, spotlight_watch
+#   menubar_pos_watch
 # ---------------------------------------
 
 # Printer Sharing: reads the Browsing line of cupsd.conf. A missing cupsd.conf
@@ -5905,6 +5908,19 @@ spotlight_watch() {
     return 0
   }
   _snapshot_watch spotlight 3 _read_spotlight _onchange_spotlight _guard_nonempty
+}
+
+# Menu bar order on 27.0.1: a Cmd+drag writes only the group container
+# com.apple.MenuBar, which ALL mode never diffs. Read it here, for the NOTE only.
+menubar_pos_watch() {
+  _read_menubar_pos() {
+    local _f="$TARGET_HOME/Library/Group Containers/com.apple.MenuBar/Library/Preferences/com.apple.MenuBar.plist"
+    # Absent before 27, or until the first drag: not an error, no guard on the file.
+    [ -f "$_f" ] || return 0
+    "${RUN_AS_USER[@]}" /usr/bin/plutil -p "$_f" 2>/dev/null || true
+  }
+  _onchange_menubar_pos() { _note_menubar_positions USER "$1" "$2" com.apple.MenuBar; }
+  _snapshot_watch menubar_pos 3 _read_menubar_pos _onchange_menubar_pos _guard_nonempty
 }
 
 # ============================================================================
