@@ -53,7 +53,7 @@ PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), pl
 
 A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing, Bluetooth on/off, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
-Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
+Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), Finder sidebar favorites (a `com.apple.sharedfilelist` file, not a plist pref), and hardware state (display & keyboard brightness, HDR).
 
 A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command. A positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
 
