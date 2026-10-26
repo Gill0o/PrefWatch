@@ -37,10 +37,7 @@
 #     $11 = DEBUG (true/false). Log '# FILTERED: <dom> <key> (reason)' when a
 #          detected change is suppressed (noise key / excluded domain). Equivalent
 #          of the CLI --debug flag. Default: false.
-#     $12 = FS_USAGE (true/false). DEPRECATED, removed in the next release:
-#          also run the fs_usage real-time detector next to polling (measured
-#          to add nothing polling does not; it takes the single ktrace slot).
-#          CLI: --fs-usage. Default: false.
+#     $12 = Removed in 1.5.2 (was fs_usage). Still accepted and ignored.
 # ============================================================================
 
 # Layout (grep the title to jump there):
@@ -59,7 +56,7 @@
 #     Watcher Framework        _watcher_parse, _guard_nonempty, _snapshot_watch
 #     Single-domain Mode       start_watch
 #     ALL Mode (core)          start_watch_all
-#     WATCHERS                 one function per out-of-plist setting (20)
+#     WATCHERS                 one function per out-of-plist setting (21)
 #   MAIN                     pre-flight, log file, launch, teardown traps
 
 # ============================================================================
@@ -111,10 +108,6 @@ Options:
                         ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
-  --fs-usage            DEPRECATED, removed in the next release. ALL mode as
-                        root: also run the fs_usage real-time detector next to
-                        polling. Measured, it added nothing polling did not, and
-                        it takes the machine's single ktrace slot
 
 Examples:
   # Monitor all domains (default behavior)
@@ -135,7 +128,7 @@ Examples:
 Jamf Pro Mode:
   Parameters are read from $4 onward ($1-$3 are Jamf-reserved):
     $4 domain · $5 log path · $6 include-system · $7 only-cmds · $8 exclusions
-    $9 MDM output · $10 hot domains · $11 debug · $12 fs_usage
+    $9 MDM output · $10 hot domains · $11 debug
   Each is documented in full in the "Jamf Parameters" block at the top of this
   script. That header is the single source for them.
 
@@ -219,8 +212,7 @@ parse_cli_args() {
         shift
         ;;
       --fs-usage)
-        # Deprecated in 1.5.1 (adds nothing polling does not, holds the ktrace
-        # slot, reached 8 GB under load). Removed next release.
+        # Removed in 1.5.2; accepted so an old invocation still runs.
         FS_USAGE_RAW="true"
         shift
         ;;
@@ -293,14 +285,6 @@ typeset -g _MDM_LIU_QB="'${_MDM_LIU}'"
 unsetopt xtrace verbose 2>/dev/null || true
 
 # ---------------------------------------
-# CONFIGURATION. Real-time detector ceiling
-# ---------------------------------------
-
-# fs_usage buffers every unwritten event (8 GB five minutes into a Spotlight
-# reindex, measured). Past this RSS fs_watch kills it; polling carries on.
-typeset -gi FS_USAGE_RSS_LIMIT_MB="${PREFWATCH_FS_USAGE_RSS_LIMIT_MB:-1024}"
-
-# ---------------------------------------
 # CONFIGURATION. Hot domains
 # ---------------------------------------
 
@@ -329,7 +313,7 @@ typeset -a HOT_DOMAINS=(
   com.apple.Spotlight
   com.apple.screencapture                              # screenshot location / format
   # Lock screen / software update
-  com.apple.screensaver                                # idle timing lives in ByHost (caught by fs_watch)
+  com.apple.screensaver                                # idle timing lives in ByHost
   com.apple.SoftwareUpdate
   # NOT hot: empty, outside Preferences, daemon-churned, or has its own watcher.
 )
@@ -834,10 +818,9 @@ get_plist_path_for_domain() {
   plist_path="$TARGET_HOME/Library/Preferences/${domain}.plist"
   [ -f "$plist_path" ] && echo "$plist_path" && return 0
 
-  plist_path="$TARGET_HOME/Library/Preferences/ByHost/${domain}."*".plist"
-  # No ByHost file: `ls` fails, and pipefail + set -e would abort.
-  plist_path=$(/bin/ls $plist_path 2>/dev/null | head -1) || plist_path=""
-  [ -n "$plist_path" ] && [ -f "$plist_path" ] && echo "$plist_path" && return 0
+  # A real glob: a pattern held in a variable is never expanded by zsh.
+  local -a _bh=( "$TARGET_HOME"/Library/Preferences/ByHost/${(b)domain}.*.plist(N.) )
+  (( ${#_bh} )) && echo "${_bh[1]}" && return 0
 
   return 1
 }
@@ -985,6 +968,11 @@ is_noisy_key() {
     # App-controlled macOS menu item overrides (set by app, not user)
     NSDisabledCharacterPaletteMenuItem|NSFullScreenMenuItemEverywhere)
       return 0 ;;
+
+    # Electron first launch writes these, fixed values (FortiClient, Slack, VS Code).
+    # The global domain keeps them: there they are system-wide switches.
+    AppleTextDirection|NSForceRightToLeftWritingDirection|NSTreatUnknownArgumentsAsOpen)
+      [[ "$domain" == .GlobalPreferences || "$domain" == NSGlobalDomain ]] || return 0 ;;
 
     # Apple Intelligence availability mirrored into the ByHost global domain.
     com.apple.gms.*)
@@ -1591,6 +1579,14 @@ is_noisy_key() {
       case "$keyname" in
         *Version|DeviceId|connectorInfoList|systemExtensionExistFlag|swgIsInvalid|ztnaIsInvalid|UserName|swgConnectStatus)
           return 0 ;;
+      esac
+      ;;
+
+    # FortiClient: <gateway>/certWarn = an untrusted certificate accepted, pinned to its
+    # SHA-256. Deployed, it pre-trusts that cert fleet-wide until it renews. Per KEY.
+    com.fortinet.*)
+      case "$keyname" in
+        */certWarn) return 0 ;;
       esac
       ;;
 
@@ -2382,6 +2378,20 @@ _process_py_meta() {
       _log_kind "$kind" "Cmd: $(_mdm_wrap "defaults ${_rw_host}write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$_rw_base")\" -array ${_array_keys}")"
       continue
     fi
+    # DICTRW <top> <sub>\t<list literal, shell-quoted>: one -dict-add, no index.
+    if [ "$_array_base" = "DICTRW" ]; then
+      local _dr_top="$_array_idx" _dr_sub="${_array_keys%%$'\t'*}" _dr_val="${_array_keys#*$'\t'}" _dr_host=""
+      if is_noisy_key "$dom" "$_dr_top" || is_noisy_key "$dom" "$_dr_sub"; then _dbg_filtered "$dom $_dr_top:$_dr_sub (noise-key)"; continue; fi
+      if [ "$_domain_note_emitted" = "false" ]; then
+        _emit_contextual_note "$dom" "$_dr_top"
+        _domain_note_emitted=true
+      fi
+      [[ "$plist_path" == *"/ByHost/"* ]] && _dr_host="-currentHost "
+      _note_should_show "__dictrw__:$dom:$_dr_top:$_dr_sub" \
+        && _log_kind "$kind" "Cmd: #       (rewrites the whole '$_dr_sub' list. Reproduces it, does not merge)"
+      _log_kind "$kind" "Cmd: $(_mdm_wrap "defaults ${_dr_host}write \"$(_escape_dq "$dom")\" \"$(_escape_dq "$_dr_top")\" -dict-add \"$(_escape_dq "$_dr_sub")\" ${_dr_val}")"
+      continue
+    fi
     if [ "$_array_base" = "PBCMD" ]; then
       _pb_cmd="$_array_idx"
       if [[ "$_pb_cmd" == "#"* ]]; then
@@ -2713,11 +2723,18 @@ diff(prev, curr, [])
 
 # An all-string array gaining elements is emitted whole (`-array`), no index.
 # A " or \ in any element falls back to the positional Add.
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 def rewritable(arr_name):
     arr = curr.get(arr_name)
     return (isinstance(arr, list) and arr
             and all(isinstance(e, str) for e in arr)
-            and not any(any(c in e for c in '"\\\n\t') for e in arr))
+            and not any(any(c in e for c in '\n\t') for e in arr))
 _rewritten = set()
 
 _array_add_noted = False
@@ -2737,7 +2754,7 @@ for prefix, index, item in results:
         if arr_name not in _rewritten:
             _rewritten.add(arr_name)
             print("ARRAYRW\t%s\t%s" % (arr_name, ' '.join(
-                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in curr[arr_name])))
+                _arg(e) for e in curr[arr_name])))
         continue
     # Same length: a reorder, not an addition.
     if arr_name in curr and isinstance(prev[arr_name], list) and isinstance(curr[arr_name], list) and len(prev[arr_name]) == len(curr[arr_name]):
@@ -2802,6 +2819,13 @@ _py_deletions_raw() {
   [ -s "$prev_json" ] || return 0
   "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
 import json, sys, os
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -2906,9 +2930,9 @@ for path_tuple, index, item in results:
             and isinstance(remaining, list) and all(isinstance(e, str) for e in remaining)):
         if not remaining:
             rewrite = "%EMPTY%"
-        elif not any(any(c in e for c in '"\\\n\t') for e in remaining):
+        elif not any(any(c in e for c in '\n\t') for e in remaining):
             rewrite = ' '.join(
-                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in remaining)
+                _arg(e) for e in remaining)
     # \x1f, not tab: zsh collapses consecutive tabs, empty fields vanish.
     print(f"{array_name}\x1f{index}\x1f{keys}\x1f{app_label}\x1f{value}\x1f{rewrite}")
 PY
@@ -3030,6 +3054,13 @@ emit_nested_dict_changes() {
   else
   py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_PRINT_PRESET_NOISE}" <<'PY'
 import json, sys, os
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -3157,11 +3188,11 @@ for top_key in sorted(curr.keys()):
         # A NEW all-string list is one `-array` write: no tree, no index, no NOTE.
         _nv = curr[top_key]
         if (isinstance(_nv, list) and _nv and all(isinstance(e, str) for e in _nv)
-                and not any(any(c in e for c in '"\\\n\t') for e in _nv)):
+                and not any(any(c in e for c in '\n\t') for e in _nv)):
             changed_top_keys.add(top_key)
             print(f"{top_key}\t\t")
             print("ARRAYRW\t%s\t%s" % (top_key, ' '.join(
-                '"%s"' % e.replace('$', '\\$').replace('`', '\\`') for e in _nv)))
+                _arg(e) for e in _nv)))
             continue
         if not _first_create_noted:
             # A whole tree appearing is the first-open-a-pane case. Four leaves or
@@ -3194,6 +3225,22 @@ for top_key in sorted(curr.keys()):
     if not isinstance(prev[top_key], (dict, list)):
         continue
     changes, additions, deletions = find_leaf_changes(prev[top_key], curr[top_key], [top_key])
+    # A string list one level into a dict (a toolbar's TB Item Identifiers) is
+    # the setting: written whole with -dict-add. Per index it broke on a target
+    # whose list differs. Empty keys and tab/newline elements stay per index.
+    rw_subs = {}
+    if isinstance(curr[top_key], dict) and isinstance(prev[top_key], dict) and top_key and "\t" not in top_key:
+        for sub, nv in curr[top_key].items():
+            pv = prev[top_key].get(sub)
+            if (sub and "\t" not in sub and nv != pv and isinstance(nv, list) and (pv is None or isinstance(pv, list))
+                    and (nv or pv) and all(isinstance(e, str) and '\n' not in e and '\t' not in e for e in nv)):
+                lit = '(' + ','.join('"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"' for e in nv) + ')'
+                rw_subs[sub] = "'" + lit.replace("'", "'\\''") + "'"
+    if rw_subs:
+        _in_rw = lambda pp: len(pp) >= 2 and pp[1] in rw_subs
+        changes = [c for c in changes if not _in_rw(c[0])]
+        additions = [a for a in additions if not _in_rw(a[0])]
+        deletions = [d for d in deletions if not _in_rw(d[0])]
     # Top-level arrays: Add/Delete belong to the array workers; Set only in place.
     if isinstance(curr[top_key], list):
         additions = []
@@ -3201,7 +3248,7 @@ for top_key in sorted(curr.keys()):
         if len(prev[top_key]) != len(curr[top_key]):
             changes = []
         elif (curr[top_key] and all(isinstance(e, str) for e in curr[top_key])
-              and not any(any(c in e for c in '"\\\n\t') for e in curr[top_key])):
+              and not any(any(c in e for c in '\n\t') for e in curr[top_key])):
             # All-string list: rewritten whole by emit_array_additions; per-index
             # Sets were wrong when an element also moved.
             changes = []
@@ -3216,10 +3263,10 @@ for top_key in sorted(curr.keys()):
                     moved.add(str(i))
             if moved:
                 changes = [(pp, tv) for pp, tv in changes if len(pp) < 2 or pp[1] not in moved]
-    if not changes and not additions and not deletions:
+    if not changes and not additions and not deletions and not rw_subs:
         continue
     changed_top_keys.add(top_key)
-    sub_keys = set()
+    sub_keys = set(rw_subs)
     for path_parts, tv in changes:
         for part in path_parts:
             sub_keys.add(part)
@@ -3230,6 +3277,8 @@ for top_key in sorted(curr.keys()):
         for part in tup[0]:
             sub_keys.add(part)
     print(f"{top_key}\t\t{','.join(sorted(sub_keys))}")
+    for sub in sorted(rw_subs):
+        print(f"DICTRW\t{top_key}\t{sub}\t{rw_subs[sub]}")
     # Deletes first: they must precede Adds for array replacements.
     for (path_parts,) in deletions:
         if any(p == '' for p in path_parts):
@@ -3261,7 +3310,7 @@ PY
 _run_py_diff_workers() {
   local kind="$1" dom="$2" prev_json="$3" curr_json="$4" pb_plist_path="$5" key="$6"
   local _py_add="$CACHE_DIR/${key}.py.add" _py_del="$CACHE_DIR/${key}.py.del" _py_nest="$CACHE_DIR/${key}.py.nest"
-  # Wait on these three pids, never a bare `wait` (the fs_watch flush hint).
+  # Wait on these three pids, never a bare `wait` (it also waits for flush hints).
   local _pyw_add _pyw_del _pyw_nest
   emit_array_additions "$kind" "$dom" "$prev_json" "$curr_json" > "$_py_add" 2>/dev/null &
   _pyw_add=$!
@@ -3693,9 +3742,10 @@ _note_network_service() {
 _note_menubar_positions() {
   local kind="$1" prev="$2" curr="$3" dom="${4:-}" _k _pat
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
-  # Per-app `NSStatusItem Preferred Position <Item>`; on 27 also in MenuBarAgent.
+  # Per-app `NSStatusItem Preferred Position <Item>`; on 27 one central dict
+  # (MenuBarAgent in the beta, the com.apple.MenuBar group container in 27.0.1).
   _pat='"NSStatusItem Preferred Position'
-  [ "$dom" = "com.apple.MenuBarAgent" ] && _pat='"(module|status):'
+  case "$dom" in com.apple.MenuBarAgent|com.apple.MenuBar) _pat='"(module|status):' ;; esac
   # `|| true` INSIDE the $(): diff exits 1 on a difference, pipefail would wipe the key.
   _k=$(/usr/bin/diff "$prev" "$curr" 2>/dev/null \
         | /usr/bin/grep -E "^[<>].*$_pat" \
@@ -3897,7 +3947,7 @@ _note_group_container_domain() {
 # ---------------------------------------
 # Diff Drivers
 #
-# show_plist_diff: a plist FILE changed on disk (poll_watch / fs_watch).
+# show_plist_diff: a plist FILE changed on disk (poll_watch).
 # show_domain_diff: a DOMAIN changed as cfprefsd sees it (`defaults export`).
 # ---------------------------------------
 
@@ -3926,7 +3976,7 @@ show_plist_diff() {
   prev_json="$CACHE_DIR/${key}.prev.json"
   curr_json="$CACHE_DIR/${key}.curr.json"
 
-  # fs_watch/poll_watch mutex per plist (3s). Locks older than 10s are reclaimed:
+  # Mutex per plist (3s): one diff of a file at a time. Locks older than 10s are reclaimed:
   # an orphaned lock would silence the plist for the run.
   local lockdir="$CACHE_DIR/${key}.lock"
   if [ -d "$lockdir" ]; then
@@ -3952,7 +4002,7 @@ show_plist_diff() {
   done
 
   if [ "$silent" != "true" ]; then
-    # Wait on these two pids: a bare `wait` also waits for the fs_watch flush hint
+    # Wait on these two pids: a bare `wait` also waits for background flush hints
     # and, on a hung cfprefsd, froze the diff while holding the lock.
     local _dp_pid _dpj_pid
     dump_plist "$path" "$curr" &
@@ -4190,6 +4240,11 @@ _watchers_teardown() {
   # to their shell, and a `wait` hung a root teardown.
   local _p
   for _p in ${_WATCH_PIDS[@]}; do _kill_tree "$_p"; done
+  # Plus every child of the root: one spawned but not yet in _WATCH_PIDS when
+  # the signal landed would be orphaned.
+  if [ "${HAVE_ZSH_SYSTEM:-false}" = true ]; then
+    for _p in $(/usr/bin/pgrep -P "${sysparams[pid]}" 2>/dev/null || true); do _kill_tree "$_p"; done
+  fi
   # Bounded wait; stop when NO pid answers (`kill -0 a b` fails on the first gone).
   local _i _q _alive
   for _i in 1 2 3 4 5 6; do
@@ -4214,7 +4269,6 @@ _watchers_teardown() {
 # Watcher registry "name|guard|fn|summary", the one source for the spawn loop
 # and the "Watchers active" line. guard is evaluated at launch; summary "y" lists it.
 typeset -ga _WATCHERS=(
-  'fs|[ "$(id -u)" -eq 0 ] && [ "$FS_USAGE" = true ]|fs_watch|'
   'poll|true|poll_watch|'
   'cups|true|cups_watch|'
   'pmset|true|pmset_watch|'
@@ -4236,6 +4290,7 @@ typeset -ga _WATCHERS=(
   'touchid|[ -x /usr/bin/bioutil ]|touchid_watch|y'
   'sharing_exec|[ "$(id -u)" -eq 0 ] && [ -x /usr/bin/eslogger ] && [ -n "$PYTHON3_BIN" ]|sharing_exec_watch|y'
   'launchd_state|[ "$(id -u)" -eq 0 ] && [ -n "$PYTHON3_BIN" ]|launchd_state_watch|y'
+  'menubar_pos|true|menubar_pos_watch|y'
 )
 
 _watcher_parse() {
@@ -4273,14 +4328,33 @@ _snapshot_watch() {
 start_watch() {
   local plist_path last_mtime current_mtime
 
+  # Armed BEFORE any spawn: a TERM during the launch loop killed the root
+  # untrapped and orphaned the watchers already started (measured 1 in 10).
+  # EXIT here: a trap inherited from main does not fire in a `&` job.
+  trap '_watchers_teardown; exit 0' TERM INT
+  trap '_watchers_teardown' EXIT
+  # The orphan watchdog survives a SIGKILL of main, which no trap catches.
+  local _wt_self=""
+  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
+  if [ -n "$_wt_self" ]; then
+    _orphan_watchdog "$_wt_self" &
+    _WATCH_PIDS+=($!)
+  fi
+
   # No plist yet (app never configured): fall back to full-domain polling.
   plist_path=$(get_plist_path_for_domain "$DOMAIN") || plist_path=""
 
   if [ -n "$plist_path" ]; then
     log_line "Mode: optimized mtime polling (0.5s check on $plist_path)"
 
+    # A ByHost-only domain: `defaults export` without -currentHost reads it
+    # empty, so diff the file, which also emits -currentHost.
+    _sw_diff() {
+      if [[ "$plist_path" == */ByHost/* ]]; then show_plist_diff USER "$plist_path"
+      else show_domain_diff "$DOMAIN"; fi
+    }
     (
-      show_domain_diff "$DOMAIN"
+      _sw_diff
       # From here a domain appearing is reportable.
       typeset -g _BASELINE_DONE=true
       last_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
@@ -4290,14 +4364,14 @@ start_watch() {
           current_mtime=$(stat -f %m "$plist_path" 2>/dev/null || echo "")
 
           if [ -n "$current_mtime" ] && [ "$current_mtime" != "$last_mtime" ]; then
-            show_domain_diff "$DOMAIN"
+            _sw_diff
             last_mtime="$current_mtime"
             _forced_tick=0
           else
             # Forced diff every ~2s: mtime cannot see a same-second write.
             _forced_tick=$((_forced_tick + 1))
             if [ "$_forced_tick" -ge 4 ]; then
-              show_domain_diff "$DOMAIN"
+              _sw_diff
               last_mtime="$current_mtime"
               _forced_tick=0
             fi
@@ -4327,6 +4401,22 @@ start_watch() {
 
   _emit_mdm_resolver_header
 
+  wait
+}
+
+# ---------------------------------------
+# ALL Mode (core)
+#
+# Baseline snapshot of every plist, then the core detector poll_watch (mtime
+# polling). The feature watchers it runs next to are in the WATCHERS section.
+# ---------------------------------------
+
+start_watch_all() {
+  # Armed BEFORE any spawn: a TERM during the launch loop killed the root
+  # untrapped and orphaned the watchers already started (measured 1 in 10).
+  # EXIT here: a trap inherited from main does not fire in a `&` job.
+  trap '_watchers_teardown; exit 0' TERM INT
+  trap '_watchers_teardown' EXIT
   # The orphan watchdog survives a SIGKILL of main, which no trap catches.
   local _wt_self=""
   [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
@@ -4335,28 +4425,13 @@ start_watch() {
     _WATCH_PIDS+=($!)
   fi
 
-  # EXIT armed here: a trap inherited from main does not fire in a `&` job.
-  trap '_watchers_teardown; exit 0' TERM INT
-  trap '_watchers_teardown' EXIT
-  wait
-}
-
-# ---------------------------------------
-# ALL Mode (core)
-#
-# Baseline snapshot of every plist, then the two core detectors: poll_watch
-# (mtime polling) and fs_watch (fs_usage, deprecated). The feature watchers
-# they run next to are in the WATCHERS section that follows.
-# ---------------------------------------
-
-start_watch_all() {
   if [ "$(id -u)" -ne 0 ]; then
     log_line "Mode: monitoring ALL preferences (polling only. No root)"
-  elif [ "$FS_USAGE" = true ]; then
-    log_line "Mode: monitoring ALL preferences (fs_usage + polling)"
-    log_line "Cmd: # NOTE: --fs-usage (Jamf \$12) is deprecated and will be removed in the next release. Polling sees the same writes."
   else
     log_line "Mode: monitoring ALL preferences (polling)"
+  fi
+  if [ "$FS_USAGE" = true ]; then
+    log_line "Cmd: # NOTE: --fs-usage (Jamf \$12) was removed in 1.5.2 and is ignored. Polling sees the same writes."
   fi
 
   local prefs_user prefs_system
@@ -4444,147 +4519,7 @@ start_watch_all() {
     log_line "Cmd: # NOTE: Changes may take a few seconds to appear. Wait between actions for reliable capture"
   fi
 
-  # USER / SYSTEM (baselined), CONTAINER, OTHER. Separate for the harness.
-  _fs_classify() {
-    local _p="$1"
-    case "$_p" in
-      "$prefs_user"/*)   print -r -- USER ;;
-      "$prefs_system"/*) print -r -- SYSTEM ;;
-      */Library/Containers/*|*"/Library/Group Containers/"*) print -r -- CONTAINER ;;
-      *)                 print -r -- OTHER ;;
-    esac
-  }
-
-  # Real-time detector: plist writes via fs_usage.
-  fs_watch() {
-    # Debounce: cfprefsd fires several events per write; poll_watch catches misses.
-    typeset -A _fs_last_seen=()
-    local _FS_DEBOUNCE_S=0.3
-    # script(1) gives fs_usage a pty so it line-buffers (no stdbuf on macOS).
-    # Path resolved and its absence logged: a wrong path once killed it silently.
-    local _fsu=""
-    for _c in /usr/bin/fs_usage /usr/sbin/fs_usage /sbin/fs_usage; do
-      [ -x "$_c" ] && { _fsu="$_c"; break; }
-    done
-    if [ -z "$_fsu" ]; then
-      log_line "Cmd: # NOTE: fs_usage not found. Real-time detection off; polling covers the same ground"
-      return 0
-    fi
-    # ktrace admits ONE client. No warning up front (`ktrace info` names routine
-    # daemons on a healthy Mac); the post-mortem below asks who holds it.
-    local _fsu_who=""
-    local _fsu_err="${PREFWATCH_TMPDIR}/fs_usage.err"
-    # `</dev/null`: script(1) dies on a socket stdin (Jamf). fs_usage runs under
-    # `sh -c "exec … 2>>err"` so its stderr is kept and the tree stays flat.
-    # `-f pathname`, not filesys: 510 MB against 8 GB under a reindex.
-    # The watchdog kills only OUR fs_usage past FS_USAGE_RSS_LIMIT_MB (matched by
-    # grandparent pid) and dies with the pipeline.
-    local _fw_self="" _fw_watchdog=""
-    [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _fw_self="${sysparams[pid]}"
-    if [ -n "$_fw_self" ]; then
-      ( local _fw_pid _fw_gp _fw_rss _fw_seen=false
-        while /bin/sleep 10; do
-          _fw_pid=$(/usr/bin/pgrep -x fs_usage 2>/dev/null | /usr/bin/head -1) || _fw_pid=""
-          if [ -z "$_fw_pid" ]; then [ "$_fw_seen" = true ] && exit 0; continue; fi
-          _fw_gp=$(/bin/ps -o ppid= -p "$(/bin/ps -o ppid= -p "$_fw_pid" 2>/dev/null | /usr/bin/tr -d ' ')" 2>/dev/null | /usr/bin/tr -d ' ') || _fw_gp=""
-          [ "$_fw_gp" = "$_fw_self" ] || continue
-          _fw_seen=true
-          _fw_rss=$(/bin/ps -o rss= -p "$_fw_pid" 2>/dev/null | /usr/bin/tr -d ' ') || _fw_rss=""
-          [ -n "$_fw_rss" ] || continue
-          if (( _fw_rss / 1024 > FS_USAGE_RSS_LIMIT_MB )); then
-            printf '%d' "$(( _fw_rss / 1024 ))" > "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null || true
-            /bin/kill -TERM "$_fw_pid" 2>/dev/null || true
-            exit 0
-          fi
-        done ) &
-      _fw_watchdog=$!
-    fi
-    script -q /dev/null /bin/sh -c "exec ${(q)_fsu} -w -f pathname 2>>${(q)_fsu_err}" </dev/null 2>>"$_fsu_err" |
-    # ONE sed, ON ONE LINE (fs-path-extract reads it back): 1. the plist path,
-    # anchored on space + '/' (a greedy `.*` once dropped the /Users prefix);
-    # 2. the 27 firmlink /System/Volumes/Data/Users → /Users; 3. only files IN a
-    # Preferences directory. LC_ALL=C: one non-UTF-8 byte kills BSD sed.
-    LC_ALL=C /usr/bin/sed -l -nE -e 's@.*[[:space:]](/([^[:space:]]*/)?Library/(Group Containers|Containers|Preferences)/.*\.plist).*@\1@' -e 's@^/System/Volumes/Data/@/@' -e '\@/Library/Preferences/(ByHost/)?[^/]+\.plist$@p' |
-    while IFS= read -r plist; do
-      [ -z "$plist" ] && continue
-      cat_type=$(_fs_classify "$plist")
-      if [ "$cat_type" = "SYSTEM" ] && [ "${INCLUDE_SYSTEM}" != "true" ]; then
-        continue
-      fi
-      # Containers have no baseline: diffing would announce "a new domain". Dropped (--debug says so).
-      if [ "$cat_type" = "CONTAINER" ]; then
-        _dbg_filtered "$(domain_from_plist_path "$plist") (container prefs. Out of scope, see README)"
-        continue
-      fi
-      # Other trees (root's ~, another user's, a volume): no baseline either.
-      if [ "$cat_type" = "OTHER" ]; then
-        _dbg_filtered "$(domain_from_plist_path "$plist") (outside the watched preference trees: $plist)"
-        continue
-      fi
-      if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
-        local _now="$EPOCHREALTIME" _last="${_fs_last_seen[$plist]:-0}"
-        if (( _now - _last < _FS_DEBOUNCE_S )); then
-          continue
-        fi
-        _fs_last_seen[$plist]="$_now"
-      fi
-      dom=$(domain_from_plist_path "$plist")
-      if is_excluded_domain "$dom"; then
-        continue
-      fi
-      if [ -n "$dom" ]; then
-        /usr/bin/touch "$PREFWATCH_TMPDIR/active-domains/$dom" 2>/dev/null || true
-        # Pre-flush cfprefsd so the first retry of show_plist_diff sees the change.
-        if [[ "$plist" == *"/ByHost/"* ]]; then
-          "${RUN_AS_USER[@]}" /usr/bin/defaults -currentHost read "$dom" >/dev/null 2>&1 &
-        else
-          "${RUN_AS_USER[@]}" /usr/bin/defaults read "$dom" >/dev/null 2>&1 &
-        fi
-      fi
-      if [ "$cat_type" = "USER" ]; then
-        log_user "FS change: $plist"; show_plist_diff USER "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-      else
-        log_system "FS change: $plist"; show_plist_diff SYSTEM "$plist"; [ -n "$dom" ] && show_domain_diff "$dom" true
-      fi
-    done
-    # fs_usage exited: real-time detection is over; report what it said.
-    [ -n "$_fw_watchdog" ] && { /bin/kill "$_fw_watchdog" 2>/dev/null || true; }
-    local _why=""
-    [ -s "$_fsu_err" ] && _why=$(/usr/bin/head -1 "$_fsu_err" 2>/dev/null)
-    if [ -s "${PREFWATCH_TMPDIR}/fs_usage.rss" ]; then
-      local _fw_hit=""; _fw_hit=$(/bin/cat "${PREFWATCH_TMPDIR}/fs_usage.rss" 2>/dev/null) || _fw_hit="?"
-      _log_note_wrapped "" "real-time detection stopped by PrefWatch: fs_usage reached ${_fw_hit} MB (limit ${FS_USAGE_RSS_LIMIT_MB} MB). The machine's file activity outran it. Polling continues, at the same latency."
-      return 0
-    fi
-    case "$_why" in
-      *"Resource busy"*)
-        # Name the ktrace holder ("Owning process is [N]", e.g. FlexNet); "Last
-        # configured by" only as a labelled fallback. Guarded: fails without root.
-        local _kt="" _own_pid=""
-        if [ -x /usr/bin/ktrace ]; then
-          _kt=$(/usr/bin/ktrace info 2>/dev/null) || _kt=""
-          _own_pid=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE 's/.*Owning process is \[([0-9]+)\].*/\1/p' | /usr/bin/head -1) || _own_pid=""
-          if [ -n "$_own_pid" ]; then
-            _fsu_who=$(/bin/ps -o comm= -p "$_own_pid" 2>/dev/null) || _fsu_who=""
-            [ -n "$_fsu_who" ] && _fsu_who="held by $_fsu_who (pid $_own_pid)"
-          fi
-          if [ -z "$_fsu_who" ]; then
-            _fsu_who=$(printf '%s\n' "$_kt" | /usr/bin/sed -nE "s/.*Last configured by '([^']+)'.*/\1/p" | /usr/bin/head -1) || _fsu_who=""
-            [ -n "$_fsu_who" ] && _fsu_who="taken; last configured by '$_fsu_who', which may not be the holder"
-          fi
-        fi
-        # Each branch supplies its full clause.
-        log_line "Cmd: # NOTE: real-time detection OFF. Ktrace allows one client and it is ${_fsu_who:-taken}."
-        # Measured: 0.47s with real-time, 0.49s without.
-        log_line "Cmd: #       Polling covers the same ground at the same latency (measured)." ;;
-      "")
-        log_line "Cmd: # NOTE: real-time detection stopped (fs_usage exited without a message). Polling continues" ;;
-      *)
-        log_line "Cmd: # NOTE: real-time detection stopped. Fs_usage: $_why" ;;
-    esac
-  }
-
-  # Fallback detector: periodic `find -newer` for writes fs_usage misses.
+  # The detector: periodic `find -newer` on the preference trees.
   poll_watch() {
     local marker_user marker_sys active_dir
     # Locals declared once: a re-`local` prints `foo=value`.
@@ -4615,7 +4550,7 @@ start_watch_all() {
             continue
           fi
           _adom="${_af:t}"
-          # Bare read only; ByHost is flushed by show_plist_diff/fs_watch.
+          # Bare read only; a ByHost write is picked up by its file mtime.
           "${RUN_AS_USER[@]}" /usr/bin/defaults read "$_adom" >/dev/null 2>&1 &
           _pids+=($!)
         done
@@ -4682,17 +4617,6 @@ start_watch_all() {
     if eval "$_W_GUARD"; then _spawn "$_W_FN"; fi
   done
 
-  # The orphan watchdog survives a SIGKILL of main, which no trap catches.
-  local _wt_self=""
-  [ "${HAVE_ZSH_SYSTEM:-false}" = true ] && _wt_self="${sysparams[pid]}"
-  if [ -n "$_wt_self" ]; then
-    _orphan_watchdog "$_wt_self" &
-    _WATCH_PIDS+=($!)
-  fi
-
-  # EXIT armed here: a trap inherited from main does not fire in a `&` job.
-  trap '_watchers_teardown; exit 0' TERM INT
-  trap '_watchers_teardown' EXIT
   wait
 }
 
@@ -4708,6 +4632,7 @@ start_watch_all() {
 #   useracct_watch, hostname_watch, default_apps_watch, wallpaper_watch
 #   tcc_watch, nvram_watch, timezone_watch, security_watch
 #   fw_apps_watch, touchid_watch, defprinter_watch, spotlight_watch
+#   menubar_pos_watch
 # ---------------------------------------
 
 # Printer Sharing: reads the Browsing line of cupsd.conf. A missing cupsd.conf
@@ -5414,9 +5339,12 @@ PY
     while IFS=$'\t' read -r _kind _what _app; do
       [ -n "$_kind" ] || continue
       _note_should_show __default_apps__ && log_line "Cmd: # NOTE: needs utiluti (github.com/scriptingosx/utiluti)"
-      # Only the default browser pops a macOS confirmation.
-      [ "$_kind" = url ] && [ "$_what" = http ] && _note_should_show __default_browser__ \
-        && log_line "Cmd: # NOTE: changing the default browser prompts the user to confirm"
+      # Every type prompts, not only the browser (CSV measured on 27.0.1); utiluti
+      # blocks until someone answers, so an unattended policy hangs.
+      _note_should_show __default_apps_confirm__ && {
+        log_line "Cmd: # NOTE: macOS asks the user to confirm each default app change, not only the browser."
+        log_line "Cmd: # NOTE: utiluti waits for that answer: with nobody at the screen, the policy blocks."
+      }
       # Both fields are user-writable: escaped. --mdm wraps it (per-user state).
       local _uu="utiluti $_kind set \"$(_escape_dq "$_what")\" \"$(_escape_dq "$_app")\""
       log_line "Cmd: $(_mdm_wrap "$_uu")"
@@ -5982,6 +5910,19 @@ spotlight_watch() {
   _snapshot_watch spotlight 3 _read_spotlight _onchange_spotlight _guard_nonempty
 }
 
+# Menu bar order on 27.0.1: a Cmd+drag writes only the group container
+# com.apple.MenuBar, which ALL mode never diffs. Read it here, for the NOTE only.
+menubar_pos_watch() {
+  _read_menubar_pos() {
+    local _f="$TARGET_HOME/Library/Group Containers/com.apple.MenuBar/Library/Preferences/com.apple.MenuBar.plist"
+    # Absent before 27, or until the first drag: not an error, no guard on the file.
+    [ -f "$_f" ] || return 0
+    "${RUN_AS_USER[@]}" /usr/bin/plutil -p "$_f" 2>/dev/null || true
+  }
+  _onchange_menubar_pos() { _note_menubar_positions USER "$1" "$2" com.apple.MenuBar; }
+  _snapshot_watch menubar_pos 3 _read_menubar_pos _onchange_menubar_pos _guard_nonempty
+}
+
 # ============================================================================
 # MAIN. Pre-flight, logging setup, launch
 # ============================================================================
@@ -6096,7 +6037,7 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
     sleep 1 || true
   done
   log_line "Console.app closed. Stopping monitoring"
-  # Reuse the teardown of the traps: a bare kill left eslogger and fs_usage running as root.
+  # Reuse the teardown of the traps: a bare kill left eslogger running as root.
   _shutdown_watcher
   exit 0
 else
