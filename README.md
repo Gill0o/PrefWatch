@@ -42,11 +42,10 @@ sudo pkill -f 'prefwatch\.sh'
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
-| `--fs-usage` | -- | Deprecated, removed in the next release. ALL mode as root: also run the `fs_usage` real-time detector next to polling (Jamf `$12`) | Off |
 
 ## Jamf Pro Integration
 
-Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug, `$12`=fs_usage. Launches Console.app for live viewing; logs to stdout + file + syslog.
+Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes its parameters from `$4` onward: `$4`=domain, `$5`=log path, `$6`=include system, `$7`=only cmds, `$8`=exclusions, `$9`=MDM output, `$10`=hot domains, `$11`=debug. Launches Console.app for live viewing; logs to stdout + file + syslog.
 
 ## Scope
 
@@ -54,7 +53,7 @@ PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), pl
 
 A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing, Bluetooth on/off, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
-Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), and hardware state (display & keyboard brightness, HDR).
+Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), Finder sidebar favorites (a `com.apple.sharedfilelist` file, not a plist pref), and hardware state (display & keyboard brightness, HDR).
 
 A `# NOTE:` also rides on a reproduced change: how to apply it (logout/login, `killall`, restart a service, run as root), or a caveat on the emitted command. A positional array index or a ByHost/display UUID that won't transplant, or a pane that writes every default on first open.
 
@@ -69,7 +68,7 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 
 ## Detection
 
-- A single domain is watched in its `~/Library/Preferences` plist only. Its ByHost (per-hardware) writes surface in ALL mode.
+- A single domain is watched in one plist: its `~/Library/Preferences` file, or its ByHost (per-hardware) file when it has only that. A domain with both shows its ByHost writes in ALL mode.
 - ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state. Full Disk Access is what names a privacy permission; without it, or where macOS keeps the per-user privacy database out of every process's reach, the change is reported, not named.
 - Detection is by polling, so latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.2 — 2026-10-26
+
+### Fix
+- Watching a single domain that exists only in ByHost (per-hardware) emitted nothing: the ByHost file was never found. It is watched now, with `-currentHost` commands.
+- A list entry that reads as plist syntax, `(x)`, `{x}`, `<x>`, `$(x)`, was refused by `defaults -array` or written as a sub-list. It is quoted now; one with `"` or `\` no longer needs python3.
+- A Finder toolbar edit (item removed, added, moved) came out as PlistBuddy lines by index: on a Mac whose bar differs, neither bar resulted. One `defaults write … -dict-add` now, whole list.
+- Any default app change asks the user to confirm, not only the browser's, and `utiluti` waits for that answer. The NOTE said browser only; it now comes with every change.
+- Moving a menu bar icon on macOS 27 gave nothing, not even the layout NOTE: 27.0.1 keeps positions in a group container. It is watched now, for the NOTE.
+- Stopping prefwatch just as it printed "You can now make your changes" could leave its watchers running (1 run in 6). The teardown is armed before the first watcher starts.
+
+### Noise
+- Electron's first-launch keys `AppleTextDirection`, `NSForceRightToLeftWritingDirection`, `NSTreatUnknownArgumentsAsOpen` (FortiClient, Slack, VS Code) are filtered; the global domain keeps them.
+- FortiClient `<gateway>/certWarn` (an untrusted certificate accepted, pinned to its hash) is filtered: replayed, it would pre-trust that certificate on every Mac.
+
+### Note
+- `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
+- CONTRIBUTING matches the script again: its 14 sections, a watcher added by one `_WATCHERS` line, Jamf `$11`, testing on macOS 15, 26 and 27.
+
+
 ## 1.5.1 — 2026-09-23
 
 ### Feature

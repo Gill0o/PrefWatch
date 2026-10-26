@@ -41,11 +41,11 @@ Temporary Items
 # Local-only test tracking (never publish)
 TESTING.md
 
-# Local-only test harnesses — roundtrip.zsh + vm-persistence.zsh are dev tooling,
+# Local-only test harnesses: roundtrip.zsh + vm-persistence.zsh are dev tooling,
 # NEVER committed/pushed (also covers their vmtest-state.tsv/vmtest-report.txt output)
 /tests/
 
-# Claude Code local config — settings.local.json is machine state, not project
+# Claude Code local config: settings.local.json is machine state, not project
 # config: personal permission grants, paths into other repos, scratchpad paths.
 # Same family as /tests/ and TESTING.md above.
 .claude/
