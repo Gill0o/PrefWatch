@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.5.2 — unreleased
+## 1.5.3 — unreleased
+
+
+## 1.5.2 — 2026-10-26
 
 ### Fix
 - Watching a single domain that exists only in ByHost (per-hardware) emitted nothing: the ByHost file was never found. It is watched now, with `-currentHost` commands.
