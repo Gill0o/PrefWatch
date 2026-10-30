@@ -3,11 +3,12 @@
 ## 1.5.3 — unreleased
 
 ### Fix
-- A key whose type probe said integer or float got its dump text pasted bare after `-int`/`-float`, even a string written in between. The text must be a number now; a string stays quoted.
+- A key read as a number, then rewritten as a string an instant later, had that string pasted bare after `-int`/`-float`, shell included. The text must be a number now; a string stays quoted.
 - The `# dockutil --add '<path>'` and `--remove '<label>'` lines broke once copied when the app name holds an apostrophe (Bob's App). The apostrophe is escaped.
 - A nested value or key holding `'`, `"` or `\` made PlistBuddy stop on "Unclosed Quotes": nothing was written on the target. They are escaped now, in `Add`, `Set` and `Delete`.
 - Deleting a nested key whose name holds `"` emitted a `Delete` of the wrong key (`a"b` read as `b`). The key is passed whole now.
-- A date, a binary value (1 KB at most) or a multi-line string came out as nothing: its type was read in a form `plutil` refuses on macOS 27. They are `-date`, `-data` and `-string` now.
+- A date, a binary value (1 KB at most) or a multi-line string came out as nothing on macOS 27, and on any macOS when the key name holds a dot. They are `-date`, `-data` and `-string` now.
+
 
 ## 1.5.2 — 2026-10-26
 
