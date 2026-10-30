@@ -2032,17 +2032,18 @@ extract_type_value_with_plutil() {
 # `defaults … delete` → PlistBuddy. $2 = real plist path (the ByHost file,
 # since -currentHost does not survive the conversion).
 convert_delete_to_plistbuddy() {
-  # $3 = domain from the caller; the regex below is only a fallback.
-  local cmd="$1" path_override="${2:-}" domain_override="${3:-}"
+  # $3 = domain, $4 = raw target from the caller; the regexes below are only
+  # a fallback (a key holding " is already escaped in the command: a"b read b).
+  local cmd="$1" path_override="${2:-}" domain_override="${3:-}" target="${4:-}"
 
-  local domain target
+  local domain
   if [ -n "$domain_override" ]; then
     domain="$domain_override"
   else
     domain=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+delete[[:space:]]+"?([^"[:space:]]+)"?.*/\2/p')
   fi
   # Target = LAST quoted field: survives a domain containing a space.
-  target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*"([^"]*)"[[:space:]]*$/\1/p')
+  [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*"([^"]*)"[[:space:]]*$/\1/p')
   [ -z "$target" ] && target=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*[[:space:]]([^"[:space:]]+)[[:space:]]*$/\1/p')
 
   [ -n "$domain" ] || return 1
@@ -2066,9 +2067,10 @@ convert_delete_to_plistbuddy() {
     printf '# WARNING: array deletes shift indexes. Run these in the order shown\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
-  # Escape ' for the single-quoted -c expression.
+  # PlistBuddy's own escapes first, then ' for the single-quoted -c wrapper.
   local _target_esc
-  _target_esc=$(printf '%s' "$target" | /usr/bin/sed "s/'/'\\\\''/g")
+  _target_esc=$(_escape_pb_expr "$target")
+  _target_esc="${_target_esc//$_SQ/$_SQ_ESC}"
   # Escape the path AFTER templatizing, so $loggedInUser / $UUID still expand.
   printf '/usr/libexec/PlistBuddy -c '\''Delete %s'\'' "%s"\n' "$_target_esc" "$(_escape_pb_path "$_mdm_path")"
   return 0
@@ -2099,6 +2101,14 @@ _escape_pb_path() {
 }
 
 _escape_dq() { printf '%s' "$1" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g; s/`/\\`/g'; }
+
+# A key or value inside a PlistBuddy -c expression: \ ' " and space are
+# escapes there (measured on 27: a bare ' is "Unclosed Quotes", nothing written).
+_escape_pb_expr() {
+  local s="$1"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$_SQ/\\$_SQ}"; s="${s// /\\ }"
+  printf '%s' "$s"
+}
 
 # `defaults write …` via the type cascade; empty for array/dict.
 # Args: dom keyname trimmed hostflag plist_path
@@ -2294,9 +2304,9 @@ _delete_keeps_defaults() {
 }
 
 # Emit a built command via _log_kind, with filters and NOTEs.
-# Args: kind cmd note_dom is_delete [plist_path]
+# Args: kind cmd note_dom is_delete [plist_path] [raw delete target]
 _emit_cmd() {
-  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4" emit_plist_path="${5:-}"
+  local kind="$1" cmd="$2" note_dom="$3" is_delete="$4" emit_plist_path="${5:-}" del_target="${6:-}"
 
   [ -n "$cmd" ] || return 0
   if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command: ${cmd[1,120]})"; return 0; fi
@@ -2321,7 +2331,7 @@ _emit_cmd() {
     if _delete_keeps_defaults "$cmd" "$emit_plist_path"; then
       _note_device_uuid "$kind" "${${cmd%\"}##*\"}"
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
-    elif pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" 2>/dev/null); then
+    elif pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" "$del_target" 2>/dev/null); then
       while IFS= read -r pb_line; do
         [ -n "$pb_line" ] || continue
         case "$pb_line" in
@@ -2556,7 +2566,7 @@ _process_diff_lines() {
           continue
         fi
         delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
-        _emit_cmd "$kind" "$delete_cmd" "$dom" true "$emit_plist_path"
+        _emit_cmd "$kind" "$delete_cmd" "$dom" true "$emit_plist_path" "${array_name:+:${array_name}:${array_idx}}${array_name:-$keyname}"
         ;;
     esac
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
@@ -2680,15 +2690,18 @@ def pb_type_value(val):
     if isinstance(val, float):
         return ("real", str(val))
     if isinstance(val, str):
-        # PlistBuddy strips a leading space: quote values with edge whitespace.
+        # PlistBuddy reads \ ' " as escapes even bare, and a bare ' or " is an
+        # unclosed quote (nothing written). Edge whitespace needs the quotes.
+        s = pb_escape(val, spaces=False)
         if val[:1].isspace() or val[-1:].isspace():
-            return ("string", '"' + val.replace('"', '\\"') + '"')
-        return ("string", val)
+            return ("string", '"' + s + '"')
+        return ("string", s)
     return None
 
-def pb_escape(s):
-    """Escape spaces in PlistBuddy key paths"""
-    return s.replace(' ', '\\ ')
+def pb_escape(s, spaces=True):
+    """Escape \\ ' " (and spaces in a key path) for a PlistBuddy expression."""
+    s = s.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
+    return s.replace(' ', '\\ ') if spaces else s
 
 _arr_empty_noted = [False]
 def emit_plistbuddy(array_name, index, item, path_prefix=""):
@@ -3025,7 +3038,7 @@ emit_array_deletions() {
         && _log_kind "$kind" "Cmd: #       (needs python3 on the TARGET. Without the Command Line Tools /usr/bin/python3 only offers to install them)"
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
-      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" 2>/dev/null); then
+      if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" ":${base}:${idx}" 2>/dev/null); then
         while IFS= read -r pb_line; do
           [ -n "$pb_line" ] || continue
           case "$pb_line" in
@@ -3101,11 +3114,18 @@ def pb_type_value(val):
     if isinstance(val, float):
         return ("real", str(val))
     if isinstance(val, str):
-        # PlistBuddy strips a leading space: quote values with edge whitespace.
+        # PlistBuddy reads \ ' " as escapes even bare, and a bare ' or " is an
+        # unclosed quote (nothing written). Edge whitespace needs the quotes.
+        s = pb_escape(val, spaces=False)
         if val[:1].isspace() or val[-1:].isspace():
-            return ("string", '"' + val.replace('"', '\\"') + '"')
-        return ("string", val)
+            return ("string", '"' + s + '"')
+        return ("string", s)
     return None
+
+def pb_escape(s, spaces=True):
+    """Escape \\ ' " (and spaces in a key path) for a PlistBuddy expression."""
+    s = s.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
+    return s.replace(' ', '\\ ') if spaces else s
 
 def find_leaf_changes(prev_obj, curr_obj, path_parts):
     """Recursively find changed leaf values, added sub-keys, and deleted sub-keys."""
@@ -3155,19 +3175,19 @@ def emit_add_tree(base_parts, obj):
     if any(p == '' for p in base_parts):
         _note_empty_key(); return
     if isinstance(obj, dict):
-        path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
+        path = ':'.join(pb_escape(p) for p in base_parts)
         print(f"PBCMD\tAdd :{path} dict")
         for k in sorted(obj.keys()):
             emit_add_tree(base_parts + [str(k)], obj[k])
     elif isinstance(obj, list):
-        path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
+        path = ':'.join(pb_escape(p) for p in base_parts)
         print(f"PBCMD\tAdd :{path} array")
         for i, item in enumerate(obj):
             emit_add_tree(base_parts + [str(i)], item)
     else:
         tv = pb_type_value(obj)
         if tv:
-            path = ':'.join(p.replace(' ', '\\ ') for p in base_parts)
+            path = ':'.join(pb_escape(p) for p in base_parts)
             print(f"PBCMD\tAdd :{path} {tv[0]} {tv[1]}")
 
 # Print preset noise from the shell, fnmatchcase = zsh `case` semantics.
@@ -3287,7 +3307,7 @@ for top_key in sorted(curr.keys()):
     for (path_parts,) in deletions:
         if any(p == '' for p in path_parts):
             _note_empty_key(); continue
-        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
+        full_path = ':'.join(pb_escape(p) for p in path_parts)
         print(f"PBCMD\tDelete :{full_path}")
     for path_parts, obj in additions:
         emit_add_tree(path_parts, obj)
@@ -3298,7 +3318,7 @@ for top_key in sorted(curr.keys()):
                 continue
         if any(p == '' for p in path_parts):
             _note_empty_key(); continue
-        full_path = ':'.join(p.replace(' ', '\\ ') for p in path_parts)
+        full_path = ':'.join(pb_escape(p) for p in path_parts)
         print(f"PBCMD\tSet :{full_path} {pvalue}")
 PY
 ) || return 0

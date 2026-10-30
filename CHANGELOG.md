@@ -5,6 +5,8 @@
 ### Fix
 - A key whose type probe said integer or float got its dump text pasted bare after `-int`/`-float`, even a string written in between. The text must be a number now; a string stays quoted.
 - The `# dockutil --add '<path>'` and `--remove '<label>'` lines broke once copied when the app name holds an apostrophe (Bob's App). The apostrophe is escaped.
+- A nested value or key holding `'`, `"` or `\` made PlistBuddy stop on "Unclosed Quotes": nothing was written on the target. They are escaped now, in `Add`, `Set` and `Delete`.
+- Deleting a nested key whose name holds `"` emitted a `Delete` of the wrong key (`a"b` read as `b`). The key is passed whole now.
 
 ## 1.5.2 — 2026-10-26
 
