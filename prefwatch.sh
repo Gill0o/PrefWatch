@@ -2125,9 +2125,11 @@ _build_defaults_write_cmd() {
     actual_type=$("${RUN_AS_USER[@]}" /usr/bin/defaults ${hostflag:+$hostflag} read-type "$dom" "$keyname" 2>/dev/null | /usr/bin/awk '{print $NF}') || actual_type=""
   fi
 
-  if [ "$actual_type" = "float" ]; then
+  # The probe and the dump are two instants: a bare interpolation needs the
+  # text to BE a number, or a string that arrived in between runs as shell.
+  if [ "$actual_type" = "float" ] && [[ "$trimmed" =~ ^-?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$ ]]; then
     cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
-  elif [ "$actual_type" = "integer" ]; then
+  elif [ "$actual_type" = "integer" ] && [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
     cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
   elif [ "$actual_type" = "boolean" ]; then
     type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
@@ -2782,7 +2784,9 @@ for prefix, index, item in results:
                 _path = _up.unquote(_url.replace("file://", "").rstrip("/")) if _url else ""
                 if _path:
                     _sect = "apps" if arr_name == "persistent-apps" else "others"
-                    _du = f"# dockutil --add '{_path}' --section {_sect}"
+                    # The line is copied and run: a ' in the path closes the quote.
+                    _pq = _path.replace("'", "'\\''")
+                    _du = f"# dockutil --add '{_pq}' --section {_sect}"
                     if arr_name == "persistent-others":
                         def _i(v):
                             try: return int(v)          # tile-data may store these as int OR string
@@ -2983,7 +2987,7 @@ emit_array_deletions() {
     # Dock: `dockutil --remove` by label; the Delete below works on its own.
     if [ -n "$app_label" ]; then
       _note_dockutil_alt "$kind"
-      _log_kind "$kind" "Cmd: # dockutil --remove '$app_label'"
+      _log_kind "$kind" "Cmd: # dockutil --remove '${app_label//$_SQ/$_SQ_ESC}'"
     fi
 
     # $dom and $base come from the plist: escape them like the builder does.
