@@ -8,6 +8,10 @@
 - A nested value or key holding `'`, `"` or `\` made PlistBuddy stop on "Unclosed Quotes": nothing was written on the target. They are escaped now, in `Add`, `Set` and `Delete`.
 - Deleting a nested key whose name holds `"` emitted a `Delete` of the wrong key (`a"b` read as `b`). The key is passed whole now.
 - A date, a binary value (1 KB at most) or a multi-line string came out as nothing on macOS 27, and on any macOS when the key name holds a dot. They are `-date`, `-data` and `-string` now.
+- A top-level key whose name holds `"` was skipped without a trace, written or deleted. It is emitted now.
+- Removing an entry holding `$` from a list that needs the `python3` form left it in place: `$` was escaped for the shell, not for Python. Only `"` is escaped now.
+- In ALL mode an excluded domain could still reach the log through the command emitter: its guard compared the domain with its quotes on. It compares the name now.
+- A domain name holding `/` turned the default log path into a tree under `/var/log`. The `/` becomes `_`.
 
 
 ## 1.5.2 — 2026-10-26

@@ -757,7 +757,7 @@ else
   if [ "$ALL_MODE" = "true" ]; then
     LOGFILE="/var/log/prefwatch-v${SCRIPT_VERSION}.log"
   else
-    LOGFILE="/var/log/prefwatch-v${SCRIPT_VERSION}-${DOMAIN}.log"
+    LOGFILE="/var/log/prefwatch-v${SCRIPT_VERSION}-${DOMAIN//\//_}.log"   # a / would mkdir under /var/log
   fi
 fi
 
@@ -1340,7 +1340,7 @@ is_noisy_key() {
           return 0 ;;
         queryViewOptions|PasteboardHistoryVersion|PreferencesVersion|version)
           return 0 ;;
-        __NSEnable*|SSAction*|FTEReset*)
+        __NSEnable*|SSAction*)
           return 0 ;;
         # Noisy: auto-learned shortcuts, reload trigger
         mailShortcuts|reloadShortcuts)
@@ -1353,13 +1353,6 @@ is_noisy_key() {
     us.zoom.xos)
       case "$keyname" in
         *@xmpp.zoom.us*|kIM_LastOpenedSession|ZMJoinMeetingFlowAnchor) return 0 ;;
-      esac
-      ;;
-
-    # Campo: per-target engagement counters.
-    com.apple.campo)
-      case "$keyname" in
-        engagementCount*|engagementDate*) return 0 ;;
       esac
       ;;
 
@@ -1901,7 +1894,7 @@ _log() {
     fi
 
     if [[ "$out" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
-      local _cmd_dom="${match[2]}"
+      local _cmd_dom="${match[2]//\"/}"   # the builder quotes the domain
       # Only ALL mode may drop an excluded domain; a named domain is always watched.
       if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
         return 0
@@ -1916,7 +1909,7 @@ _log() {
 
   local line="[$ts] $msg"
   if [[ "$msg" =~ 'defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+)' ]]; then
-    local _cmd_dom="${match[2]}"
+    local _cmd_dom="${match[2]//\"/}"
     # Same guard as the ONLY_CMDS branch above.
     if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then
       return 0
@@ -2346,6 +2339,7 @@ _emit_cmd() {
   if [ "$is_delete" != "true" ]; then
     local _cmd_dom
     _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
+    _cmd_dom="${_cmd_dom//\"/}"   # the builder quotes the domain
     # See _log: only ALL mode may drop an excluded domain.
     if [ "${ALL_MODE:-false}" = "true" ] && [ -n "$_cmd_dom" ] && is_excluded_domain "$_cmd_dom"; then _dbg_filtered "$_cmd_dom (excluded-domain)"; return 0; fi
     _emit_contextual_note "$note_dom" ""
@@ -2537,7 +2531,9 @@ _process_diff_lines() {
   local _aline
   while IFS= read -r _aline; do
     # `if`, not `&&`: a non-match as last command trips set -e.
-    if [[ "$_aline" =~ '^\+[[:space:]]*"([^"]+)"' ]]; then _added_keys["$match[1]"]=1; fi
+    # A key may hold a " (plutil -p escapes nothing): split on the first `" => `.
+    # Into a variable first: that expansion inside [ ] is an "invalid subscript".
+    if [[ "$_aline" == *'" => '* ]]; then _aline="${_aline#*\"}"; _aline="${_aline%%\" => *}"; _added_keys[$_aline]=1; fi
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && $0 ~ /^\+/ && $0 !~ /^\+\+\+/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
 
   local dline kv keyname val snippet pretty_key array_meta array_name array_idx trimmed cmd delete_cmd
@@ -2547,9 +2543,11 @@ _process_diff_lines() {
     _log_kind "$kind" "Diff $diff_label: $dline"
 
     array_meta="" array_name="" array_idx=""
-    [[ "$dline" =~ '^[+-][[:space:]]*"([^"]+)"[[:space:]]*=>[[:space:]]*(.*)$' ]] || continue
-    keyname="$match[1]"
-    val="$match[2]"
+    [[ "$dline" =~ '^[+-][[:space:]]*".*" => ' ]] || continue
+    kv="${dline#*\"}"
+    keyname="${kv%%\" => *}"
+    val="${kv#*\" => }"
+    [ -n "$keyname" ] || continue
 
     [ -n "${_SKIP_KEYS[$keyname]:-}" ] && continue
 
@@ -2986,8 +2984,10 @@ PY
 _build_array_value_delete() {
   local dom="$1" key="$2" val="$3"
   case "$dom$key$val" in *\'*|*\\*) return 1 ;; esac
+  # Python literals inside a single-quoted shell string: only " needs escaping
+  # (_escape_dq's \$ is a literal backslash to Python).
   printf "/usr/bin/python3 -c 'import subprocess as s, plistlib; d=\"%s\"; k=\"%s\"; v=\"%s\"; p=plistlib.loads(s.run([\"/usr/bin/defaults\",\"export\",d,\"-\"],capture_output=True).stdout); p[k]=[x for x in p.get(k,[]) if x!=v]; s.run([\"/usr/bin/defaults\",\"import\",d,\"-\"],input=plistlib.dumps(p))'" \
-    "$(_escape_dq "$dom")" "$(_escape_dq "$key")" "$(_escape_dq "$val")"
+    "${dom//\"/\\\"}" "${key//\"/\\\"}" "${val//\"/\\\"}"
 }
 
 emit_array_deletions() {
