@@ -7,6 +7,7 @@
 - The `# dockutil --add '<path>'` and `--remove '<label>'` lines broke once copied when the app name holds an apostrophe (Bob's App). The apostrophe is escaped.
 - A nested value or key holding `'`, `"` or `\` made PlistBuddy stop on "Unclosed Quotes": nothing was written on the target. They are escaped now, in `Add`, `Set` and `Delete`.
 - Deleting a nested key whose name holds `"` emitted a `Delete` of the wrong key (`a"b` read as `b`). The key is passed whole now.
+- A date, a binary value (1 KB at most) or a multi-line string came out as nothing: its type was read in a form `plutil` refuses on macOS 27. They are `-date`, `-data` and `-string` now.
 
 ## 1.5.2 — 2026-10-26
 

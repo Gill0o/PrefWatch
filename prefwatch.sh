@@ -1996,37 +1996,53 @@ PYJSON
   : > "$out" 2>/dev/null || true
 }
 
+# Type and value of a key read from the FILE: `<type>|<value>`. `plutil -type`
+# + `-extract raw` (macOS 12+): `-extract … json` refuses every scalar on
+# 27.0.1. The keypath escapes `.`, or com.apple.x is read as three levels.
+# A string comes back unescaped, a date in ISO 8601, data as hex.
 extract_type_value_with_plutil() {
-  local plist="$1" key="$2"
-  local type value
+  local plist="$1" key="$2" kp type value
+  kp="${key//./\\.}"
+  type=$(/usr/bin/plutil -type "$kp" "$plist" 2>/dev/null) || type=""
+  case "$type" in
+    array)      printf 'array|\n'; return 0 ;;
+    dictionary) printf 'dict|\n'; return 0 ;;
+    bool|integer|float|string|date|data) ;;
+    *) _extract_type_value_json "$plist" "$kp"; return ;;
+  esac
+  value=$(/usr/bin/plutil -extract "$kp" raw -o - "$plist" 2>/dev/null) || return 1
+  case "$type" in
+    bool)    value=$(printf '%s' "$value" | /usr/bin/tr '[:lower:]' '[:upper:]') ;;
+    integer) type=int ;;
+    float)   value=$(printf '%s' "$value" | /usr/bin/sed -E 's/(\.[0-9]*[1-9])0+$/\1/; s/\.0+$//') ;;
+    data)
+      # Past 1 KB a blob is serialized state (bookmark, archived object), not a setting.
+      value=$(printf '%s' "$value" | /usr/bin/base64 -D 2>/dev/null | /usr/bin/od -v -An -tx1 | /usr/bin/tr -d ' \n') || return 1
+      [ -n "$value" ] && (( ${#value} <= 2048 )) || return 1 ;;
+  esac
+  printf '%s|%s\n' "$type" "$value"
+}
 
-  local json_value
-  json_value=$(/usr/bin/plutil -extract "$key" json -o - "$plist" 2>/dev/null) || return 1
-
+# Older plutil, without -type: the JSON form, scalars only.
+_extract_type_value_json() {
+  local plist="$1" kp="$2" type value json_value
+  json_value=$(/usr/bin/plutil -extract "$kp" json -o - "$plist" 2>/dev/null) || return 1
   if [[ "$json_value" == "true" ]] || [[ "$json_value" == "false" ]]; then
-    type="bool"
-    value=$(printf '%s' "$json_value" | /usr/bin/tr '[:lower:]' '[:upper:]')
+    type="bool"; value=$(printf '%s' "$json_value" | /usr/bin/tr '[:lower:]' '[:upper:]')
   elif [[ "$json_value" =~ ^-?[0-9]+$ ]]; then
-    type="int"
-    value="$json_value"
+    type="int"; value="$json_value"
   elif [[ "$json_value" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-    type="float"
-    value="$json_value"
+    type="float"; value="$json_value"
   elif [[ "$json_value" =~ ^\".* ]]; then
-    type="string"
-    value=$(printf '%s' "$json_value" | /usr/bin/sed 's/^"//; s/"$//' | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
+    type="string"; value=$(printf '%s' "$json_value" | /usr/bin/sed 's/^"//; s/"$//; s/\\"/"/g; s/\\\\/\\/g')
   elif [[ "$json_value" =~ ^\[.* ]]; then
-    type="array"
-    value="$json_value"
+    type="array"; value=""
   elif [[ "$json_value" =~ ^\{.* ]]; then
-    type="dict"
-    value="$json_value"
+    type="dict"; value=""
   else
     return 1
   fi
-
   printf '%s|%s\n' "$type" "$value"
-  return 0
 }
 
 # `defaults … delete` → PlistBuddy. $2 = real plist path (the ByHost file,
@@ -2163,10 +2179,20 @@ _build_defaults_write_cmd() {
       plutil_type="${plutil_result%%|*}"
       plutil_value="${plutil_result#*|}"
       case "$plutil_type" in
-        string) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\"" ;;
+        string)
+          if [[ "$plutil_value" == *$'\n'* ]]; then
+            # Multi-line: one log line, POSIX, exact once run.
+            local _ml="${plutil_value//\\/\\\\}"; _ml="${_ml//$'\n'/\\n}"; _ml="${_ml//$_SQ/$_SQ_ESC}"
+            cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"\$(printf '%b' '${_ml}')\""
+          else
+            cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\""
+          fi ;;
         bool)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${plutil_value}" ;;
         int)    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${plutil_value}" ;;
         float)  cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${plutil_value}" ;;
+        # ISO 8601 as plutil prints it; `defaults write -date` takes it (27).
+        date)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -date \"${plutil_value}\"" ;;
+        data)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -data ${plutil_value}" ;;
         array|dict) cmd="" ;;
         *) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>" ;;
       esac
