@@ -94,7 +94,7 @@ Options:
   -q, --only-cmds       Show only executable commands (default)
   --debug               Log '# FILTERED: <dom> <key> (reason)' when a detected
                         change is suppressed (noise key / excluded domain).
-                        answers "why didn't my change appear?"
+                        Answers "why didn't my change appear?"
   -e, --exclude <glob>  Comma-separated glob patterns to exclude
   --hot-domains <list>  Comma-separated list of domains kept permanently active
                         for instant first-change detection. Default: the common
@@ -5983,6 +5983,8 @@ _pf_target="$DOMAIN"
 if [ "$ALL_MODE" = "true" ]; then
   [ "$INCLUDE_SYSTEM" = "true" ] && _pf_target="ALL (user + system)" || _pf_target="ALL (user only)"
 fi
+# Before the banner: without root /var/log is refused and the log lands in /tmp.
+LOGFILE="$(prepare_logfile "$LOGFILE")"
 printf "PrefWatch: %s → %s\n" "$_pf_target" "$LOGFILE"
 if [ -z "$PYTHON3_BIN" ]; then
   # The prompt carries the warning (Jamf GUI users see no stdout). `||` keeps
@@ -6002,8 +6004,6 @@ Start anyway?" || _pf_rc=$?
       ;;
   esac
 fi
-
-LOGFILE="$(prepare_logfile "$LOGFILE")"
 
 # Log path, version and macOS build, printed once even under ONLY_CMDS.
 _os_ver="$(/usr/bin/sw_vers -productVersion 2>/dev/null || printf '?')"

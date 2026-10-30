@@ -101,7 +101,7 @@ docs: clarify NOTE scope for undetectable settings
 
 ## CHANGELOG
 
-Add an entry under the top **`## X.Y.Z — unreleased`** section in the same commit as your code change. Use the project's section headers: **`### Feature`**, **`### Fix`**, **`### Noise`**, **`### Performance`**, **`### UX`** (singular, not Keep-a-Changelog's `Added`/`Fixed`). One tight line per entry: what changed, briefly why.
+Add an entry under the top **`## X.Y.Z — unreleased`** section in the same commit as your code change. Use the project's section headers: **`### Feature`**, **`### Fix`**, **`### Noise`**, **`### Performance`**, **`### UX`**, **`### Note`** (singular, not Keep-a-Changelog's `Added`/`Fixed`). `### Note` takes doc changes (README, CONTRIBUTING) and anything a user should know that is not a fix. One tight line per entry: what changed, briefly why.
 
 ```markdown
 ## X.Y.Z — unreleased

@@ -12,6 +12,11 @@
 - Removing an entry holding `$` from a list that needs the `python3` form left it in place: `$` was escaped for the shell, not for Python. Only `"` is escaped now.
 - In ALL mode an excluded domain could still reach the log through the command emitter: its guard compared the domain with its quotes on. It compares the name now.
 - A domain name holding `/` turned the default log path into a tree under `/var/log`. The `/` becomes `_`.
+- Without root the startup line named a log under `/var/log` while the log went to `/tmp`. It names the real file now.
+
+### Note
+- README: `--exclude` replaces the built-in list rather than adding to it, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
+- CONTRIBUTING lists `### Note` among the CHANGELOG sections.
 
 
 ## 1.5.2 — 2026-10-26
