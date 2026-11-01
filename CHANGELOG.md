@@ -13,6 +13,8 @@
 - In ALL mode an excluded domain could still reach the log through the command emitter: its guard compared the domain with its quotes on. It compares the name now.
 - A domain name holding `/` turned the default log path into a tree under `/var/log`. The `/` becomes `_`.
 - Without root the startup line named a log under `/var/log` while the log went to `/tmp`. It names the real file now.
+- A root run no longer falls back to a fixed `/tmp` name for its abort trace or temp directory, which another user could pre-create.
+- The ARD access line quotes the user name and drops a non-numeric bitmask; a `$UUID` in a real path stays literal outside `--mdm`.
 
 ### Note
 - README: `--exclude` replaces the built-in list rather than adding to it, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.

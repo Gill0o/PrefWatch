@@ -73,7 +73,8 @@ set -o pipefail
 TRAPZERR() {
   local _loc="${funcfiletrace[1]:-?}" _fn="${funcstack[2]:-main}"
   print -u2 "prefwatch: set -e ABORT at ${_loc} (in ${_fn})" 2>/dev/null || true
-  printf '# ABORT: set -e at %s (in %s)\n' "$_loc" "$_fn" >> "${LOGFILE:-/tmp/prefwatch-abort.log}" 2>/dev/null || true
+  # No fallback file: a fixed /tmp name, appended as root, follows a planted symlink.
+  [ -n "${LOGFILE:-}" ] && { printf '# ABORT: set -e at %s (in %s)\n' "$_loc" "$_fn" >> "$LOGFILE"; } 2>/dev/null || true
 }
 
 show_help() {
@@ -728,8 +729,9 @@ elif command -v python3 >/dev/null 2>&1; then
 fi
 
 # Temp directory + EXIT trap for every MAIN exit path.
-PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || PREFWATCH_TMPDIR="/tmp/prefwatch.${$}"
-/bin/mkdir -p "$PREFWATCH_TMPDIR" 2>/dev/null || true
+# No predictable fallback: another user could pre-create it for a root run.
+PREFWATCH_TMPDIR=$(/usr/bin/mktemp -d "/tmp/prefwatch.${$}.XXXXXX") || {
+  print -u2 "prefwatch: cannot create a private temp directory under /tmp"; exit 1; }
 trap '/bin/rm -rf "$PREFWATCH_TMPDIR" 2>/dev/null || true' EXIT
 
 # Reclaim tmpdirs of crashed runs.
@@ -2100,6 +2102,8 @@ typeset -g _SQ_ESC="${_SQ}\\${_SQ}${_SQ}"
 _escape_pb_path() {
   local _p _liu_esc _uid_esc _uid_tok
   _p=$(_escape_dq "$1")
+  # Tokens exist only under --mdm; elsewhere a literal $UUID in a path stays escaped.
+  [ "${MDM_OUTPUT:-false}" = "true" ] || { printf '%s' "$_p"; return 0; }
   # Escaped tokens via the same escaper: a literal `\$loggedInUser` would expand here under set -u.
   _uid_tok='$UUID'
   _liu_esc=$(_escape_dq "$_MDM_LIU")
@@ -5011,8 +5015,9 @@ PY
     fi
     log_line "Cmd: sudo $cmd"
 
-    # System daemons only; gui agent paths vary (a reboot applies it).
-    if [ "$_ld_domain" = "system" ] && [ -n "$_svc" ]; then
+    # System daemons only; gui agent paths vary (a reboot applies it). A label
+    # outside [A-Za-z0-9._-] came shlex-quoted: no bare companion for it.
+    if [ "$_ld_domain" = "system" ] && [[ "$_svc" =~ '^[A-Za-z0-9._-]+$' ]]; then
       local _companion=""
       if [ "$_verb" = "enable" ]; then
         local _ld_plist=""
@@ -5152,15 +5157,17 @@ ard_privs_watch() {
         [ -n "$u" ] || continue
         oldv=$(/usr/bin/awk -v k="$u" '$1==k{print $2}' "$_snap" 2>/dev/null)
         [ "$oldv" = "$v" ] && continue
+        # naprivs is a signed bitmask; anything else is not pasted after it.
+        [[ "$v" =~ '^-?[0-9]+$' ]] || continue
         log_line "Cmd: # Remote Management: per-user ARD access for $u (naprivs bitmask)"
-        log_line "Cmd: sudo /usr/bin/dscl . -create /Users/$u naprivs $v"
+        log_line "Cmd: sudo /usr/bin/dscl . -create \"/Users/$(_escape_dq "$u")\" naprivs $v"
         _changed=true
     done < "$_curr"
     while IFS=$' \t' read -r u v; do
         [ -n "$u" ] || continue
         /usr/bin/awk -v k="$u" '$1==k{f=1} END{exit !f}' "$_curr" 2>/dev/null && continue
         log_line "Cmd: # Remote Management: ARD access removed for $u"
-        log_line "Cmd: sudo /usr/bin/dscl . -delete /Users/$u naprivs"
+        log_line "Cmd: sudo /usr/bin/dscl . -delete \"/Users/$(_escape_dq "$u")\" naprivs"
         _changed=true
     done < "$_snap"
     # The dscl write only persists: the ARD agent must restart to apply it.
