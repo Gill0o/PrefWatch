@@ -2,6 +2,9 @@
 
 ## 1.5.3 — unreleased
 
+### Feature
+- `--exclude` (Jamf `$8`) adds to the built-in list when it starts with `+`: `+com.foo.*,com.bar`. Without the `+` it still replaces the list.
+
 ### Fix
 - A key read as a number, then rewritten as a string an instant later, had that string pasted bare after `-int`/`-float`, shell included. The text must be a number now; a string stays quoted.
 - The `# dockutil --add '<path>'` and `--remove '<label>'` lines broke once copied when the app name holds an apostrophe (Bob's App). The apostrophe is escaped.
@@ -19,7 +22,7 @@
 - A plist path followed by two options (`/x.plist -v --log f`) was taken for a Jamf launch, and `--log` became the domain. It is read as a command line now.
 
 ### Note
-- README: `--exclude` replaces the built-in list rather than adding to it, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
+- README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
 - CONTRIBUTING lists `### Note` among the CHANGELOG sections.
 
 

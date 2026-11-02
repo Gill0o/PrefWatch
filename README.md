@@ -38,7 +38,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--debug` | -- | Log `# FILTERED: <dom> <key> (reason)` when a detected change is suppressed (answers "why didn't my change appear?") | Off |
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
-| `--exclude <glob>` | `-e` | Domain patterns to exclude in ALL mode. Replaces the built-in list (169 patterns), it does not add to it. Naming a domain explicitly always watches it | Built-in |
+| `--exclude <glob>` | `-e` | Domain patterns to exclude in ALL mode. Replaces the built-in list (169 patterns); a leading `+` adds to it (`+com.foo.*`). Naming a domain explicitly always watches it | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
@@ -75,7 +75,7 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 
 ## Security
 
-PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` (`/tmp` without root) and syslog. These may contain user-specific data (IDs, tokens, paths, the privacy-permission table). The log is `0600`, owned by the console user. **Review before sharing**. `--exclude` skips sensitive domains; it replaces the built-in list, so expect more noise.
+PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` (`/tmp` without root) and syslog. These may contain user-specific data (IDs, tokens, paths, the privacy-permission table). The log is `0600`, owned by the console user. **Review before sharing**. `--exclude +<glob>` skips sensitive domains on top of the built-in list.
 
 ## License
 

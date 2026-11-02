@@ -25,8 +25,8 @@
 #          - Domain: /var/log/prefwatch-v<version>-<domain>.log
 #     $6 = INCLUDE_SYSTEM (true/false). Include system preferences (default: true)
 #     $7 = ONLY_CMDS (true/false). Show only commands without debug (default: true)
-#     $8 = EXCLUDE_DOMAINS. Comma-separated glob patterns to exclude
-#          Example: ContextStoreAgent*,com.jamf*,com.adobe.*
+#     $8 = EXCLUDE_DOMAINS. Comma-separated glob patterns to exclude. Replaces
+#          the built-in list; a leading + adds to it. Example: +com.jamf*,com.adobe.*
 #     $9 = MDM_OUTPUT (true/false). MDM deployment: wrap user-domain commands in
 #          a runAsUser helper (root Jamf policy applies them as the logged-in
 #          user) + templatize PlistBuddy paths ($loggedInUser, $UUID) (default: false)
@@ -96,7 +96,8 @@ Options:
   --debug               Log '# FILTERED: <dom> <key> (reason)' when a detected
                         change is suppressed (noise key / excluded domain).
                         Answers "why didn't my change appear?"
-  -e, --exclude <glob>  Comma-separated glob patterns to exclude
+  -e, --exclude <glob>  Comma-separated glob patterns to exclude. Replaces the
+                        built-in list; start with + to add to it instead
   --hot-domains <list>  Comma-separated list of domains kept permanently active
                         for instant first-change detection. Default: the common
                         System Settings panels (Finder, Dock, Control Center,
@@ -120,8 +121,9 @@ Examples:
   ./prefwatch.sh NSGlobalDomain
   ./prefwatch.sh com.apple.finder -v
 
-  # Monitor with exclusions
+  # Monitor with exclusions (the second adds to the built-in list)
   ./prefwatch.sh -v --exclude "com.apple.Safari*,ContextStoreAgent*"
+  ./prefwatch.sh -v --exclude "+com.apple.Safari*"
 
   # Monitor without system preferences
   ./prefwatch.sh --no-system
@@ -331,7 +333,7 @@ fi
 # CONFIGURATION. Exclusions
 # ---------------------------------------
 
-# Noisy domains. Override with --exclude or Jamf $8.
+# Noisy domains. Replaced by --exclude or Jamf $8, extended by a leading +.
 typeset -a DEFAULT_EXCLUSIONS=(
   # Background daemons & agents
   "com.apple.cfprefsd*"
@@ -649,7 +651,10 @@ typeset -a DEFAULT_EXCLUSIONS=(
   # are filtered per KEY in is_noisy_key, not excluded.
 )
 
-if [ -n "${EXCLUDE_DOMAINS:-}" ]; then
+# A leading `+` adds to the built-in list; without it the list is replaced.
+if [[ "${EXCLUDE_DOMAINS:-}" == +* ]]; then
+  EXCLUDE_DOMAINS_RAW="${(j:,:)DEFAULT_EXCLUSIONS},${EXCLUDE_DOMAINS#+}"
+elif [ -n "${EXCLUDE_DOMAINS:-}" ]; then
   EXCLUDE_DOMAINS_RAW="$EXCLUDE_DOMAINS"
 else
   EXCLUDE_DOMAINS_RAW="${(j:,:)DEFAULT_EXCLUSIONS}"
