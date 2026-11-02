@@ -230,8 +230,9 @@ parse_cli_args() {
 }
 
 # Jamf passes mount_point, computer_name, username as $1-$3, user params at $4+.
+# Neither name starts with `-`: `/x.plist -v --log f` is a CLI call, not Jamf.
 JAMF_MODE="false"
-if [[ -n "${1:-}" && "${1}" == /* ]] && [[ -n "${2:-}" ]] && [[ -n "${3:-}" ]]; then
+if [[ -n "${1:-}" && "${1}" == /* ]] && [[ -n "${2:-}" && "${2}" != -* ]] && [[ -n "${3:-}" && "${3}" != -* ]]; then
   JAMF_MODE="true"
 fi
 
