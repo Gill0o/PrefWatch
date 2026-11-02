@@ -771,15 +771,16 @@ zmodload zsh/datetime 2>/dev/null && HAVE_ZSH_STRFTIME=true || HAVE_ZSH_STRFTIME
 zmodload zsh/stat 2>/dev/null && HAVE_ZSH_STAT=true || HAVE_ZSH_STAT=false
 zmodload zsh/system 2>/dev/null && HAVE_ZSH_SYSTEM=true || HAVE_ZSH_SYSTEM=false
 
+# Sets REPLY, no `$( )`. Measured on zsh 5.9: a capture running while `&` jobs
+# exit returns a stray status (19) about once in 25,000; set -e then killed the
+# snapshot loop, which ran ~9,000 of them with 16 jobs finishing all along.
 get_timestamp() {
   if [ "$HAVE_ZSH_STRFTIME" = "true" ]; then
-    local _ts
-    strftime -s _ts '%Y-%m-%d %H:%M:%S' "$EPOCHSECONDS"
-    printf '%s' "$_ts"
+    strftime -s REPLY '%Y-%m-%d %H:%M:%S' "$EPOCHSECONDS"
   elif [ "$HAVE_BIN_DATE" = "true" ]; then
-    /bin/date '+%Y-%m-%d %H:%M:%S'
+    REPLY=$(/bin/date '+%Y-%m-%d %H:%M:%S') || REPLY=""
   else
-    date '+%Y-%m-%d %H:%M:%S'
+    REPLY=$(date '+%Y-%m-%d %H:%M:%S') || REPLY=""
   fi
 }
 
@@ -796,13 +797,13 @@ get_plist_path() {
   fi
 }
 
-# Domain from a .plist path, fork-free (runs on every event); strips the ByHost UUID.
+# Domain from a .plist path into REPLY (no capture, see get_timestamp); strips the ByHost UUID.
 domain_from_plist_path() {
   local p="$1" base dom
   base="${p:t}"
   dom="${base%.plist}"
   [[ "$dom" =~ '\.[0-9A-Fa-f-]{8,}$' ]] && dom="${dom%.*}"
-  printf '%s\n' "$dom"
+  REPLY="$dom"
 }
 
 get_plist_path_for_domain() {
@@ -1881,7 +1882,7 @@ is_noisy_pbcmd() {
 _log() {
   local tag="$1" msg="$2"
   local ts
-  ts="$(get_timestamp)"
+  get_timestamp; ts="$REPLY"
 
   if [ "${ONLY_CMDS:-false}" = "true" ]; then
     local out
@@ -1932,7 +1933,7 @@ log_system() { _log "system" "$1"; }
 snapshot_notice() {
   local msg="$1" verbose_only="${2:-false}"
   local ts
-  ts="$(get_timestamp)"
+  get_timestamp; ts="$REPLY"
   local line="[$ts] [snapshot] $msg"
   if [ "$verbose_only" = "true" ] && [ "${ONLY_CMDS:-false}" = "true" ]; then
     return 0
@@ -4011,7 +4012,7 @@ show_plist_diff() {
   [ -f "$path" ] || return 0
 
   local _dom
-  _dom="$(domain_from_plist_path "$path")"
+  domain_from_plist_path "$path"; _dom="$REPLY"
   if is_excluded_domain "$_dom"; then
     _dbg_filtered "$_dom (excluded-domain)"
     return 0
@@ -4521,7 +4522,7 @@ start_watch_all() {
     snapshot_notice "${_label} snapshot: scanning..."
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      dom=$(domain_from_plist_path "$f")
+      domain_from_plist_path "$f"; dom="$REPLY"
       if is_excluded_domain "$dom"; then
         continue
       fi
@@ -4629,7 +4630,7 @@ start_watch_all() {
       if [ -d "$prefs_user" ]; then
         /usr/bin/find "$prefs_user" -type f -name "*.plist" -newer "$marker_user" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
-          dom=$(domain_from_plist_path "$f")
+          domain_from_plist_path "$f"; dom="$REPLY"
           if is_excluded_domain "$dom"; then
             continue
           fi
@@ -4640,7 +4641,7 @@ start_watch_all() {
       if [ "${INCLUDE_SYSTEM}" = "true" ] && [ -d "$prefs_system" ] && [ "$(id -u)" -eq 0 ]; then
         /usr/bin/find "$prefs_system" -type f -name "*.plist" -newer "$marker_sys" 2>/dev/null | while IFS= read -r f; do
           [ -n "$f" ] || continue
-          dom=$(domain_from_plist_path "$f")
+          domain_from_plist_path "$f"; dom="$REPLY"
           if is_excluded_domain "$dom"; then
             continue
           fi
@@ -6042,7 +6043,7 @@ fi
 
 # ALL mode without root: say what root adds (no latency difference, measured).
 if [ "$ALL_MODE" = "true" ] && [ "$(id -u)" -ne 0 ]; then
-  local _ts; _ts="$(get_timestamp)"
+  local _ts; get_timestamp; _ts="$REPLY"
   local _w1="[$_ts] NOTE: running without sudo. User preferences are fully covered"
   local _w2="[$_ts]   Not covered: /Library/Preferences (system), sharing commands, launchd state"
   local _w3="[$_ts]   For those, re-run with: sudo $0 ALL"

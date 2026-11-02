@@ -15,6 +15,7 @@
 - Without root the startup line named a log under `/var/log` while the log went to `/tmp`. It names the real file now.
 - A root run no longer falls back to a fixed `/tmp` name for its abort trace or temp directory, which another user could pre-create.
 - The ARD access line quotes the user name and drops a non-numeric bitmask; a `$UUID` in a real path stays literal outside `--mdm`.
+- ALL mode could stop on its own while taking its starting snapshot, more often on a busy Mac: a zsh capture returned a stray error. That loop no longer forks one.
 
 ### Note
 - README: `--exclude` replaces the built-in list rather than adding to it, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
