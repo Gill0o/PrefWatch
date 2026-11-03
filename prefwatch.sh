@@ -2341,12 +2341,6 @@ _emit_cmd() {
   [ -n "$cmd" ] || return 0
   if is_noisy_command "$cmd"; then _dbg_filtered "${note_dom:-?} (noise/invalid command: ${cmd[1,120]})"; return 0; fi
 
-  # ALL mode: the per-plist diff already emitted this; the DOMAIN pass would
-  # print it twice. Before the contextual note, which it would also trigger.
-  if [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
-    return 0
-  fi
-
   if [ "$is_delete" != "true" ]; then
     local _cmd_dom
     _cmd_dom=$(printf '%s' "$cmd" | /usr/bin/sed -nE 's/.*defaults([[:space:]]+-[^[:space:]]+)*[[:space:]]+write[[:space:]]+([^[:space:]]+).*/\2/p')
@@ -2518,11 +2512,9 @@ _process_diff_lines() {
   # $8 = real plist path for deletes. Not type_src, which can be a cache file.
   local kind="$1" dom="$2" hostflag="$3" prev="$4" curr="$5" type_src="$6" diff_label="$7" emit_plist_path="${8:-}"
 
-  # No baseline: USER/SYSTEM means a domain born since startup (its first write
-  # is its configuration); DOMAIN in ALL mode means "not seen yet" (stay silent).
+  # No baseline after startup: a domain born since then, its first write is its configuration.
   if [ ! -s "$prev" ]; then
     [ "${_BASELINE_DONE:-false}" = "true" ] || return 0
-    [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ] && return 0
     # An existing but EMPTY baseline is a failed snapshot, not a new domain:
     # adopt the current state silently.
     if [ -e "$prev" ]; then
@@ -3053,8 +3045,6 @@ emit_array_deletions() {
     if [ -z "$_rw_cmd" ] && [ -n "${elem_value:-}" ]; then _val_cmd=$(_build_array_value_delete "$dom" "$base" "$elem_value") || _val_cmd=""; fi
 
     if is_noisy_command "$delete_cmd"; then
-      :
-    elif [ "$kind" = "DOMAIN" ] && [ "${ALL_MODE:-false}" = "true" ]; then
       :
     elif [ -n "$_rw_cmd" ]; then
       # Whole-array rewrite: no index, no "order shown" warning. Replaces, does not merge.
@@ -4171,14 +4161,9 @@ show_plist_diff() {
 
 show_domain_diff() {
   local dom="$1"
-  local skip_arrays="${2:-false}"
 
   # Domain mode is user-domain: clear a system flag left by show_plist_diff.
   typeset -g _EMIT_SYS=false _EMIT_SYS_DOM=""
-
-  if [ "${ALL_MODE:-false}" = "true" ] && is_excluded_domain "$dom"; then
-    return 0
-  fi
 
   init_cache
   local key prev curr tmpplist prev_json curr_json
@@ -4192,8 +4177,7 @@ show_domain_diff() {
   [ -s "$tmpplist" ] || return 0
   /usr/bin/plutil -p "$tmpplist" > "$curr" 2>/dev/null || /bin/cat "$tmpplist" > "$curr" 2>/dev/null || :
   curr_json="$CACHE_DIR/${key}.curr.json"
-  # The JSON feeds only the Python workers, off when skip_arrays is true.
-  [ "$skip_arrays" != "true" ] && dump_plist_json "$tmpplist" "$curr_json"
+  dump_plist_json "$tmpplist" "$curr_json"   # for the Python workers
 
   prev_json="$CACHE_DIR/${key}.prev.json"
   typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN
@@ -4201,7 +4185,7 @@ show_domain_diff() {
   typeset -g _HAS_ARRAY_ADDITIONS=false
   local _cmd0=${_CMD_LINES:-0}
 
-  if [ "$skip_arrays" != "true" ] && [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
+  if [ -n "$PYTHON3_BIN" ] && [ -s "$prev_json" ] && [ -s "$curr_json" ]; then
     _run_py_diff_workers DOMAIN "$dom" "$prev_json" "$curr_json" "$(get_plist_path "$dom" 2>/dev/null)" "$key"
   fi
 
@@ -4212,7 +4196,7 @@ show_domain_diff() {
   [ "${_CMD_LINES:-0}" -gt "$_cmd0" ] && _note_print_preset DOMAIN "$dom"
 
   /bin/mv -f "$curr" "$prev" 2>/dev/null || /bin/cp -f "$curr" "$prev" 2>/dev/null || :
-  [ "$skip_arrays" != "true" ] && { /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || : ; }
+  /bin/mv -f "$curr_json" "$prev_json" 2>/dev/null || /bin/cp -f "$curr_json" "$prev_json" 2>/dev/null || :
   return 0
 }
 
@@ -4641,7 +4625,7 @@ start_watch_all() {
             continue
           fi
           [ -n "$dom" ] && /usr/bin/touch "$active_dir/$dom" 2>/dev/null || true
-          log_user "POLL change: $f"; show_plist_diff USER "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
+          log_user "POLL change: $f"; show_plist_diff USER "$f"
         done
       fi
       if [ "${INCLUDE_SYSTEM}" = "true" ] && [ -d "$prefs_system" ] && [ "$(id -u)" -eq 0 ]; then
@@ -4651,7 +4635,7 @@ start_watch_all() {
           if is_excluded_domain "$dom"; then
             continue
           fi
-          log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"; [ -n "$dom" ] && show_domain_diff "$dom" true
+          log_system "POLL change: $f"; show_plist_diff SYSTEM "$f"
         done
       fi
       /bin/mv -f "$marker_user.next" "$marker_user" 2>/dev/null || /usr/bin/touch "$marker_user" 2>/dev/null || true

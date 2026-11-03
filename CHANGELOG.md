@@ -20,6 +20,7 @@
 - The ARD access line quotes the user name and drops a non-numeric bitmask; a `$UUID` in a real path stays literal outside `--mdm`.
 - ALL mode could stop on its own while taking its starting snapshot, more often on a busy Mac: a zsh capture returned a stray error. That loop no longer forks one.
 - A plist path followed by two options (`/x.plist -v --log f`) was taken for a Jamf launch, and `--log` became the domain. It is read as a command line now.
+- ALL mode with `--verbose` printed each change's `Diff` and `Key:` lines twice, the second time under the domain name. Once now, and one `defaults export` fewer per change.
 
 ### Note
 - README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
