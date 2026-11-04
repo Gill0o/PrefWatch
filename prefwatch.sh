@@ -2080,8 +2080,8 @@ convert_delete_to_plistbuddy() {
   fi
 
   if [ "$is_array_deletion" = "true" ]; then
-    # "# WARNING: array deletes" is a DEDUP KEY matched in _emit_cmd and
-    # emit_array_deletions: change the wording in all three places.
+    # "# WARNING: array deletes" is a DEDUP KEY matched in _emit_pb_delete_lines:
+    # change the wording in both places.
     printf '# WARNING: array deletes shift indexes. Run these in the order shown\n'
   fi
   local _mdm_path=$(mdm_plist_path "$plist_path")
@@ -2334,6 +2334,26 @@ _delete_keeps_defaults() {
   [[ "${d%/ByHost}" =~ '^(/Users/[^/]+|/var/root|/private/var/root)/Library/Preferences$' ]]
 }
 
+# Logs what convert_delete_to_plistbuddy returned. "Cmd: " on comment lines too,
+# or ONLY_CMDS drops them; only the real command is --mdm-wrapped.
+_emit_pb_delete_lines() {
+  local kind="$1" _pl="" _expr=""
+  while IFS= read -r _pl; do
+    [ -n "$_pl" ] || continue
+    case "$_pl" in
+      "# WARNING: array deletes"*)
+        _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $_pl" ;;
+      "#"*) _log_kind "$kind" "Cmd: $_pl" ;;
+      *)    _expr="${${_pl#*-c \'}%%\'*}"
+            _note_byhost_uuid "$kind" "$_pl" "$_expr"
+            # Key expression only; the ByHost UUID in the path is another matter.
+            _note_device_uuid "$kind" "$_expr"
+            _log_kind "$kind" "Cmd: $(_mdm_wrap "$_pl")" ;;
+    esac
+  done <<< "$2"
+  return 0   # the last case may end on a false `&&`; callers stand alone under set -e
+}
+
 # Emit a built command via _log_kind, with filters and NOTEs.
 # Args: kind cmd note_dom is_delete [plist_path] [raw delete target]
 _emit_cmd() {
@@ -2353,24 +2373,12 @@ _emit_cmd() {
 
 
   if [ "$is_delete" = "true" ]; then
-    local pb_delete pb_line
+    local pb_delete
     if _delete_keeps_defaults "$cmd" "$emit_plist_path"; then
       _note_device_uuid "$kind" "${${cmd%\"}##*\"}"
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
     elif pb_delete=$(convert_delete_to_plistbuddy "$cmd" "$emit_plist_path" "$note_dom" "$del_target" 2>/dev/null); then
-      while IFS= read -r pb_line; do
-        [ -n "$pb_line" ] || continue
-        case "$pb_line" in
-          # "Cmd: " on comment lines too, or ONLY_CMDS drops them.
-          "# WARNING: array deletes"*)
-            _note_should_show __array_del_warning__ && _log_kind "$kind" "Cmd: $pb_line" ;;
-          "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
-          *)    _note_byhost_uuid "$kind" "$pb_line" "${${pb_line#*-c \'}%%\'*}"
-                # Key expression only; the ByHost UUID in the path is another matter.
-                _note_device_uuid "$kind" "${${pb_line#*-c \'}%%\'*}"
-                _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
-        esac
-      done <<< "$pb_delete"
+      _emit_pb_delete_lines "$kind" "$pb_delete"
     else
       _log_kind "$kind" "Cmd: $(_mdm_wrap "$cmd")"
     fi
@@ -3081,18 +3089,7 @@ emit_array_deletions() {
     else
       local pb_delete=""  # init: re-`local` in this read-loop would print `pb_delete=…`
       if pb_delete=$(convert_delete_to_plistbuddy "$delete_cmd" "$emit_plist_path" "$dom" ":${base}:${idx}" 2>/dev/null); then
-        while IFS= read -r pb_line; do
-          [ -n "$pb_line" ] || continue
-          case "$pb_line" in
-            "# WARNING: array deletes"*)
-              _note_should_show __array_del_warning__ || continue ;;
-          esac
-          # Only the real PlistBuddy command is --mdm-wrapped, not comments.
-          case "$pb_line" in
-            "#"*) _log_kind "$kind" "Cmd: $pb_line" ;;
-            *)    _log_kind "$kind" "Cmd: $(_mdm_wrap "$pb_line")" ;;
-          esac
-        done <<< "$pb_delete"
+        _emit_pb_delete_lines "$kind" "$pb_delete"
       else
         _log_kind "$kind" "Cmd: $(_mdm_wrap "$delete_cmd")"
       fi
