@@ -43,6 +43,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
 | `--help` | `-h` | Show the help | -- |
+| `--version` | -- | Print the version and exit | -- |
 
 ## Jamf Pro Integration
 

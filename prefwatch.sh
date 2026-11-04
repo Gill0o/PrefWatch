@@ -77,6 +77,9 @@ TRAPZERR() {
   [ -n "${LOGFILE:-}" ] && { printf '# ABORT: set -e at %s (in %s)\n' "$_loc" "$_fn" >> "$LOGFILE"; } 2>/dev/null || true
 }
 
+SCRIPT_VERSION=$(head -20 "$0" 2>/dev/null | /usr/bin/grep "^# Version:" | /usr/bin/sed -E 's/^# Version: //' | head -1) || true
+[ -z "$SCRIPT_VERSION" ] && SCRIPT_VERSION="unknown"
+
 show_help() {
   cat << 'EOF'
 Usage: prefwatch.sh [domain] [OPTIONS]
@@ -104,6 +107,7 @@ Options:
                         keyboard/trackpad/mouse, Accessibility, Spotlight, …).
                         Pass "NONE" to disable.
   -h, --help            Show this help message
+  --version             Print the version and exit
   --mdm                 MDM deployment mode: wrap user-domain commands in a
                         runAsUser helper (a root Jamf policy applies them as the
                         logged-in user) and templatize PlistBuddy paths
@@ -221,6 +225,10 @@ parse_cli_args() {
         ;;
       -h|--help)
         show_help
+        ;;
+      --version)
+        print -r -- "prefwatch $SCRIPT_VERSION"
+        exit 0
         ;;
       *)
         echo "Error: Unknown option: ${1}" >&2
@@ -755,9 +763,6 @@ CACHE_DIR=""                  # Cache directory for plist diffs (WATCH_ALL mode)
 
 DOMAIN_TAG="$DOMAIN"
 [ "$ALL_MODE" = "true" ] && DOMAIN_TAG="all"
-
-SCRIPT_VERSION=$(head -20 "$0" 2>/dev/null | /usr/bin/grep "^# Version:" | /usr/bin/sed -E 's/^# Version: //' | head -1) || true
-[ -z "$SCRIPT_VERSION" ] && SCRIPT_VERSION="unknown"
 
 if [ -n "$LOG_FILE_PARAM" ]; then
   LOGFILE="$LOG_FILE_PARAM"

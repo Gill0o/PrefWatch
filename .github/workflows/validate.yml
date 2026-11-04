@@ -113,6 +113,9 @@ jobs:
         printf '%s\n' "$out" | head -3
         printf '%s\n' "$out" | grep -q '^Usage: prefwatch.sh'
 
+    - name: Test version output
+      run: ./prefwatch.sh --version | grep -q '^prefwatch [0-9]'
+
     - name: Test that invalid parameters are refused
       run: |
         if ./prefwatch.sh "" >/dev/null 2>&1; then echo "::error::empty domain accepted"; exit 1; fi

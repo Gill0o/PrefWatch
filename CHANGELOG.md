@@ -4,6 +4,7 @@
 
 ### Feature
 - `--exclude` (Jamf `$8`) adds to the built-in list when it starts with `+`: `+com.foo.*,com.bar`. Without the `+` it still replaces the list.
+- `--version` prints the version and exits.
 
 ### Fix
 - A key read as a number, then rewritten as a string an instant later, had that string pasted bare after `-int`/`-float`, shell included. The text must be a number now; a string stays quoted.
