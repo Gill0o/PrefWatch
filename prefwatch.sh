@@ -2671,32 +2671,12 @@ parse_array_index_key() {
   return 1
 }
 
-emit_array_additions() {
-  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
-  [ -n "$PYTHON3_BIN" ] || return 0
-  [ -s "$curr_json" ] || return 0
-  [ -s "$prev_json" ] || return 0
-
-  local py_output
-  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
-    py_output=$(< "$precomputed")
-  else
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
+# The head of the three diff workers, run first through exec(). argv = domain,
+# prev, curr. Read once by a builtin: no fork, no capture at startup.
+IFS= read -r -d '' _PY_COMMON <<'PY' || true
 import json, sys, os
 
 domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
-
-# _ELEMENT_NOISE_MARKERS triplets: a marked element is skipped WHOLE.
-_NOISE_RULES = []
-for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
-    _parts = _spec.split('|')
-    if len(_parts) == 3:
-        _NOISE_RULES.append(tuple(_parts))
-def is_noise_element(arr_name, item):
-    if not _NOISE_RULES:
-        return False
-    blob = json.dumps(item, sort_keys=True, default=str)
-    return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
 
 def load(path):
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -2710,9 +2690,14 @@ def load(path):
 prev = load(prev_path)
 curr = load(curr_path)
 
-results = []
+# defaults parses each -array element as an old-style plist: (x) became a
+# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
+def _arg(e):
+    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
+        return '"%s"' % e
+    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return "'" + q.replace("'", "'\\''") + "'"
 
-# SHARED BLOCK in the three Python workers: EDIT ALL THREE TOGETHER.
 _VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
                   'is-beta', 'tile-type', 'GUID', 'book'}
 
@@ -2723,6 +2708,56 @@ def strip_volatile(obj):
     if isinstance(obj, list):
         return [strip_volatile(e) for e in obj]
     return obj
+
+def pb_type_value(val):
+    """Return (type, value) for PlistBuddy Add command"""
+    if isinstance(val, bool):
+        return ("bool", "true" if val else "false")
+    if isinstance(val, int):
+        return ("integer", str(val))
+    if isinstance(val, float):
+        return ("real", str(val))
+    if isinstance(val, str):
+        # PlistBuddy reads \ ' " as escapes even bare, and a bare ' or " is an
+        # unclosed quote (nothing written). Edge whitespace needs the quotes.
+        s = pb_escape(val, spaces=False)
+        if val[:1].isspace() or val[-1:].isspace():
+            return ("string", '"' + s + '"')
+        return ("string", s)
+    return None
+
+def pb_escape(s, spaces=True):
+    """Escape \\ ' " (and spaces in a key path) for a PlistBuddy expression."""
+    s = s.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
+    return s.replace(' ', '\\ ') if spaces else s
+PY
+
+emit_array_additions() {
+  local kind="$1" dom="$2" prev_json="$3" curr_json="$4" precomputed="${5:-}"
+  [ -n "$PYTHON3_BIN" ] || return 0
+  [ -s "$curr_json" ] || return 0
+  [ -s "$prev_json" ] || return 0
+
+  local py_output
+  if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
+    py_output=$(< "$precomputed")
+  else
+  py_output=$(PW_PY_COMMON="$_PY_COMMON" "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
+import os
+exec(os.environ['PW_PY_COMMON'])
+# _ELEMENT_NOISE_MARKERS triplets: a marked element is skipped WHOLE.
+_NOISE_RULES = []
+for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
+    _parts = _spec.split('|')
+    if len(_parts) == 3:
+        _NOISE_RULES.append(tuple(_parts))
+def is_noise_element(arr_name, item):
+    if not _NOISE_RULES:
+        return False
+    blob = json.dumps(item, sort_keys=True, default=str)
+    return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
+
+results = []
 
 def diff(prev_obj, curr_obj, path):
     if isinstance(curr_obj, dict):
@@ -2755,28 +2790,6 @@ def all_keys_recursive(obj):
         for item in obj:
             keys |= all_keys_recursive(item)
     return keys
-
-def pb_type_value(val):
-    """Return (type, value) for PlistBuddy Add command"""
-    if isinstance(val, bool):
-        return ("bool", "true" if val else "false")
-    if isinstance(val, int):
-        return ("integer", str(val))
-    if isinstance(val, float):
-        return ("real", str(val))
-    if isinstance(val, str):
-        # PlistBuddy reads \ ' " as escapes even bare, and a bare ' or " is an
-        # unclosed quote (nothing written). Edge whitespace needs the quotes.
-        s = pb_escape(val, spaces=False)
-        if val[:1].isspace() or val[-1:].isspace():
-            return ("string", '"' + s + '"')
-        return ("string", s)
-    return None
-
-def pb_escape(s, spaces=True):
-    """Escape \\ ' " (and spaces in a key path) for a PlistBuddy expression."""
-    s = s.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
-    return s.replace(' ', '\\ ') if spaces else s
 
 _arr_empty_noted = [False]
 def emit_plistbuddy(array_name, index, item, path_prefix=""):
@@ -2813,13 +2826,6 @@ diff(prev, curr, [])
 
 # An all-string array gaining elements is emitted whole (`-array`), no index.
 # A " or \ in any element falls back to the positional Add.
-# defaults parses each -array element as an old-style plist: (x) became a
-# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
-def _arg(e):
-    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
-        return '"%s"' % e
-    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    return "'" + q.replace("'", "'\\''") + "'"
 def rewritable(arr_name):
     arr = curr.get(arr_name)
     return (isinstance(arr, list) and arr
@@ -2909,18 +2915,9 @@ _py_deletions_raw() {
   [ -n "$PYTHON3_BIN" ] || return 0
   [ -s "$curr_json" ] || return 0
   [ -s "$prev_json" ] || return 0
-  "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
-import json, sys, os
-# defaults parses each -array element as an old-style plist: (x) became a
-# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
-def _arg(e):
-    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
-        return '"%s"' % e
-    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    return "'" + q.replace("'", "'\\''") + "'"
-
-domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
-
+  PW_PY_COMMON="$_PY_COMMON" "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_ELEMENT_NOISE_MARKERS}" <<'PY'
+import os
+exec(os.environ['PW_PY_COMMON'])
 # _ELEMENT_NOISE_MARKERS: on a deletion only this side sees the values.
 _NOISE_RULES = []
 for _spec in (sys.argv[4] if len(sys.argv) > 4 else '').split(','):
@@ -2933,31 +2930,7 @@ def is_noise_element(arr_name, item):
     blob = json.dumps(item, sort_keys=True, default=str)
     return any(d == domain and a == arr_name and m in blob for d, a, m in _NOISE_RULES)
 
-def load(path):
-    if not os.path.exists(path) or os.path.getsize(path) == 0:
-        return {}
-    with open(path, 'r') as handle:
-        try:
-            return json.load(handle)
-        except Exception:
-            return {}
-
-prev = load(prev_path)
-curr = load(curr_path)
-
 results = []
-
-# SHARED BLOCK in the three Python workers: EDIT ALL THREE TOGETHER.
-_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
-                  'is-beta', 'tile-type', 'GUID', 'book'}
-
-def strip_volatile(obj):
-    """Strip volatile metadata keys for stable array element matching"""
-    if isinstance(obj, dict):
-        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
-    if isinstance(obj, list):
-        return [strip_volatile(e) for e in obj]
-    return obj
 
 def diff_deletions(prev_obj, curr_obj, path):
     """Find deleted elements by comparing prev with curr"""
@@ -3133,64 +3106,9 @@ emit_nested_dict_changes() {
   if [ -n "$precomputed" ] && [ -f "$precomputed" ]; then
     py_output=$(< "$precomputed")
   else
-  py_output=$("$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_PRINT_PRESET_NOISE}" <<'PY'
-import json, sys, os
-# defaults parses each -array element as an old-style plist: (x) became a
-# list, $(x) {x} <x> were refused. Plain ones stay bare; others go quoted.
-def _arg(e):
-    if e and all((c.isascii() and c.isalnum()) or c in '_.:/+-' for c in e):
-        return '"%s"' % e
-    q = '"' + e.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    return "'" + q.replace("'", "'\\''") + "'"
-
-domain, prev_path, curr_path = sys.argv[1], sys.argv[2], sys.argv[3]
-
-def load(path):
-    if not os.path.exists(path) or os.path.getsize(path) == 0:
-        return {}
-    with open(path, 'r') as handle:
-        try:
-            return json.load(handle)
-        except Exception:
-            return {}
-
-prev = load(prev_path)
-curr = load(curr_path)
-
-# SHARED BLOCK in the three Python workers: EDIT ALL THREE TOGETHER.
-_VOLATILE_KEYS = {'parent-mod-date', 'file-mod-date', 'file-type', 'dock-extra',
-                  'is-beta', 'tile-type', 'GUID', 'book'}
-
-def strip_volatile(obj):
-    """Strip volatile metadata keys for stable array element matching"""
-    if isinstance(obj, dict):
-        return {k: strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_KEYS}
-    if isinstance(obj, list):
-        return [strip_volatile(e) for e in obj]
-    return obj
-
-def pb_type_value(val):
-    """Return (type, value) for PlistBuddy Add command"""
-    if isinstance(val, bool):
-        return ("bool", "true" if val else "false")
-    if isinstance(val, int):
-        return ("integer", str(val))
-    if isinstance(val, float):
-        return ("real", str(val))
-    if isinstance(val, str):
-        # PlistBuddy reads \ ' " as escapes even bare, and a bare ' or " is an
-        # unclosed quote (nothing written). Edge whitespace needs the quotes.
-        s = pb_escape(val, spaces=False)
-        if val[:1].isspace() or val[-1:].isspace():
-            return ("string", '"' + s + '"')
-        return ("string", s)
-    return None
-
-def pb_escape(s, spaces=True):
-    """Escape \\ ' " (and spaces in a key path) for a PlistBuddy expression."""
-    s = s.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
-    return s.replace(' ', '\\ ') if spaces else s
-
+  py_output=$(PW_PY_COMMON="$_PY_COMMON" "$PYTHON3_BIN" - "$dom" "$prev_json" "$curr_json" "${(j:,:)_PRINT_PRESET_NOISE}" <<'PY'
+import os
+exec(os.environ['PW_PY_COMMON'])
 def find_leaf_changes(prev_obj, curr_obj, path_parts):
     """Recursively find changed leaf values, added sub-keys, and deleted sub-keys."""
     if prev_obj == curr_obj:
