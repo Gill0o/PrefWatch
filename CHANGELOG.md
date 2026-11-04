@@ -25,6 +25,7 @@
 - ALL mode with `--verbose` printed each change's `Diff` and `Key:` lines twice, the second time under the domain name. Once now, and one `defaults export` fewer per change.
 - In ALL mode the first `-currentHost` write to an existing domain was announced as "a new domain" (and the reverse). The NOTE names the new scope now.
 - Deleting an entry from a list of dicts in a ByHost file came without the NOTE saying the path holds this Mac's UUID. It has it now.
+- ALL mode at rest took half a CPU core, half of it flushing the hot domains. They are flushed every other cycle now: a fifth less CPU, and a change shows in about 0.8 s instead of 0.5 s.
 
 ### Note
 - README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.

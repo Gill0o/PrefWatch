@@ -31,7 +31,7 @@
 #          a runAsUser helper (root Jamf policy applies them as the logged-in
 #          user) + templatize PlistBuddy paths ($loggedInUser, $UUID) (default: false)
 #     $10 = HOT_DOMAINS. Comma-separated domains whose cfprefsd buffer is
-#          flushed every poll cycle, so a first change surfaces in 1-2s instead
+#          flushed every other poll cycle, so a first change surfaces in 1-2s instead
 #          of ~10s. Default: the common System Settings panels (see the
 #          HOT_DOMAINS array). Pass "NONE" to disable.
 #     $11 = DEBUG (true/false). Log '# FILTERED: <dom> <key> (reason)' when a
@@ -313,7 +313,7 @@ unsetopt xtrace verbose 2>/dev/null || true
 # CONFIGURATION. Hot domains
 # ---------------------------------------
 
-# Hot domains get a cfprefsd flush every poll: a first change shows in 1-2s
+# Hot domains get a cfprefsd flush every other poll: a first change shows in 1-2s
 # instead of ~10s. Override via --hot-domains / Jamf $10 ("NONE" disables).
 typeset -a HOT_DOMAINS=(
   # Shell / appearance
@@ -4534,6 +4534,7 @@ start_watch_all() {
     local _hd _af _adom _p _watchdog
     local -a _pids _hotpaths
     local -A _st
+    local -i _cycle=0
     marker_user="$PREFWATCH_TMPDIR/poll.marker.user"
     marker_sys="$PREFWATCH_TMPDIR/poll.marker.sys"
     active_dir="$PREFWATCH_TMPDIR/active-domains"
@@ -4545,8 +4546,11 @@ start_watch_all() {
     [ -f "$marker_sys" ]  || /usr/bin/touch "$marker_sys" 2>/dev/null || true
 
     while true; do
-      # Flush cfprefsd for domains active in the last 30s.
-      if [ -d "$active_dir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
+      # Flush cfprefsd for domains active in the last 30s, every other cycle: the 20
+      # `defaults read` of one flush cost ~130 ms CPU (27.0.1), a quarter of a core
+      # at every cycle. The scan below stays on every cycle.
+      _cycle=$(( _cycle + 1 ))
+      if (( _cycle % 2 == 1 )) && [ -d "$active_dir" ] && [ "$HAVE_ZSH_STAT" = "true" ]; then
         (( ${#_hotpaths[@]} )) && { /usr/bin/touch "${_hotpaths[@]}" 2>/dev/null || true; }
         _pids=()
         # (DN): a plain glob skips .GlobalPreferences, a HOT domain.
