@@ -2146,6 +2146,7 @@ _build_defaults_write_cmd() {
   # The domain is a filename: quote it (spaces exist) and escape it (a
   # com.x$(…).plist would run in the admin root shell).
   local _dm; _dm=$(_escape_dq "$dom")
+  local _w="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\""
 
   # Probe the type as the CONSOLE USER (root reads its own domain and got -bool
   # for -int 0). The space stays outside ${hostflag:+…}, or zsh makes one word.
@@ -2158,26 +2159,26 @@ _build_defaults_write_cmd() {
   # The probe and the dump are two instants: a bare interpolation needs the
   # text to BE a number, or a string that arrived in between runs as shell.
   if [ "$actual_type" = "float" ] && [[ "$trimmed" =~ ^-?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
+    cmd="${_w} -float ${trimmed}"
   elif [ "$actual_type" = "integer" ] && [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
+    cmd="${_w} -int ${trimmed}"
   elif [ "$actual_type" = "boolean" ]; then
     type_val=$( [ "$trimmed" = "1" ] || [ "$trimmed" = "true" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
+    cmd="${_w} -bool ${type_val}"
   elif [[ "$trimmed" =~ ^\".*\"$ ]]; then
     noquotes="${trimmed#\"}"; noquotes="${noquotes%\"}"
     str=$(_escape_dq "$noquotes")
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"${str}\""
+    cmd="${_w} -string \"${str}\""
   elif [[ "$trimmed" == "true" ]] || [[ "$trimmed" == "false" ]]; then
     type_val=$(printf '%s' "$trimmed" | /usr/bin/tr '[:lower:]' '[:upper:]')
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
+    cmd="${_w} -bool ${type_val}"
   elif [[ "$trimmed" == "0" ]] || [[ "$trimmed" == "1" ]]; then
     type_val=$( [ "$trimmed" = "1" ] && echo TRUE || echo FALSE )
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${type_val}"
+    cmd="${_w} -bool ${type_val}"
   elif [[ "$trimmed" =~ ^-?[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${trimmed}"
+    cmd="${_w} -int ${trimmed}"
   elif [[ "$trimmed" =~ ^-?[0-9]*\.[0-9]+$ ]]; then
-    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${trimmed}"
+    cmd="${_w} -float ${trimmed}"
   else
     if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
       plutil_type="${plutil_result%%|*}"
@@ -2187,21 +2188,21 @@ _build_defaults_write_cmd() {
           if [[ "$plutil_value" == *$'\n'* ]]; then
             # Multi-line: one log line, POSIX, exact once run.
             local _ml="${plutil_value//\\/\\\\}"; _ml="${_ml//$'\n'/\\n}"; _ml="${_ml//$_SQ/$_SQ_ESC}"
-            cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"\$(printf '%b' '${_ml}')\""
+            cmd="${_w} -string \"\$(printf '%b' '${_ml}')\""
           else
-            cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -string \"$(_escape_dq "$plutil_value")\""
+            cmd="${_w} -string \"$(_escape_dq "$plutil_value")\""
           fi ;;
-        bool)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -bool ${plutil_value}" ;;
-        int)    cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -int ${plutil_value}" ;;
-        float)  cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -float ${plutil_value}" ;;
+        bool)   cmd="${_w} -bool ${plutil_value}" ;;
+        int)    cmd="${_w} -int ${plutil_value}" ;;
+        float)  cmd="${_w} -float ${plutil_value}" ;;
         # ISO 8601 as plutil prints it; `defaults write -date` takes it (27).
-        date)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -date \"${plutil_value}\"" ;;
-        data)   cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" -data ${plutil_value}" ;;
+        date)   cmd="${_w} -date \"${plutil_value}\"" ;;
+        data)   cmd="${_w} -data ${plutil_value}" ;;
         array|dict) cmd="" ;;
-        *) cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>" ;;
+        *) cmd="${_w} <type> <value>" ;;
       esac
     else
-      cmd="defaults ${hostflag:+$hostflag }write \"${_dm}\" \"${_kn}\" <type> <value>"
+      cmd="${_w} <type> <value>"
     fi
   fi
 
