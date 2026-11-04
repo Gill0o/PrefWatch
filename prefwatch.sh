@@ -1954,6 +1954,13 @@ snapshot_notice() {
 # Plist & PlistBuddy
 # ---------------------------------------
 
+# The value on the first `"key" => …` line of a plutil -p dump. $3 = '"' strips
+# a string's quotes and matches nothing else. `|| true` inside: head closing the
+# pipe would otherwise kill the capture under set -e + pipefail.
+_dump_value() {
+  /usr/bin/sed -n "s/^[[:space:]]*\"$2\" => ${3:-}\(.*\)${3:-}\$/\1/p" "$1" 2>/dev/null | /usr/bin/head -1 || true
+}
+
 dump_plist() {
   local src="$1" out="$2"
   if ! /usr/bin/plutil -p "$src" > "$out" 2>/dev/null; then
@@ -3870,8 +3877,8 @@ _tm_skippaths() {
 # AutoBackupInterval follows AutoBackup (measured 27.0), so it is skipped then.
 _tm_autobackup_moved() {
   local _p _c
-  _p=$(/usr/bin/sed -n 's/^[[:space:]]*"AutoBackup" => \(.*\)$/\1/p' "$1" 2>/dev/null | /usr/bin/head -1) || _p=""
-  _c=$(/usr/bin/sed -n 's/^[[:space:]]*"AutoBackup" => \(.*\)$/\1/p' "$2" 2>/dev/null | /usr/bin/head -1) || _c=""
+  _p=$(_dump_value "$1" AutoBackup) || _p=""
+  _c=$(_dump_value "$2" AutoBackup) || _c=""
   [ "$_p" != "$_c" ]
 }
 
@@ -3879,8 +3886,8 @@ _note_timemachine() {
   local kind="$1" prev="$2" curr="$3" _p _c _path
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
 
-  _p=$(/usr/bin/sed -n 's/^[[:space:]]*"AutoBackup" => \(.*\)$/\1/p' "$prev" 2>/dev/null | /usr/bin/head -1) || _p=""
-  _c=$(/usr/bin/sed -n 's/^[[:space:]]*"AutoBackup" => \(.*\)$/\1/p' "$curr" 2>/dev/null | /usr/bin/head -1) || _c=""
+  _p=$(_dump_value "$prev" AutoBackup) || _p=""
+  _c=$(_dump_value "$curr" AutoBackup) || _c=""
   if [ -n "$_c" ] && [ "$_p" != "$_c" ] && _note_should_show "__tm_auto__:$_c"; then
     case "$_c" in
       1|true|TRUE) _log_kind "$kind" "Cmd: sudo /usr/bin/tmutil enable" ;;
@@ -3929,8 +3936,8 @@ _note_print_preset() {
 _note_wifi_power() {
   local kind="$1" prev="$2" curr="$3" _p _c _dev
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
-  _p=$(/usr/bin/sed -n 's/^[[:space:]]*"PowerEnabled" => \(.*\)$/\1/p' "$prev" 2>/dev/null | /usr/bin/head -1) || _p=""
-  _c=$(/usr/bin/sed -n 's/^[[:space:]]*"PowerEnabled" => \(.*\)$/\1/p' "$curr" 2>/dev/null | /usr/bin/head -1) || _c=""
+  _p=$(_dump_value "$prev" PowerEnabled) || _p=""
+  _c=$(_dump_value "$curr" PowerEnabled) || _c=""
   [ -n "$_c" ] && [ "$_p" != "$_c" ] || return 0
   _note_should_show "__wifi_power__:$_c" || return 0
   _dev=$(/usr/sbin/networksetup -listallhardwareports 2>/dev/null \
@@ -3948,8 +3955,8 @@ _note_wifi_power() {
 _note_seed_enrollment() {
   local kind="$1" prev="$2" curr="$3" _p _c _prog
   [ -s "$prev" ] && [ -s "$curr" ] || return 0
-  _p=$(/usr/bin/sed -n 's/^[[:space:]]*"CatalogURL" => "\(.*\)"$/\1/p' "$prev" 2>/dev/null | /usr/bin/head -1) || _p=""
-  _c=$(/usr/bin/sed -n 's/^[[:space:]]*"CatalogURL" => "\(.*\)"$/\1/p' "$curr" 2>/dev/null | /usr/bin/head -1) || _c=""
+  _p=$(_dump_value "$prev" CatalogURL '"') || _p=""
+  _c=$(_dump_value "$curr" CatalogURL '"') || _c=""
   [ "$_p" != "$_c" ] || return 0
   _note_should_show "__seed__:${_c:+on}" || return 0
   if [ -z "$_c" ]; then
@@ -3971,8 +3978,7 @@ _note_charge_limit() {
 # with python3 wallpaper_watch already emits it, so only elsewhere here.
 _desktoppr_lastpath() {
   [ -s "$1" ] || return 0
-  # No pipe: `$(cmd | head)` dies under set -e + pipefail.
-  /usr/bin/sed -n 's/^[[:space:]]*"lastPath" => "\(.*\)"$/\1/p' "$1" 2>/dev/null
+  _dump_value "$1" lastPath '"'
 }
 
 # The desktoppr header, shared by _note_desktoppr and wallpaper_watch.
@@ -4147,7 +4153,7 @@ show_plist_diff() {
     fi
     # Network location: CurrentSet is filtered; say what reproduces it.
     if [ "$_dom" = preferences ] && [[ "$path" == */SystemConfiguration/preferences.plist ]] \
-       && [ "$(/usr/bin/sed -n 's/^[[:space:]]*"CurrentSet" => //p' "$prev" 2>/dev/null)" != "$(/usr/bin/sed -n 's/^[[:space:]]*"CurrentSet" => //p' "$curr" 2>/dev/null)" ]; then
+       && [ "$(_dump_value "$prev" CurrentSet)" != "$(_dump_value "$curr" CurrentSet)" ]; then
       _note_network_location "$kind" "$path" || _log_kind "$kind" "Cmd: # NOTE: network location changed. Its name could not be resolved, so no scselect command is emitted."
     fi
     if [ "$_dom" = "com.apple.TimeMachine" ] && _tm_autobackup_moved "$prev" "$curr"; then
