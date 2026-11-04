@@ -2525,7 +2525,21 @@ _process_diff_lines() {
     : > "$prev" 2>/dev/null || return 0
     # DEFERRED until this domain emits a line; cleared at the end of this pass.
     if _note_should_show "__newdom__:${dom}"; then
-      typeset -g _PENDING_NEWDOM_NOTE="Cmd: # NOTE: '$dom' is a new domain. The commands below are its full configuration, not a single change"
+      # A new FILE is not a new domain when its other-scope sibling was snapshotted.
+      local _sib _sib_scope=""
+      if [[ "$emit_plist_path" == */ByHost/* ]]; then
+        _sib="${emit_plist_path:h:h}/${dom}.plist"
+        if [ -s "$CACHE_DIR/$(hash_path "$_sib").prev" ]; then _sib_scope="-currentHost settings"; fi
+      elif [ -n "$emit_plist_path" ]; then
+        for _sib in "${emit_plist_path:h}"/ByHost/${(b)dom}.*.plist(N.); do
+          if [ -s "$CACHE_DIR/$(hash_path "$_sib").prev" ]; then _sib_scope="settings outside -currentHost"; break; fi
+        done
+      fi
+      if [ -n "$_sib_scope" ]; then
+        typeset -g _PENDING_NEWDOM_NOTE="Cmd: # NOTE: '$dom' gets its first ${_sib_scope}. The commands below are all of them, not a single change"
+      else
+        typeset -g _PENDING_NEWDOM_NOTE="Cmd: # NOTE: '$dom' is a new domain. The commands below are its full configuration, not a single change"
+      fi
     fi
   fi
 

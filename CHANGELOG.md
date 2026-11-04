@@ -21,6 +21,7 @@
 - ALL mode could stop on its own while taking its starting snapshot, more often on a busy Mac: a zsh capture returned a stray error. That loop no longer forks one.
 - A plist path followed by two options (`/x.plist -v --log f`) was taken for a Jamf launch, and `--log` became the domain. It is read as a command line now.
 - ALL mode with `--verbose` printed each change's `Diff` and `Key:` lines twice, the second time under the domain name. Once now, and one `defaults export` fewer per change.
+- In ALL mode the first `-currentHost` write to an existing domain was announced as "a new domain" (and the reverse). The NOTE names the new scope now.
 
 ### Note
 - README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
