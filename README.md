@@ -42,6 +42,7 @@ sudo pkill -f 'prefwatch\.sh'
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
+| `--duration <s>` | -- | Stop by itself after that many seconds, counted from launch, and exit 0 | Off |
 | `--help` | `-h` | Show the help | -- |
 | `--version` | -- | Print the version and exit | -- |
 

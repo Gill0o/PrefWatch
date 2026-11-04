@@ -114,6 +114,8 @@ Options:
                         ($loggedInUser home, $UUID for ByHost files)
   --no-console          Don't open Console.app and don't stop when it closes;
                         run until Ctrl+C / SIGTERM (interactive / VM testing)
+  --duration <seconds>  Stop by itself after that many seconds, exit 0. Counted
+                        from launch, the starting snapshot included
 
 Examples:
   # Monitor all domains (default behavior)
@@ -223,6 +225,15 @@ parse_cli_args() {
         FS_USAGE_RAW="true"
         shift
         ;;
+      --duration)
+        # Nine digits at most: a longer one overflows the deadline into the past.
+        if [[ ! "${2:-}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+          echo "Error: --duration requires a whole number of seconds" >&2
+          exit 1
+        fi
+        DURATION="${2}"
+        shift 2
+        ;;
       -h|--help)
         show_help
         ;;
@@ -238,6 +249,8 @@ parse_cli_args() {
     esac
   done
 }
+
+DURATION=""   # CLI only: Jamf's parameter slots are all taken.
 
 # Jamf passes mount_point, computer_name, username as $1-$3, user params at $4+.
 # Neither name starts with `-`: `/x.plist -v --log f` is a CLI call, not Jamf.
@@ -4284,6 +4297,15 @@ _shutdown_watcher() {
   done
 }
 
+# --duration, polled by the MAIN loops. No timer process: orphaned by a SIGKILL
+# it would later signal a recycled pid, as root.
+_stop_on_duration() {
+  [ -n "$DURATION" ] && (( SECONDS >= _DEADLINE )) || return 0
+  log_line "Duration reached (${DURATION} s). Stopping monitoring"
+  _shutdown_watcher
+  exit 0
+}
+
 # SIGKILL runs no trap: this watchdog sees the PPID of the watcher root turn 1 and
 # signals it, so its TERM trap tears down. Not `kill -0` (pids are recycled).
 _orphan_watchdog() {
@@ -6077,6 +6099,8 @@ else
   start_watch &
 fi
 WATCH_PID=$!
+typeset -gi _DEADLINE=$(( SECONDS + ${DURATION:-0} ))
+if [ -n "$DURATION" ]; then log_line "Stopping by itself in ${DURATION} s (--duration)"; fi
 
 # A signal to the MAIN pid would skip the EXIT trap and orphan the watcher
 # tree: tear it down leaves first.
@@ -6094,6 +6118,7 @@ if [ "$NO_CONSOLE" != "true" ] && is_console_running; then
   _console_pid=$(/usr/bin/pgrep -x Console 2>/dev/null | /usr/bin/head -1) || true
   _console_misses=0
   while true; do
+    _stop_on_duration
     if [ -n "$_console_pid" ] && kill -0 "$_console_pid" 2>/dev/null; then
       _console_misses=0
     else
@@ -6116,6 +6141,13 @@ else
     log_line "Console disabled (--no-console). Monitoring until Ctrl+C / SIGTERM"
   else
     log_line "Console not detected. Continuing monitoring (Ctrl+C to stop)"
+  fi
+  # A recycled pid here only runs to the deadline: bounded, and nothing is signalled.
+  if [ -n "$DURATION" ]; then
+    while kill -0 "$WATCH_PID" 2>/dev/null; do
+      _stop_on_duration
+      sleep 1 || true
+    done
   fi
   wait "$WATCH_PID" 2>/dev/null || true
   exit 0
