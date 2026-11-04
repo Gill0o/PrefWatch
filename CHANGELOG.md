@@ -31,7 +31,6 @@
 - README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
 - CONTRIBUTING lists `### Note` among the CHANGELOG sections.
 
-
 ## 1.5.2 — 2026-10-26
 
 ### Fix
@@ -49,7 +48,6 @@
 ### Note
 - `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
 - CONTRIBUTING matches the script again: its 14 sections, a watcher added by one `_WATCHERS` line, Jamf `$11`, testing on macOS 15, 26 and 27.
-
 
 ## 1.5.1 — 2026-09-23
 
@@ -82,7 +80,6 @@
 - The script is laid out for reading: a table of contents in the header, titled sections, and each watcher (Touch ID, TCC, Bluetooth, …) as its own function in a WATCHERS section. No code changed.
 - `--fs-usage` (Jamf `$12`) is deprecated: it still runs, says so at startup, and is removed in the next release. Three measurements saw nothing polling did not.
 - The script's comments are down from 32 % to 14 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
-
 
 ## 1.5.0 — 2026-09-17
 
@@ -171,7 +168,6 @@
 - The menu-bar reorder NOTE is a macOS 26 one: on 27 the reorder writes no preference at all (measured; the position keys exist but never move).
 - Spotlight category changes say the pane must be reopened, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
-
 ## 1.4.3 — 2026-09-05
 
 ### Fix
@@ -192,7 +188,6 @@
 
 ### Performance
 - Console is followed by PID rather than by name: `pgrep -x Console` ran every second all session, 14ms a call. Some 50 seconds of CPU an hour.
-
 
 ## 1.4.2 — 2026-09-01
 
