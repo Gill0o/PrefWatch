@@ -3,29 +3,24 @@
 ## 1.5.3 — unreleased
 
 ### Feature
-- `--exclude` (Jamf `$8`) adds to the built-in list when it starts with `+`: `+com.foo.*,com.bar`. Without the `+` it still replaces the list.
+- `--exclude` (Jamf `$8`) starting with `+` adds to the built-in list: `+com.foo.*,com.bar`. Without the `+` it still replaces it.
 - `--version` prints the version and exits.
 - `--duration <seconds>` stops the watch by itself and exits 0, for a run nobody is there to stop. CLI only.
 
 ### Fix
-- A key read as a number, then rewritten as a string an instant later, had that string pasted bare after `-int`/`-float`, shell included. The text must be a number now; a string stays quoted.
-- The `# dockutil --add '<path>'` and `--remove '<label>'` lines broke once copied when the app name holds an apostrophe (Bob's App). The apostrophe is escaped.
-- A nested value or key holding `'`, `"` or `\` made PlistBuddy stop on "Unclosed Quotes": nothing was written on the target. They are escaped now, in `Add`, `Set` and `Delete`.
-- Deleting a nested key whose name holds `"` emitted a `Delete` of the wrong key (`a"b` read as `b`). The key is passed whole now.
-- A date, a binary value (1 KB at most) or a multi-line string came out as nothing on macOS 27, and on any macOS when the key name holds a dot. They are `-date`, `-data` and `-string` now.
-- A top-level key whose name holds `"` was skipped without a trace, written or deleted. It is emitted now.
-- Removing an entry holding `$` from a list that needs the `python3` form left it in place: `$` was escaped for the shell, not for Python. Only `"` is escaped now.
-- In ALL mode an excluded domain could still reach the log through the command emitter: its guard compared the domain with its quotes on. It compares the name now.
-- A domain name holding `/` turned the default log path into a tree under `/var/log`. The `/` becomes `_`.
-- Without root the startup line named a log under `/var/log` while the log went to `/tmp`. It names the real file now.
+- A date, a binary value (1 KB at most) or a multi-line string came out as nothing on macOS 27, and on any macOS with a dot in the key name. They are `-date`, `-data`, `-string` now.
+- `'`, `"`, `\` or `$` in a key or value: PlistBuddy stopped on "Unclosed Quotes", a `Delete` hit the wrong key, a key was skipped, a list entry stayed. All escaped for their target now.
+- A number rewritten as a string an instant later was pasted bare after `-int`/`-float`; an apostrophe in an app name broke the `# dockutil` lines. Both fixed.
+- ALL mode could stop during its starting snapshot on a busy Mac, let an excluded domain reach the log, and print `Diff`/`Key:` twice under `--verbose`. Fixed.
+- ALL mode announced a domain's first `-currentHost` write as "a new domain" (and the reverse). The NOTE names the new scope now.
+- A `/` in the domain name made the log path a tree; without root the startup line named `/var/log`, not the real `/tmp` log. Both fixed.
 - A root run no longer falls back to a fixed `/tmp` name for its abort trace or temp directory, which another user could pre-create.
 - The ARD access line quotes the user name and drops a non-numeric bitmask; a `$UUID` in a real path stays literal outside `--mdm`.
-- ALL mode could stop on its own while taking its starting snapshot, more often on a busy Mac: a zsh capture returned a stray error. That loop no longer forks one.
-- A plist path followed by two options (`/x.plist -v --log f`) was taken for a Jamf launch, and `--log` became the domain. It is read as a command line now.
-- ALL mode with `--verbose` printed each change's `Diff` and `Key:` lines twice, the second time under the domain name. Once now, and one `defaults export` fewer per change.
-- In ALL mode the first `-currentHost` write to an existing domain was announced as "a new domain" (and the reverse). The NOTE names the new scope now.
-- Deleting an entry from a list of dicts in a ByHost file came without the NOTE saying the path holds this Mac's UUID. It has it now.
-- ALL mode at rest took half a CPU core, half of it flushing the hot domains. They are flushed every other cycle now: a fifth less CPU, and a change shows in about 0.8 s instead of 0.5 s.
+- A plist path followed by two options (`/x.plist -v --log f`) was taken for a Jamf launch. It is read as a command line now.
+- Deleting an entry from a list of dicts in a ByHost file now comes with the NOTE saying the path holds this Mac's UUID.
+
+### Performance
+- ALL mode at rest takes a fifth less CPU: the hot domains are flushed every other cycle. A change shows in about 0.8 s instead of 0.5 s.
 
 ### Note
 - README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
