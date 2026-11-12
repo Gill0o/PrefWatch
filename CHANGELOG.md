@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.5.3 — unreleased
+## 1.5.4 — unreleased
+
+
+## 1.5.3 — 2026-11-12
 
 ### Feature
 - `--exclude` (Jamf `$8`) starting with `+` adds to the built-in list: `+com.foo.*,com.bar`. Without the `+` it still replaces it.
