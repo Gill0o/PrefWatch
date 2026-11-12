@@ -20,7 +20,7 @@
 - Deleting an entry from a list of dicts in a ByHost file now comes with the NOTE saying the path holds this Mac's UUID.
 
 ### Performance
-- ALL mode at rest takes a fifth less CPU: the hot domains are flushed every other cycle. A change shows in about 0.8 s instead of 0.5 s.
+- ALL mode at rest takes a fifth less CPU, for about 0.3 s more before a change shows: the hot domains are flushed every other cycle.
 
 ### Note
 - README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
