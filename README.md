@@ -4,7 +4,7 @@ A macOS monitoring tool that watches preference changes in real-time and generat
 
 ## Key Features
 
-- **Reproducible commands**. Every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy`, or the right built-in CLI (`networksetup`, `scselect`, `scutil`, `systemsetup`, `sharing`, `tmutil`, `nvram`, `spctl`/`socketfilterfw`, `mdutil`, `bioutil`, `pmset`, `lpadmin`, `lpoptions`, `cupsctl`, `launchctl`, `kickstart`, `dscl`), or, where macOS offers no CLI at all, a third-party tool's command (see [Third-party tools](#third-party-tools)), with a `python3` one-liner where one exists
+- **Reproducible commands**. Every change is emitted as the exact command that recreates it: `defaults`/`PlistBuddy`, or the right built-in CLI (`networksetup`, `scselect`, `scutil`, `systemsetup`, `sharing`, `tmutil`, `nvram`, `spctl`/`socketfilterfw`, `mdutil`, `bioutil`, `pmset`, `lpadmin`, `lpoptions`, `cupsctl`, `launchctl`, `kickstart`, `AssetCacheManagerUtil`, `dscl`), or, where macOS offers no CLI at all, a third-party tool's command (see [Third-party tools](#third-party-tools)), with a `python3` one-liner where one exists
 - **ALL mode**. Watch every domain at once; no need to know which one changed
 - **Contextual notes**. Inline `# NOTE:` comments: how to apply a change, the tool when `defaults` can't, or why it isn't reproducible (see Scope)
 - **ByHost support**. Emits `-currentHost` for per-hardware prefs (trackpad, Bluetooth)
@@ -33,15 +33,18 @@ sudo pkill -f 'prefwatch\.sh'
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `[domain]` | -- | Domain to monitor (no sudo needed) | `ALL` (sudo) |
+| `[domain]` | -- | Domain to monitor (no sudo needed) | `ALL` |
 | `--verbose` | `-v` | Show diffs and debug info | Off |
 | `--debug` | -- | Log `# FILTERED: <dom> <key> (reason)` when a detected change is suppressed (answers "why didn't my change appear?") | Off |
 | `--log <path>` | `-l` | Custom log file path | Auto |
 | `--no-system` | -- | Exclude `/Library/Preferences` | Include |
-| `--exclude <glob>` | `-e` | Domain patterns to exclude in ALL mode; naming a domain explicitly always watches it | Built-in |
+| `--exclude <glob>` | `-e` | Domain patterns to exclude in ALL mode. Replaces the built-in list (169 patterns); a leading `+` adds to it (`+com.foo.*`). Naming a domain explicitly always watches it | Built-in |
 | `--hot-domains <list>` | -- | Comma-separated domains kept permanently active for instant first-change detection (pass `NONE` to disable) | common System Settings panels (see `HOT_DOMAINS`) |
 | `--mdm` | -- | Make emitted commands fleet-deployable from a root Jamf policy: user-domain commands are prefixed with a `runAsUser` helper, PlistBuddy paths use `$loggedInUser`/`$UUID` (ByHost) | Off |
 | `--no-console` | -- | Don't open Console.app or stop when it closes. Run until Ctrl+C (interactive/VM testing) | Off |
+| `--duration <s>` | -- | Stop by itself after that many seconds, counted from launch, and exit 0 | Off |
+| `--help` | `-h` | Show the help | -- |
+| `--version` | -- | Print the version and exit | -- |
 
 ## Jamf Pro Integration
 
@@ -51,7 +54,7 @@ Jamf reserves `$1`–`$3` (mount point, computer name, user), so PrefWatch takes
 
 PrefWatch reproduces what lands in a watched plist (`defaults`/`PlistBuddy`), plus the out-of-band settings its CLIs cover (above).
 
-A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock reorder, Media Sharing, Bluetooth on/off, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
+A few changes it **detects but can't reduce to one built-in command**. It emits an explanatory `# NOTE:` instead: FileVault (needs a recovery key), the battery charge limit (SMC-managed), a new user account, a Dock or menu bar reorder, Media Sharing, Bluetooth on/off, and a privacy permission (a PPPC profile, not a command). Where an install-first helper reproduces it, the NOTE names the tool (see [Third-party tools](#third-party-tools)).
 
 Everything else is **invisible**. No output is expected, not a bug: internal app databases (Safari, Mail, Calendar), sandboxed app prefs (App Store apps keep theirs under `~/Library/Containers`), Finder sidebar favorites (a `com.apple.sharedfilelist` file, not a plist pref), and hardware state (display & keyboard brightness, HDR).
 
@@ -70,11 +73,11 @@ For settings with no built-in command, a `# NOTE:` names the tool. And for defau
 
 - A single domain is watched in one plist: its `~/Library/Preferences` file, or its ByHost (per-hardware) file when it has only that. A domain with both shows its ByHost writes in ALL mode.
 - ALL mode without `sudo` covers `~/Library/Preferences`. Root is what adds `/Library/Preferences`, the sharing commands and launchd state. Full Disk Access is what names a privacy permission; without it, or where macOS keeps the per-user privacy database out of every process's reach, the change is reported, not named.
-- Detection is by polling, so latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every 0.5s so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
+- Detection is by polling, so latency depends on when `cfprefsd` flushes writes to disk. Hot domains are flushed every second so changes surface in a second or two; a cold domain can take about ten seconds on its first change. Pass it via `--hot-domains` upfront if that matters.
 
 ## Security
 
-PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` and syslog. These may contain user-specific data (IDs, tokens, paths, the privacy-permission table). The log is `0600`, owned by the console user. **Review before sharing**. Use `--exclude` to skip sensitive domains.
+PrefWatch logs plist diffs to `/var/log/prefwatch-v*.log` (`/tmp` without root) and syslog. These may contain user-specific data (IDs, tokens, paths, the privacy-permission table). The log is `0600`, owned by the console user. **Review before sharing**. `--exclude +<glob>` skips sensitive domains on top of the built-in list.
 
 ## License
 

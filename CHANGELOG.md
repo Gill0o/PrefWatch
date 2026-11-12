@@ -1,11 +1,37 @@
 # Changelog
 
+## 1.5.3 — 2026-11-12
+
+### Feature
+- `--exclude` (Jamf `$8`) starting with `+` adds to the built-in list: `+com.foo.*,com.bar`. Without the `+` it still replaces it.
+- `--version` prints the version and exits.
+- `--duration <seconds>` stops the watch by itself and exits 0, for a run nobody is there to stop. CLI only.
+
+### Fix
+- A date, a binary value (1 KB at most) or a multi-line string came out as nothing on macOS 27, and on any macOS with a dot in the key name. They are `-date`, `-data`, `-string` now.
+- `'`, `"`, `\` or `$` in a key or value: PlistBuddy stopped on "Unclosed Quotes", a `Delete` hit the wrong key, a key was skipped, a list entry stayed. All escaped for their target now.
+- A number rewritten as a string an instant later was pasted bare after `-int`/`-float`; an apostrophe in an app name broke the `# dockutil` lines. Both fixed.
+- ALL mode could stop during its starting snapshot on a busy Mac, let an excluded domain reach the log, and print `Diff`/`Key:` twice under `--verbose`. Fixed.
+- ALL mode announced a domain's first `-currentHost` write as "a new domain" (and the reverse). The NOTE names the new scope now.
+- A `/` in the domain name made the log path a tree; without root the startup line named `/var/log`, not the real `/tmp` log. Both fixed.
+- A root run no longer falls back to a fixed `/tmp` name for its abort trace or temp directory, which another user could pre-create.
+- The ARD access line quotes the user name and drops a non-numeric bitmask; a `$UUID` in a real path stays literal outside `--mdm`.
+- A plist path followed by two options (`/x.plist -v --log f`) was taken for a Jamf launch. It is read as a command line now.
+- Deleting an entry from a list of dicts in a ByHost file now comes with the NOTE saying the path holds this Mac's UUID.
+
+### Performance
+- ALL mode at rest takes a fifth less CPU, for about 0.3 s more before a change shows: the hot domains are flushed every other cycle.
+
+### Note
+- README: `--exclude` without `+` replaces the built-in list, ALL mode needs no `sudo`, the log falls back to `/tmp`, `AssetCacheManagerUtil` and the menu bar NOTE are listed.
+- CONTRIBUTING lists `### Note` among the CHANGELOG sections.
+
 ## 1.5.2 — 2026-10-26
 
 ### Fix
 - Watching a single domain that exists only in ByHost (per-hardware) emitted nothing: the ByHost file was never found. It is watched now, with `-currentHost` commands.
 - A list entry that reads as plist syntax, `(x)`, `{x}`, `<x>`, `$(x)`, was refused by `defaults -array` or written as a sub-list. It is quoted now; one with `"` or `\` no longer needs python3.
-- A Finder toolbar edit (item removed, added, moved) came out as PlistBuddy lines by index: on a Mac whose bar differs, neither bar resulted. One `defaults write … -dict-add` now, whole list.
+- An edit to a string list one level into a dict (any toolbar) came out as PlistBuddy lines by index: on a Mac whose list differs, neither list resulted. One `-dict-add` now, whole list.
 - Any default app change asks the user to confirm, not only the browser's, and `utiluti` waits for that answer. The NOTE said browser only; it now comes with every change.
 - Moving a menu bar icon on macOS 27 gave nothing, not even the layout NOTE: 27.0.1 keeps positions in a group container. It is watched now, for the NOTE.
 - Stopping prefwatch just as it printed "You can now make your changes" could leave its watchers running (1 run in 6). The teardown is armed before the first watcher starts.
@@ -17,7 +43,6 @@
 ### Note
 - `--fs-usage` (Jamf `$12`) is removed: the flag is accepted, ignored, and a NOTE says so. Polling sees the same writes at the same latency.
 - CONTRIBUTING matches the script again: its 14 sections, a watcher added by one `_WATCHERS` line, Jamf `$11`, testing on macOS 15, 26 and 27.
-
 
 ## 1.5.1 — 2026-09-23
 
@@ -50,7 +75,6 @@
 - The script is laid out for reading: a table of contents in the header, titled sections, and each watcher (Touch ID, TCC, Bluetooth, …) as its own function in a WATCHERS section. No code changed.
 - `--fs-usage` (Jamf `$12`) is deprecated: it still runs, says so at startup, and is removed in the next release. Three measurements saw nothing polling did not.
 - The script's comments are down from 32 % to 14 % of its lines: each block keeps the measured fact, the rule and the trap, and drops the story of how it was found. No code changed.
-
 
 ## 1.5.0 — 2026-09-17
 
@@ -139,7 +163,6 @@
 - The menu-bar reorder NOTE is a macOS 26 one: on 27 the reorder writes no preference at all (measured; the position keys exist but never move).
 - Spotlight category changes say the pane must be reopened, and that `EnabledPreferenceRules` lists the DISABLED categories.
 
-
 ## 1.4.3 — 2026-09-05
 
 ### Fix
@@ -160,7 +183,6 @@
 
 ### Performance
 - Console is followed by PID rather than by name: `pgrep -x Console` ran every second all session, 14ms a call. Some 50 seconds of CPU an hour.
-
 
 ## 1.4.2 — 2026-09-01
 

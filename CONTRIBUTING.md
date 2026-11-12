@@ -23,15 +23,20 @@ Thanks for your interest in contributing to PrefWatch! This guide covers how the
 
 1. **Fork the repository** on GitHub.
 2. **Clone your fork** locally:
+
    ```bash
    git clone https://github.com/<you>/PrefWatch.git
    cd PrefWatch
    ```
+
 3. **Add the upstream remote**:
+
    ```bash
    git remote add upstream https://github.com/Gill0o/PrefWatch.git
    ```
+
 4. **Install the pre-commit hook** (optional, it reminds you to update the CHANGELOG):
+
    ```bash
    cp pre-commit .git/hooks/pre-commit
    chmod +x .git/hooks/pre-commit
@@ -43,6 +48,7 @@ Thanks for your interest in contributing to PrefWatch! This guide covers how the
 - **`dev`**: the integration branch where all work lands. **Open your PRs against `dev`.** Releases are cut from `dev` by the maintainer.
 
 Create a topic branch from `dev` in your fork:
+
 ```bash
 git remote add upstream https://github.com/Gill0o/PrefWatch.git   # once
 git fetch upstream
@@ -68,13 +74,15 @@ Branch naming:
 ## Commit Guidelines
 
 ### Format
-```
+
+```text
 <type>(<scope>): <subject>
 
 <body>
 
 <footer>
 ```
+
 `scope` is optional (most commits omit it). Keep the subject imperative and under ~72 chars.
 
 ### Types
@@ -88,7 +96,8 @@ Branch naming:
 - `chore`: maintenance
 
 ### Examples
-```
+
+```text
 feat: emit a `killall Dock` NOTE for Dock preference changes
 
 fix: place -currentHost before the verb in emitted ByHost writes
@@ -101,7 +110,7 @@ docs: clarify NOTE scope for undetectable settings
 
 ## CHANGELOG
 
-Add an entry under the top **`## X.Y.Z — unreleased`** section in the same commit as your code change. Use the project's section headers: **`### Feature`**, **`### Fix`**, **`### Noise`**, **`### Performance`**, **`### UX`** (singular, not Keep-a-Changelog's `Added`/`Fixed`). One tight line per entry: what changed, briefly why.
+Add an entry under the top **`## X.Y.Z — unreleased`** section in the same commit as your code change. Use the project's section headers: **`### Feature`**, **`### Fix`**, **`### Noise`**, **`### Performance`**, **`### UX`**, **`### Note`** (singular, not Keep-a-Changelog's `Added`/`Fixed`). `### Note` takes doc changes (README, CONTRIBUTING) and anything a user should know that is not a fix. One tight line per entry: what changed, briefly why.
 
 ```markdown
 ## X.Y.Z — unreleased

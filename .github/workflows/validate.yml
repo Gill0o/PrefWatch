@@ -2,14 +2,16 @@ name: Validate Script
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
 jobs:
+  # prefwatch.sh and merge-to-main.sh are zsh: ShellCheck refuses them (SC1071),
+  # so they get `zsh -n` below. Only the bash helpers are linted, and strictly.
   shellcheck:
-    name: ShellCheck Validation
+    name: ShellCheck Validation (bash helpers)
     runs-on: macos-latest
 
     steps:
@@ -19,19 +21,16 @@ jobs:
     - name: Install ShellCheck
       run: brew install shellcheck
 
-    - name: Run ShellCheck on main script
+    - name: Run ShellCheck on release.sh and pre-commit
       run: |
-        echo "Running ShellCheck on prefwatch.sh..."
-        shellcheck -x prefwatch.sh || true
-
-    - name: Run ShellCheck on release.sh
-      run: |
-        if [ -f release.sh ]; then
-          echo "Running ShellCheck on release.sh..."
-          shellcheck release.sh || true
-        else
-          echo "release.sh not present (main branch), skipping"
-        fi
+        for f in release.sh pre-commit; do
+          if [ -f "$f" ]; then
+            echo "Running ShellCheck on $f..."
+            shellcheck "$f"
+          else
+            echo "$f not present (main branch), skipping"
+          fi
+        done
 
   syntax-check:
     name: Bash/Zsh Syntax Check
@@ -46,14 +45,24 @@ jobs:
         echo "Checking Zsh syntax on prefwatch.sh..."
         zsh -n prefwatch.sh
 
-    - name: Check Bash syntax (release.sh)
+    - name: Check Zsh syntax (merge-to-main.sh)
       run: |
-        if [ -f release.sh ]; then
-          echo "Checking Bash syntax on release.sh..."
-          bash -n release.sh
+        if [ -f merge-to-main.sh ]; then
+          zsh -n merge-to-main.sh
         else
-          echo "release.sh not present, skipping"
+          echo "merge-to-main.sh not present (main branch), skipping"
         fi
+
+    - name: Check Bash syntax (release.sh, pre-commit)
+      run: |
+        for f in release.sh pre-commit; do
+          if [ -f "$f" ]; then
+            echo "Checking Bash syntax on $f..."
+            bash -n "$f"
+          else
+            echo "$f not present (main branch), skipping"
+          fi
+        done
 
   version-check:
     name: Version Consistency Check
@@ -96,15 +105,22 @@ jobs:
     - name: Make script executable
       run: chmod +x prefwatch.sh
 
-    - name: Test script help/version output
+    # A run never ends on its own (it watches until killed), and macOS has no
+    # `timeout`: the old step failed with 127 under `|| true` and tested nothing.
+    - name: Test help output
       run: |
-        echo "Testing script execution..."
-        timeout 5 ./prefwatch.sh ALL 1 || true
+        out=$(./prefwatch.sh -h)
+        printf '%s\n' "$out" | head -3
+        printf '%s\n' "$out" | grep -q '^Usage: prefwatch.sh'
 
-    - name: Test with invalid parameters
+    - name: Test version output
+      run: ./prefwatch.sh --version | grep -q '^prefwatch [0-9]'
+
+    - name: Test that invalid parameters are refused
       run: |
-        echo "Testing error handling..."
-        ./prefwatch.sh "" || echo "Expected failure for empty domain"
+        if ./prefwatch.sh "" >/dev/null 2>&1; then echo "::error::empty domain accepted"; exit 1; fi
+        if ./prefwatch.sh --bogus-flag >/dev/null 2>&1; then echo "::error::unknown flag accepted"; exit 1; fi
+        echo "✓ empty domain and unknown flag refused"
 
     - name: Verify required commands exist
       run: |
@@ -159,11 +175,4 @@ jobs:
       uses: DavidAnson/markdownlint-cli2-action@v19
       with:
         globs: '*.md'
-        config: |
-          {
-            "MD013": false,
-            "MD033": false,
-            "MD041": false
-          }
-      continue-on-error: true
 
