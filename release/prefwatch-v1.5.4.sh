@@ -2026,18 +2026,21 @@ PYJSON
 # Type and value of a key read from the FILE: `<type>|<value>`. `plutil -type`
 # + `-extract raw` (macOS 12+): `-extract … json` refuses every scalar on
 # 27.0.1. The keypath escapes `.`, or com.apple.x is read as three levels.
-# A string comes back unescaped, a date in ISO 8601, data as hex.
+# A string comes back unescaped, a date in ISO 8601, data as hex. A closing |
+# keeps a trailing newline of the value through the caller's $( ).
 extract_type_value_with_plutil() {
   local plist="$1" key="$2" kp type value
   kp="${key//./\\.}"
   type=$(/usr/bin/plutil -type "$kp" "$plist" 2>/dev/null) || type=""
   case "$type" in
-    array)      printf 'array|\n'; return 0 ;;
-    dictionary) printf 'dict|\n'; return 0 ;;
+    array)      printf 'array||\n'; return 0 ;;
+    dictionary) printf 'dict||\n'; return 0 ;;
     bool|integer|float|string|date|data) ;;
     *) _extract_type_value_json "$plist" "$kp"; return ;;
   esac
-  value=$(/usr/bin/plutil -extract "$kp" raw -o - "$plist" 2>/dev/null) || return 1
+  # plutil adds one \n; $( ) would also strip the value's own trailing ones.
+  value=$(/usr/bin/plutil -extract "$kp" raw -o - "$plist" 2>/dev/null && printf .) || return 1
+  value="${value%.}"; value="${value%$'\n'}"
   case "$type" in
     bool)    value=$(printf '%s' "$value" | /usr/bin/tr '[:lower:]' '[:upper:]') ;;
     integer) type=int ;;
@@ -2045,9 +2048,9 @@ extract_type_value_with_plutil() {
     data)
       # Past 1 KB a blob is serialized state (bookmark, archived object), not a setting.
       value=$(printf '%s' "$value" | /usr/bin/base64 -D 2>/dev/null | /usr/bin/od -v -An -tx1 | /usr/bin/tr -d ' \n') || return 1
-      [ -n "$value" ] && (( ${#value} <= 2048 )) || return 1 ;;
+      (( ${#value} <= 2048 )) || return 1 ;;
   esac
-  printf '%s|%s\n' "$type" "$value"
+  printf '%s|%s|\n' "$type" "$value"
 }
 
 # Older plutil, without -type: the JSON form, scalars only.
@@ -2069,7 +2072,7 @@ _extract_type_value_json() {
   else
     return 1
   fi
-  printf '%s|%s\n' "$type" "$value"
+  printf '%s|%s|\n' "$type" "$value"
 }
 
 # `defaults … delete` → PlistBuddy. $2 = real plist path (the ByHost file,
@@ -2207,7 +2210,7 @@ _build_defaults_write_cmd() {
   else
     if [ -f "$plist_path" ] && plutil_result=$(extract_type_value_with_plutil "$plist_path" "$keyname" 2>/dev/null); then
       plutil_type="${plutil_result%%|*}"
-      plutil_value="${plutil_result#*|}"
+      plutil_value="${plutil_result#*|}"; plutil_value="${plutil_value%|}"
       case "$plutil_type" in
         string)
           if [[ "$plutil_value" == *$'\n'* ]]; then
@@ -2222,7 +2225,8 @@ _build_defaults_write_cmd() {
         float)  cmd="${_w} -float ${plutil_value}" ;;
         # ISO 8601 as plutil prints it; `defaults write -date` takes it (27).
         date)   cmd="${_w} -date \"${plutil_value}\"" ;;
-        data)   cmd="${_w} -data ${plutil_value}" ;;
+        # Empty data: `-data ""` writes 0 bytes, a bare `-data` is refused.
+        data)   cmd="${_w} -data ${plutil_value:-\"\"}" ;;
         array|dict) cmd="" ;;
         *) cmd="${_w} <type> <value>" ;;
       esac
@@ -2429,6 +2433,12 @@ _process_py_meta() {
 
   while IFS=$'\t' read -r _array_base _array_idx _array_keys; do
     [ -n "$_array_base" ] || continue
+    # MLSTR: written by _process_diff_lines from the file, not from its text lines.
+    if [ "$_array_base" = "MLSTR" ]; then
+      # Bare subscript: _SKIP_KEYS["$k"]=1 would store the quotes in the key.
+      _SKIP_KEYS[$_array_idx]=1; _MLSTR_KEYS[$_array_idx]=1
+      continue
+    fi
     # ARRAYRW: the whole string array in one command; the deletion worker skips it.
     if [ "$_array_base" = "ARRAYRW" ]; then
       local _rw_base="$_array_idx" _rw_host=""
@@ -2641,10 +2651,19 @@ _process_diff_lines() {
           continue
         fi
         delete_cmd=$(_build_defaults_delete_cmd "$dom" "$keyname" "$array_name" "$array_idx" "$hostflag")
-        _emit_cmd "$kind" "$delete_cmd" "$dom" true "$emit_plist_path" "${array_name:+:${array_name}:${array_idx}}${array_name:-$keyname}"
+        _emit_cmd "$kind" "$delete_cmd" "$dom" true "$emit_plist_path" "${${array_name:+:${array_name}:${array_idx}}:-$keyname}"
         ;;
     esac
   done < <(/usr/bin/diff -u "$prev" "$curr" 2>/dev/null | /usr/bin/awk 'NR>2 && ($0 ~ /^\+/ || $0 ~ /^-/) && $0 !~ /^\+\+\+|^---/' || true)  # diff exits 1 when files differ (always, here) → pipefail fires ZERR/set -e; guard it
+  # Multi-line strings flagged by the JSON worker: an empty value sends the
+  # builder to plutil, which reads the exact string.
+  local _mk
+  for _mk in "${(@k)_MLSTR_KEYS}"; do
+    if is_noisy_key "$dom" "$_mk"; then _dbg_filtered "$dom $_mk (noise-key)"; continue; fi
+    _log_kind "$kind" "Key: ${_mk} | Item: (multi-line string)"
+    cmd=$(_build_defaults_write_cmd "$dom" "$_mk" "" "$hostflag" "$type_src")
+    _emit_cmd "$kind" "$cmd" "$dom" false
+  done
   # Nothing came out: drop the NOTE so it does not precede the next domain.
   typeset -g _PENDING_NEWDOM_NOTE=""
 }
@@ -2891,14 +2910,15 @@ for prefix, index, item in results:
                         _sort = {1: "name", 2: "dateadded", 3: "datemodified", 4: "datecreated", 5: "kind"}.get(_i(td.get("arrangement")), "name")
                         _du += f" --view {_view} --display {_disp} --sort {_sort}"
                     print(f"PBCMD\t{_du}")
-        print(f"PBCMD\tAdd :{prefix[0]}:{index} dict")
-        for pb_line in emit_plistbuddy(prefix[0], index, item):
+        print(f"PBCMD\tAdd :{pb_escape(prefix[0])}:{index} dict")
+        # Escaped once here; the recursion passes it on as is.
+        for pb_line in emit_plistbuddy(pb_escape(prefix[0]), index, item):
             print(pb_line)
     else:
         tv = pb_type_value(item)
         if tv:
             print(f"{prefix[0]}\t{index}\t\t")
-            print(f"PBCMD\tAdd :{prefix[0]}:{index} {tv[0]} {tv[1]}")
+            print(f"PBCMD\tAdd :{pb_escape(prefix[0])}:{index} {tv[0]} {tv[1]}")
 PY
 ) || return 0
   fi
@@ -3188,6 +3208,12 @@ is_print_preset = domain.startswith('com.apple.print.custompresets')
 changed_top_keys = set()
 _first_create_noted = False
 for top_key in sorted(curr.keys()):
+    # A multi-line string: the text diff shows a changed line without its key,
+    # or a first line ending in " that reads as the whole value.
+    if (isinstance(curr[top_key], str) and '\n' in curr[top_key] and prev.get(top_key) != curr[top_key]
+            and top_key and not any(c in top_key for c in '\t\n')):
+        print(f"MLSTR\t{top_key}")
+        continue
     if not isinstance(curr[top_key], (dict, list)):
         continue
     if top_key not in prev:
@@ -3336,7 +3362,9 @@ _run_py_diff_workers() {
     fi
   fi
   if [ -n "$_array_meta_raw" ]; then
-    _HAS_ARRAY_ADDITIONS=true
+    # MLSTR flags alone would drop the spaced keys of this diff (see _process_diff_lines).
+    local -a _meta_lines=("${(@f)_array_meta_raw}")
+    (( ${#${_meta_lines:#MLSTR$'\t'*}} )) && _HAS_ARRAY_ADDITIONS=true
     _process_py_meta "$kind" "$dom" "$_array_meta_raw" "$pb_plist_path"
   fi
   emit_array_deletions "$kind" "$dom" "$prev_json" "$curr_json" "$_py_del" "$pb_plist_path"
@@ -4067,8 +4095,8 @@ show_plist_diff() {
     return 0
   fi
 
-  typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN
-  _SKIP_KEYS=(); _ARRAY_REWRITTEN=()
+  typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN _MLSTR_KEYS
+  _SKIP_KEYS=(); _ARRAY_REWRITTEN=(); _MLSTR_KEYS=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
   # The print-preset NOTE below needs this diff to add a command line.
   local _cmd0=${_CMD_LINES:-0}
@@ -4134,8 +4162,8 @@ show_domain_diff() {
   dump_plist_json "$tmpplist" "$curr_json"   # for the Python workers
 
   prev_json="$CACHE_DIR/${key}.prev.json"
-  typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN
-  _SKIP_KEYS=(); _ARRAY_REWRITTEN=()
+  typeset -gA _SKIP_KEYS _ARRAY_REWRITTEN _MLSTR_KEYS
+  _SKIP_KEYS=(); _ARRAY_REWRITTEN=(); _MLSTR_KEYS=()
   typeset -g _HAS_ARRAY_ADDITIONS=false
   local _cmd0=${_CMD_LINES:-0}
 
