@@ -2,6 +2,12 @@
 
 ## 1.5.4 — unreleased
 
+### Fix
+- A multi-line string changed past its first line emitted nothing; one whose first line ended in `"` was cut there. Both are written whole now.
+- An element added to a list whose name holds a space or a `'` gave a PlistBuddy `Add` that failed. The name is escaped now.
+- An empty binary value emitted nothing. It is `-data ""` now.
+- Deleting a key literally named `:name:N` gave a PlistBuddy `Delete :name:Nname`. Fixed.
+
 ## 1.5.3 — 2026-11-12
 
 ### Feature
