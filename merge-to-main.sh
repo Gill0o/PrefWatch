@@ -142,8 +142,7 @@ echo "Bumping dev to v$NEXT_VER..."
 # Update released version date and add new CHANGELOG section on dev
 TODAY=$(/bin/date +%Y-%m-%d)
 /usr/bin/sed -i '' "s/## $CURRENT_VER — unreleased/## $CURRENT_VER — $TODAY/" CHANGELOG.md
-/usr/bin/sed -i '' "1a\\
-\\
+/usr/bin/sed -i '' "2a\\
 ## $NEXT_VER — unreleased\\
 " CHANGELOG.md
 
